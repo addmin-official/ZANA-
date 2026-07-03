@@ -1,0 +1,27 @@
+@import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Vazirmatn", "Inter", "Noto Naskh Arabic", "Tahoma", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  --color-bg: #F8FAFC;
+  --color-surface: #FFFFFF;
+  --color-primary-blue: #2563EB;
+  --color-primary-dark: #1E40AF;
+  --color-success-green: #10B981;
+  --color-warning-gold: #F59E0B;
+  --color-text-dark: #0F172A;
+  --color-muted-gray: #64748B;
+  --color-border-slate: #E2E8F0;
+}
+
+@layer base {
+  html, body {
+    background-color: #F8FAFC;
+    color: #0F172A;
+    font-family: "Vazirmatn", "Inter", "Noto Naskh Arabic", "Tahoma", ui-sans-serif, system-ui, sans-serif;
+    direction: rtl;
+    -webkit-tap-highlight-color: transparent;
+  }
+}

@@ -1,0 +1,90 @@
+import { ChatMessage, AssessmentState, StudentProfile } from "./storage.ts";
+
+export interface ChatResponse {
+  text: string;
+  isEducational: boolean;
+}
+
+export interface AssessmentResponse {
+  question: string;
+  feedback: string;
+  isCorrect: boolean;
+  completed: boolean;
+  finalLevel: string | null;
+}
+
+export interface ReportResponse {
+  recommendation: string;
+}
+
+export const ZanaApiClient = {
+  async sendChatMessage(
+    message: string,
+    history: ChatMessage[],
+    profile: StudentProfile
+  ): Promise<ChatResponse> {
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message, history, profile }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "هەڵەیەک ڕوویدا لە کاتی پەیوەندیکردن بە مامۆستا زانا.");
+      }
+
+      return await response.json();
+    } catch (error: any) {
+      console.error("API Error in sendChatMessage", error);
+      throw new Error(error.message || "پەیوەندی ئینتەرنێتەکەت تێکچووە، تکایە جارێکی تر هەوڵ بدەرەوە.");
+    }
+  },
+
+  async getAssessmentNextQuestion(
+    state: Omit<AssessmentState, "id">,
+    profile: StudentProfile
+  ): Promise<AssessmentResponse> {
+    try {
+      const response = await fetch("/api/assessment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ state, profile }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "هەڵەیەک ڕوویدا لە کاتی بارکردنی تاقیکردنەوە.");
+      }
+
+      return await response.json();
+    } catch (error: any) {
+      console.error("API Error in getAssessmentNextQuestion", error);
+      throw new Error(error.message || "ناتوانرێت تاقیکردنەوەکە باربکرێت، تکایە هێڵەکەت پشکنیار بکەرەوە.");
+    }
+  },
+
+  async getParentReport(
+    profile: StudentProfile,
+    summaryStats: { totalSessions: number; weeklyQuestionCount: number }
+  ): Promise<ReportResponse> {
+    try {
+      const response = await fetch("/api/report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile, summaryStats }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "ڕاپۆرتەکە ناتوانرێت دروست بکرێت لەم کاتەدا.");
+      }
+
+      return await response.json();
+    } catch (error: any) {
+      console.error("API Error in getParentReport", error);
+      throw new Error(error.message || "ڕاپۆرت دروستکردن سەرکەوتوو نەبوو. تکایە دواتر هەوڵ بدەرەوە.");
+    }
+  }
+};

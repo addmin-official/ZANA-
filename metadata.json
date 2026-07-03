@@ -1,0 +1,6 @@
+{
+  "name": "ZANA / زانا",
+  "description": "هاوڕێی زیرەکی فێربوونی تۆ - Kurdish Sorani AI Tutor for Grades 9-12",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
