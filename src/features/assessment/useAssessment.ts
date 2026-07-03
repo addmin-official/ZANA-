@@ -76,17 +76,17 @@ export function useAssessment(profile: StudentProfile, onProfileUpdate: (profile
         // Calculate the score
         const correctCount = updatedCorrectAnswers.filter(Boolean).length;
         if (correctCount <= 2) {
-          computedFinalLevel = "سەرەتا";
+          computedFinalLevel = "beginner";
         } else if (correctCount <= 4) {
-          computedFinalLevel = "مامناوەند";
+          computedFinalLevel = "intermediate";
         } else {
-          computedFinalLevel = "پێشکەوتوو";
+          computedFinalLevel = "advanced";
         }
 
         // Save progress to storage
         ZanaStorage.incrementQuestions(5);
         // Also update student profile level if the diagnostic suggests a change
-        onProfileUpdate({ level: computedFinalLevel });
+        onProfileUpdate({ level: computedFinalLevel as any });
       }
 
       const finalState: AssessmentState = {

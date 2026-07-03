@@ -28,10 +28,11 @@ export class BrainOrchestrator {
    * Exposes: buildZanaBrainPrompt(input)
    */
   public buildZanaBrainPrompt(input: ZanaBrainInput): ZanaBrainOutput {
-    // 1. Normalize student context
-    const normalizedContext: StudentContext = this.contextEngine.normalizeStudentContext(
-      input.studentContext
-    );
+    // 1. Normalize student context, supporting both top-level and nested stream parameters
+    const normalizedContext: StudentContext = this.contextEngine.normalizeStudentContext({
+      ...input.studentContext,
+      stream: (input.stream || (input.studentContext && input.studentContext.stream)) as any
+    });
 
     // 2. Evaluate request safety and educational limits
     const safetyResult = this.safetyEngine.evaluateStudentRequest(input.studentRequest);
@@ -47,10 +48,11 @@ export class BrainOrchestrator {
       memoryState = this.memoryEngine.createEmptyLearningMemory();
     }
 
-    // 4. Resolve curriculum connection
+    // 4. Resolve curriculum connection including academic stream
     const curriculumContext = this.curriculumEngine.resolveCurriculumContext({
       grade: normalizedContext.grade,
       subject: normalizedContext.subject,
+      stream: normalizedContext.stream,
       topicQuery: input.studentRequest
     });
 
@@ -62,7 +64,8 @@ export class BrainOrchestrator {
     const compiledInput: ZanaBrainInput = {
       studentContext: normalizedContext,
       studentRequest: input.studentRequest,
-      learningMemory: memoryState
+      learningMemory: memoryState,
+      stream: normalizedContext.stream
     };
 
     const systemPrompt = this.promptEngine.buildTutorPrompt(

@@ -1,5 +1,7 @@
 import { GraduationCap, Award } from "lucide-react";
 import { StudentProfile } from "../services/storage.ts";
+import { LEVEL_LABELS } from "../features/student/studentDefaults.ts";
+import { StudentLevel } from "../features/student/studentTypes.ts";
 
 interface ZanaHeaderProps {
   profile: StudentProfile;
@@ -33,7 +35,7 @@ export function ZanaHeader({ profile }: ZanaHeaderProps) {
                 {profile.name}
               </p>
               <p className="font-sans text-[10px] text-slate-500 mt-0.5">
-                پۆلی {profile.grade} • {profile.level}
+                پۆلی {profile.grade} • {LEVEL_LABELS[profile.level as StudentLevel] || profile.level}
               </p>
             </div>
           </div>

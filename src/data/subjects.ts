@@ -214,7 +214,7 @@ export const GRADES_LIST = [
 ];
 
 export const LEVELS_LIST = [
-  { value: "سەرەتا", label: "سەرەتا (Beginner)" },
-  { value: "مامناوەند", label: "مامناوەند (Intermediate)" },
-  { value: "پێشکەوتوو", label: "پێشکەوتوو (Advanced)" }
+  { value: "beginner", label: "سەرەتا (Beginner)" },
+  { value: "intermediate", label: "مامناوەند (Intermediate)" },
+  { value: "advanced", label: "پێشکەوتوو (Advanced)" }
 ];

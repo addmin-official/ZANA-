@@ -4,6 +4,8 @@ import { StudentProfile, ProgressState, ZanaStorage } from "../services/storage.
 import { SUBJECTS_DATA } from "../data/subjects.ts";
 import { Sparkles, MessageSquare, Award, FileText, ArrowLeft, BookOpen, Clock } from "lucide-react";
 import { useEffect, useState } from "react";
+import { LEVEL_LABELS } from "../features/student/studentDefaults.ts";
+import { StudentLevel } from "../features/student/studentTypes.ts";
 
 interface DailySparkScreenProps {
   profile: StudentProfile;
@@ -48,7 +50,7 @@ export function DailySparkScreen({ profile, onNavigate, onStartAssessment }: Dai
       {/* Welcome Greeting */}
       <div className="text-right">
         <span className="font-sans text-xs font-bold text-blue-600 bg-blue-50 border border-blue-100 rounded-full px-3 py-1">
-          {getGreeting()} • {profile.level}
+          {getGreeting()} • {LEVEL_LABELS[profile.level as StudentLevel] || profile.level}
         </span>
         <h2 className="font-sans font-bold text-2xl text-slate-900 mt-2">
           سڵاو، {profile.name} دڵسۆز!

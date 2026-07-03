@@ -18,7 +18,7 @@ export default function App() {
   const [isAssessmentMode, setIsAssessmentMode] = useState(false);
 
   const handleSelectSubject = (subjectId: string) => {
-    updateProfile({ subject: subjectId });
+    updateProfile({ subject: subjectId as any });
   };
 
   const handleStartAssessment = () => {

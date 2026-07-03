@@ -4,12 +4,15 @@ export type ZanaMode = "chat" | "assessment" | "report";
 
 export type SubjectKey = "math" | "physics" | "chemistry" | "english";
 
+export type AcademicStream = "scientific" | "literary" | "general";
+
 export interface StudentContext {
   name: string;
   grade: "9" | "10" | "11" | "12" | string;
   subject: SubjectKey;
   level: StudentLevel;
   mode: ZanaMode;
+  stream: AcademicStream;
   recentTopic?: string;
   recentLearningState?: string;
 }
@@ -31,6 +34,9 @@ export interface LearningMemory {
 export interface CurriculumContext {
   grade: string;
   subject: string;
+  stream: AcademicStream;
+  streamLabel: string;
+  streamWarning?: string;
   chapter?: string;
   lesson?: string;
   topic?: string;
@@ -50,6 +56,7 @@ export interface ZanaBrainInput {
   studentContext: StudentContext;
   studentRequest: string;
   learningMemory?: LearningMemory;
+  stream?: AcademicStream | string;
 }
 
 export interface ZanaBrainOutput {

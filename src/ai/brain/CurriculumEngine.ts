@@ -1,8 +1,9 @@
-import { CurriculumContext, SubjectKey } from "../types/aiBrain.ts";
+import { CurriculumContext, SubjectKey, AcademicStream } from "../types/aiBrain.ts";
 
 export interface CurriculumResolutionInput {
   grade: string;
   subject: SubjectKey;
+  stream: AcademicStream;
   topicQuery?: string;
 }
 
@@ -36,11 +37,11 @@ export class CurriculumEngine {
   };
 
   /**
-   * Resolves the active curriculum context based on grade, subject, and student text input.
+   * Resolves the active curriculum context based on grade, subject, stream, and student text input.
    * Exposes: resolveCurriculumContext(input)
    */
   public resolveCurriculumContext(input: CurriculumResolutionInput): CurriculumContext {
-    const { grade, subject, topicQuery } = input;
+    const { grade, subject, stream, topicQuery } = input;
     const gradeDb = this.curriculumDatabase[grade] || this.curriculumDatabase["12"];
     const topics = gradeDb[subject] || [];
 
@@ -48,6 +49,29 @@ export class CurriculumEngine {
     let matchedChapter = "بەشی سەرەکی";
     let warnings: string[] = [];
     let isWithinScope = true;
+
+    // Academic stream labels
+    let streamLabel = "گشتی";
+    if (stream === "scientific") {
+      streamLabel = "زانستی";
+    } else if (stream === "literary") {
+      streamLabel = "وێژەیی";
+    }
+
+    // Stream-specific warnings
+    let streamWarning: string | undefined = undefined;
+
+    if (stream === "general") {
+      warnings.push("ڕێڕەوی خوێندن دیاری نەکراوە، بۆیە زانا وەڵامەکە بە شێوەی گشتی دەگونجێنێت.");
+      if (["11", "12"].includes(grade)) {
+        warnings.push("بۆ پۆلی ١١ و ١٢، دیاریکردنی ڕێڕەوی زانستی یان وێژەیی گرنگە بۆ وەڵامی وردتر.");
+      }
+    } else if (stream === "literary") {
+      if (subject === "physics" || subject === "chemistry") {
+        streamWarning = "ئەم بابەتە (فیزیا/کیمیا) بە شێوەیەکی سەرەکی سەر بە ڕێڕەوی زانستییە، بەڵام زانا بە شێوازێکی گونجاو وەڵامەکەت بۆ دەڕشتۆتەوە.";
+        warnings.push(streamWarning);
+      }
+    }
 
     if (topicQuery) {
       const query = topicQuery.toLowerCase();
@@ -80,6 +104,9 @@ export class CurriculumEngine {
     return {
       grade,
       subject,
+      stream,
+      streamLabel,
+      streamWarning,
       chapter: matchedChapter,
       lesson: "وانەی پەیوەندیدار",
       topic: matchedTopic,

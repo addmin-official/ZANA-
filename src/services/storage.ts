@@ -1,10 +1,6 @@
-export interface StudentProfile {
-  name: string;
-  grade: string; // "9" | "10" | "11" | "12"
-  subject: string; // "math" | "physics" | "chemistry" | "english" (internal key)
-  level: string; // "سەرەتا" | "مامناوەند" | "پێشکەوتوو"
-  onboarded: boolean;
-}
+import { StudentProfile } from "../features/student/studentTypes.ts";
+export type { StudentProfile };
+import { getStudentProfile, saveStudentProfile, deleteStudentProfile } from "../features/student/studentStorage.ts";
 
 export interface ChatMessage {
   id: string;
@@ -37,18 +33,9 @@ export interface ProgressState {
 }
 
 const STORAGE_KEYS = {
-  PROFILE: "zana_student_profile",
-  CHAT_MESSAGES_PREFIX: "zana_chat_messages_",
-  ASSESSMENT_STATE: "zana_assessment_state",
-  PROGRESS_STATE: "zana_progress_state"
-};
-
-const DEFAULT_PROFILE: StudentProfile = {
-  name: "",
-  grade: "12",
-  subject: "math",
-  level: "مامناوەند",
-  onboarded: false
+  CHAT_MESSAGES_PREFIX: "zana:chat-messages:",
+  ASSESSMENT_STATE: "zana:assessment-state",
+  PROGRESS_STATE: "zana:progress-state"
 };
 
 const DEFAULT_PROGRESS: ProgressState = {
@@ -59,108 +46,120 @@ const DEFAULT_PROGRESS: ProgressState = {
   recommendation: null
 };
 
+// Check if localStorage is available and we are running in browser
+const isBrowser = typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+
+export function safeGet<T>(key: string, fallback: T): T {
+  if (!isBrowser) return fallback;
+  try {
+    const item = window.localStorage.getItem(key);
+    if (item === null) return fallback;
+    return JSON.parse(item) as T;
+  } catch (error) {
+    console.error(`Error reading key "${key}" from localStorage:`, error);
+    return fallback;
+  }
+}
+
+export function safeSet<T>(key: string, value: T): void {
+  if (!isBrowser) return;
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    console.error(`Error writing key "${key}" to localStorage:`, error);
+  }
+}
+
+export function safeRemove(key: string): void {
+  if (!isBrowser) return;
+  try {
+    window.localStorage.removeItem(key);
+  } catch (error) {
+    console.error(`Error removing key "${key}" from localStorage:`, error);
+  }
+}
+
+export function safeClearByPrefix(prefix: string): void {
+  if (!isBrowser) return;
+  try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const key = window.localStorage.key(i);
+      if (key && key.startsWith(prefix)) {
+        keysToRemove.push(key);
+      }
+    }
+    for (const key of keysToRemove) {
+      window.localStorage.removeItem(key);
+    }
+  } catch (error) {
+    console.error(`Error clearing keys with prefix "${prefix}" from localStorage:`, error);
+  }
+}
+
 export const ZanaStorage = {
   // Profile
   getProfile(): StudentProfile {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEYS.PROFILE);
-      if (stored) {
-        return JSON.parse(stored);
-      }
-    } catch (e) {
-      console.error("Error reading profile", e);
-    }
-    return { ...DEFAULT_PROFILE };
+    const profile = getStudentProfile();
+    if (profile) return profile;
+
+    // Fallback default profile
+    return {
+      id: "default-guest",
+      name: "",
+      grade: "12",
+      stream: "general",
+      activeSubject: "math",
+      level: "intermediate",
+      onboardingCompleted: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      // Backward compatibility fields
+      subject: "math",
+      onboarded: false
+    };
   },
 
   saveProfile(profile: StudentProfile): void {
-    try {
-      localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
-    } catch (e) {
-      console.error("Error saving profile", e);
-    }
+    saveStudentProfile(profile);
   },
 
   // Chat
   getChatMessages(subjectId: string): ChatMessage[] {
-    try {
-      const key = `${STORAGE_KEYS.CHAT_MESSAGES_PREFIX}${subjectId}`;
-      const stored = localStorage.getItem(key);
-      if (stored) {
-        return JSON.parse(stored);
-      }
-    } catch (e) {
-      console.error("Error reading chat messages", e);
-    }
-    return [];
+    const key = `${STORAGE_KEYS.CHAT_MESSAGES_PREFIX}${subjectId}`;
+    return safeGet<ChatMessage[]>(key, []);
   },
 
   saveChatMessages(subjectId: string, messages: ChatMessage[]): void {
-    try {
-      const key = `${STORAGE_KEYS.CHAT_MESSAGES_PREFIX}${subjectId}`;
-      localStorage.setItem(key, JSON.stringify(messages));
-    } catch (e) {
-      console.error("Error saving chat messages", e);
-    }
+    const key = `${STORAGE_KEYS.CHAT_MESSAGES_PREFIX}${subjectId}`;
+    safeSet<ChatMessage[]>(key, messages);
   },
 
   clearChatMessages(subjectId: string): void {
-    try {
-      const key = `${STORAGE_KEYS.CHAT_MESSAGES_PREFIX}${subjectId}`;
-      localStorage.removeItem(key);
-    } catch (e) {
-      console.error("Error clearing chat messages", e);
-    }
+    const key = `${STORAGE_KEYS.CHAT_MESSAGES_PREFIX}${subjectId}`;
+    safeRemove(key);
   },
 
   // Assessment
   getAssessment(): AssessmentState | null {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEYS.ASSESSMENT_STATE);
-      if (stored) {
-        return JSON.parse(stored);
-      }
-    } catch (e) {
-      console.error("Error reading assessment state", e);
-    }
-    return null;
+    return safeGet<AssessmentState | null>(STORAGE_KEYS.ASSESSMENT_STATE, null);
   },
 
   saveAssessment(state: AssessmentState): void {
-    try {
-      localStorage.setItem(STORAGE_KEYS.ASSESSMENT_STATE, JSON.stringify(state));
-    } catch (e) {
-      console.error("Error saving assessment state", e);
-    }
+    safeSet<AssessmentState>(STORAGE_KEYS.ASSESSMENT_STATE, state);
   },
 
   clearAssessment(): void {
-    try {
-      localStorage.removeItem(STORAGE_KEYS.ASSESSMENT_STATE);
-    } catch (e) {
-      console.error("Error clearing assessment state", e);
-    }
+    safeRemove(STORAGE_KEYS.ASSESSMENT_STATE);
   },
 
   // Progress
   getProgress(): ProgressState {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEYS.PROGRESS_STATE);
-      if (stored) {
-        return JSON.parse(stored);
-      }
-    } catch (e) {
-      console.error("Error reading progress state", e);
-    }
-    return { ...DEFAULT_PROGRESS };
+    return safeGet<ProgressState>(STORAGE_KEYS.PROGRESS_STATE, DEFAULT_PROGRESS);
   },
 
   saveProgress(progress: ProgressState): void {
-    try {
-      localStorage.setItem(STORAGE_KEYS.PROGRESS_STATE, JSON.stringify(progress));
-    } catch (e) {
-      console.error("Error saving progress state", e);
-    }
+    safeSet<ProgressState>(STORAGE_KEYS.PROGRESS_STATE, progress);
   },
 
   incrementSessions(): void {
@@ -172,17 +171,13 @@ export const ZanaStorage = {
   incrementQuestions(count = 1): void {
     const progress = this.getProgress();
     progress.weeklyQuestionCount += count;
-    // Mock gradual increase in progress percent as they study
     progress.currentProgressPercent = Math.min(100, progress.currentProgressPercent + Math.round(count * 2.5));
     this.saveProgress(progress);
   },
 
   // Global Clean Up
   clearAllData(): void {
-    try {
-      localStorage.clear();
-    } catch (e) {
-      console.error("Error clearing localStorage", e);
-    }
+    deleteStudentProfile();
+    safeClearByPrefix("zana:");
   }
 };

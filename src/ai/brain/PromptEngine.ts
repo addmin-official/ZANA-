@@ -60,6 +60,7 @@ export class PromptEngine {
     prompt += `CURRICULUM BOUNDS & STATE\n`;
     prompt += `==================================================\n`;
     prompt += `Grade Level: پۆلی ${curriculum.grade}\n`;
+    prompt += `Academic Stream: ڕێڕەوی ${curriculum.streamLabel}\n`;
     prompt += `Subject: ${curriculum.subject}\n`;
     prompt += `Chapter/Topic Area: ${curriculum.chapter} - ${curriculum.topic}\n`;
     if (curriculum.warnings && curriculum.warnings.length > 0) {
@@ -96,6 +97,7 @@ export class PromptEngine {
     prompt += `2. NEVER write the direct final numerical/symbolic answer immediately if the student asks for a solution. Scaffold the problem first.\n`;
     prompt += `3. If the student request matches an out-of-scope curriculum warning or is flagged by the Safety Engine, ignore academic content and politely redirect to safe curriculum limits.\n`;
     prompt += `4. Keep markdown clear, formatted, and elegant.\n`;
+    prompt += `5. ئەگەر ڕێڕەوی خوێندن گشتی بێت یان دیاری نەکرابێت، پێش وەڵامی قووڵ، بە نەرمی داوا بکە ڕێڕەوی قوتابی دیاری بکرێت.\n`;
 
     return prompt;
   }

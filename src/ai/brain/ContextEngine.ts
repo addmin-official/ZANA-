@@ -1,4 +1,4 @@
-import { StudentContext, StudentLevel, SubjectKey, ZanaMode } from "../types/aiBrain.ts";
+import { StudentContext, StudentLevel, SubjectKey, ZanaMode, AcademicStream } from "../types/aiBrain.ts";
 
 export class ContextEngine {
   private defaultLevel: StudentLevel = "مامناوەند";
@@ -38,12 +38,26 @@ export class ContextEngine {
       mode = input.mode as ZanaMode;
     }
 
+    // Normalize and validate Academic Stream
+    let stream: AcademicStream = "general";
+    if (input.stream) {
+      const sStr = input.stream.toLowerCase().trim();
+      if (["scientific", "zansti", "زانستی", "science"].includes(sStr)) {
+        stream = "scientific";
+      } else if (["literary", "wezhayi", "wêjeyî", "وێژەیی", "adabi", "ئەدەبی"].includes(sStr)) {
+        stream = "literary";
+      } else if (sStr === "general") {
+        stream = "general";
+      }
+    }
+
     return {
       name,
       grade,
       subject,
       level,
       mode,
+      stream,
       recentTopic: input.recentTopic || "",
       recentLearningState: input.recentLearningState || "لە بارودۆخی فێربوونی چالاکدایە"
     };
