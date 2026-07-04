@@ -39,7 +39,12 @@ export function useStudentProfile() {
     return newProfile;
   };
 
-  const updateProfile = (updates: Partial<StudentProfileDraft | StudentProfile>) => {
+interface LegacyUpdateFields {
+  subject?: string;
+  onboarded?: boolean;
+}
+
+  const updateProfile = (updates: Partial<StudentProfileDraft | StudentProfile> & LegacyUpdateFields) => {
     setProfileState((prev) => {
       const mappedUpdates: Partial<StudentProfileDraft> = {};
       if (updates.name !== undefined) mappedUpdates.name = sanitizeStudentName(updates.name);
@@ -47,7 +52,7 @@ export function useStudentProfile() {
       if (updates.stream !== undefined) mappedUpdates.stream = getValidatedStream(updates.stream);
       
       // Support both activeSubject and legacy subject key safely
-      const rawSubject = updates.activeSubject !== undefined ? updates.activeSubject : (updates as { subject?: unknown }).subject;
+      const rawSubject = updates.activeSubject !== undefined ? updates.activeSubject : updates.subject;
       if (rawSubject !== undefined) mappedUpdates.activeSubject = getValidatedSubject(rawSubject);
       
       const lvl = updates.level !== undefined ? updates.level : undefined;

@@ -12,7 +12,7 @@ interface SubjectsScreenProps {
 }
 
 export function SubjectsScreen({ profile, onSelectSubject, onNavigate }: SubjectsScreenProps) {
-  const [expandedSubject, setExpandedSubject] = useState<string | null>(profile.activeSubject);
+  const [expandedSubject, setExpandedSubject] = useState<SubjectKey | null>(profile.activeSubject);
 
   const getSubjectIcon = (iconName: string) => {
     switch (iconName) {
@@ -29,12 +29,12 @@ export function SubjectsScreen({ profile, onSelectSubject, onNavigate }: Subject
     }
   };
 
-  const handleSubjectClick = (id: string) => {
+  const handleSubjectClick = (id: SubjectKey) => {
     setExpandedSubject(expandedSubject === id ? null : id);
   };
 
-  const handleStartStudy = (id: string) => {
-    onSelectSubject(id as SubjectKey);
+  const handleStartStudy = (id: SubjectKey) => {
+    onSelectSubject(id);
     onNavigate("chat");
   };
 
@@ -53,20 +53,21 @@ export function SubjectsScreen({ profile, onSelectSubject, onNavigate }: Subject
       {/* Subject List */}
       <div className="space-y-4">
         {SUBJECTS_DATA.map((subject) => {
-          const isExpanded = expandedSubject === subject.id;
-          const isActiveSubject = profile.activeSubject === subject.id;
+          const subjectId = subject.id as SubjectKey;
+          const isExpanded = expandedSubject === subjectId;
+          const isActiveSubject = profile.activeSubject === subjectId;
           const chapters = subject.grades[profile.grade] || [];
 
           return (
             <div
-              key={subject.id}
+              key={subjectId}
               className={`border rounded-2xl overflow-hidden transition-all duration-200 ${
                 isActiveSubject ? "border-blue-500 bg-white" : "border-slate-100 bg-white"
               }`}
             >
               {/* Subject Row Trigger */}
               <button
-                onClick={() => handleSubjectClick(subject.id)}
+                onClick={() => handleSubjectClick(subjectId)}
                 className="w-full flex items-center justify-between p-4 text-right cursor-pointer"
               >
                 <div className="flex items-center gap-3">
@@ -135,7 +136,7 @@ export function SubjectsScreen({ profile, onSelectSubject, onNavigate }: Subject
                   <ZanaButton
                     variant={isActiveSubject ? "secondary" : "primary"}
                     fullWidth
-                    onClick={() => handleStartStudy(subject.id)}
+                    onClick={() => handleStartStudy(subjectId)}
                   >
                     <span>دەستپێکردنی وانەکە</span>
                     <MessageSquare className="w-4 h-4 mr-2" />
