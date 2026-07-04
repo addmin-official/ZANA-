@@ -1,4 +1,4 @@
-import { Sparkles, BookOpen, MessageSquare, FileText, User } from "lucide-react";
+import { Sparkles, BookOpen, BookMarked, FileText, User } from "lucide-react";
 
 export type NavTab = "daily" | "subjects" | "chat" | "report" | "profile";
 
@@ -11,7 +11,7 @@ export function BottomNavigation({ activeTab, onTabChange }: BottomNavigationPro
   const tabs = [
     { id: "daily" as NavTab, label: "ڕۆژانە", icon: Sparkles },
     { id: "subjects" as NavTab, label: "بابەتەکان", icon: BookOpen },
-    { id: "chat" as NavTab, label: "گفتوگۆ", icon: MessageSquare },
+    { id: "chat" as NavTab, label: "خوێندن", icon: BookMarked },
     { id: "report" as NavTab, label: "ڕاپۆرت", icon: FileText },
     { id: "profile" as NavTab, label: "پڕۆفایل", icon: User }
   ];

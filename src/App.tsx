@@ -3,7 +3,7 @@ import { AppShell } from "./components/AppShell.tsx";
 import { OnboardingScreen } from "./screens/OnboardingScreen.tsx";
 import { DailySparkScreen } from "./screens/DailySparkScreen.tsx";
 import { SubjectsScreen } from "./screens/SubjectsScreen.tsx";
-import { StudyChatScreen } from "./screens/StudyChatScreen.tsx";
+import { StudyWorkspaceScreen } from "./screens/StudyWorkspaceScreen.tsx";
 import { AssessmentScreen } from "./screens/AssessmentScreen.tsx";
 import { ParentReportScreen } from "./screens/ParentReportScreen.tsx";
 import { ProfileScreen } from "./screens/ProfileScreen.tsx";
@@ -78,7 +78,7 @@ export default function App() {
           />
         );
       case "chat":
-        return <StudyChatScreen profile={profile} />;
+        return <StudyWorkspaceScreen profile={profile} onNavigate={(tab) => setActiveTab(tab as NavTab)} />;
       case "report":
         return <ParentReportScreen profile={profile} />;
       case "profile":
