@@ -15,4 +15,10 @@ export interface ParentReportSnapshot {
   adaptiveRecommendation?: string;
   parentGuidance: string[];
   warnings: string[];
+  dataQuality: {
+    hasStudyDurationData: boolean;
+    hasAssessmentData: boolean;
+    hasStrengthData: boolean;
+    hasWeaknessData: boolean;
+  };
 }

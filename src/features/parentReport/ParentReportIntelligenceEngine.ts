@@ -5,7 +5,20 @@ import { SessionSnapshot } from "../../session/types.ts";
 import { AdaptiveSnapshot } from "../adaptive/adaptiveTypes.ts";
 import { ParentReportSnapshot } from "./parentReportTypes.ts";
 import { DomainEventStore } from "../../domain/DomainEventStore.ts";
-import { ZanaStorage } from "../../services/storage.ts";
+
+interface SessionFinishedPayload {
+  totalDurationSeconds: number;
+}
+
+function isSessionFinishedPayload(
+  value: unknown
+): value is SessionFinishedPayload {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  return "totalDurationSeconds" in candidate && typeof candidate.totalDurationSeconds === "number";
+}
 
 export interface ParentReportInput {
   studentProfile: StudentProfile;
@@ -20,7 +33,7 @@ export class ParentReportIntelligenceEngine {
    * Generates a fully calculated, print-friendly ParentReportSnapshot.
    */
   public static generateSnapshot(input: ParentReportInput): ParentReportSnapshot {
-    const { studentProfile, sipSnapshot, cipSnapshot, lseSnapshot, adaptiveSnapshot } = input;
+    const { studentProfile, sipSnapshot, cipSnapshot, adaptiveSnapshot } = input;
     const studentId = studentProfile.id;
     const store = DomainEventStore.getInstance();
     const studentEvents = store.getByStudent(studentId);
@@ -33,37 +46,28 @@ export class ParentReportIntelligenceEngine {
     );
 
     let weeklyStudyMinutes = 0;
+    let hasStudyDurationData = false;
+
     weeklyEvents.forEach(ev => {
       if (ev.type === "SESSION_FINISHED") {
-        const payload = ev.payload as any;
-        if (payload && typeof payload.totalDurationSeconds === "number") {
+        const payload = ev.payload;
+        if (isSessionFinishedPayload(payload)) {
           weeklyStudyMinutes += payload.totalDurationSeconds / 60;
+          hasStudyDurationData = true;
         }
       }
     });
 
-    let weeklySessionCount = weeklyEvents.filter(ev => ev.type === "SESSION_STARTED").length;
-
-    // Fallbacks if no direct event duration logged yet
-    const storageProgress = ZanaStorage.getProgress();
-    if (weeklySessionCount === 0 && storageProgress.totalSessions > 0) {
-      weeklySessionCount = storageProgress.totalSessions;
-    }
-    if (weeklyStudyMinutes === 0 && weeklySessionCount > 0) {
-      weeklyStudyMinutes = weeklySessionCount * 12; // Assume average of 12 minutes per session
-    }
     weeklyStudyMinutes = Math.round(weeklyStudyMinutes);
+    const weeklySessionCount = weeklyEvents.filter(ev => ev.type === "SESSION_STARTED").length;
 
-    // 2. Count assessment sessions completed
-    let assessmentCount = studentEvents.filter(ev => ev.type === "ASSESSMENT_FINISHED").length;
-    if (assessmentCount === 0 && adaptiveSnapshot) {
-      assessmentCount = 1; // Fallback to current if event not yet recorded in event store
-    }
+    // 2. Count assessment sessions completed (strictly from domain events, no fabrication)
+    const assessmentCount = studentEvents.filter(ev => ev.type === "ASSESSMENT_FINISHED").length;
 
     // 3. Extract completed concepts count
     const completedConceptsCount = Array.from(sipSnapshot.graph.completedNodeIds || []).length;
 
-    // 4. Latest assessment score
+    // 4. Latest assessment score from real adaptive snapshot if available
     const latestAssessmentScore = adaptiveSnapshot?.scorePercentage ?? undefined;
 
     // 5. Build Strong and Weak Areas labels
@@ -115,31 +119,6 @@ export class ParentReportIntelligenceEngine {
       }
     });
 
-    // Subject default fallbacks if lists are empty, to ensure beautifully populated reports
-    if (strongAreas.length === 0) {
-      if (studentProfile.activeSubject === "math") {
-        strongAreas.push("ڕێسا سەرەتاییەکانی جیاکاری", "هاوکێشە ڕێژەییەکان");
-      } else if (studentProfile.activeSubject === "physics") {
-        strongAreas.push("یاساکانی نیوتن بۆ جووڵە", "تەوژمی کارەبایی");
-      } else if (studentProfile.activeSubject === "chemistry") {
-        strongAreas.push("پێکهاتەی گەردیلە", "پێوەری pH ی ترشێتی");
-      } else {
-        strongAreas.push("خوێندنەوەی دەقەکان", "کاتەکانی فرمان (Tenses)");
-      }
-    }
-
-    if (weakAreas.length === 0) {
-      if (studentProfile.activeSubject === "math") {
-        weakAreas.push("دۆزینەوەی گرتەی نەخشە ئاوێتەکان");
-      } else if (studentProfile.activeSubject === "physics") {
-        weakAreas.push("جووڵەی بازنەیی و هێزی چەقەکێش");
-      } else if (studentProfile.activeSubject === "chemistry") {
-        weakAreas.push("هاوسەنگکردنی هاوکێشە ئۆکسان و لێکدانەوەکان");
-      } else {
-        weakAreas.push("ڕێساکانی دەنگی ناچالاک (Passive Voice)");
-      }
-    }
-
     // 6. Resolve Kurdish labels for profiles
     const gradeLabel = `پۆلی ${studentProfile.grade}`;
     const streamLabel =
@@ -166,7 +145,7 @@ export class ParentReportIntelligenceEngine {
         : "ناوەند";
 
     // 7. Get Adaptive Recommendation Message
-    let adaptiveRecommendation = "بەردەوامبوون لەسەر پرۆگرامی خوێندنی ئاسایی.";
+    let adaptiveRecommendation = "";
     if (adaptiveSnapshot) {
       adaptiveRecommendation = adaptiveSnapshot.decision.message;
     } else if (weakAreas.length > 0) {
@@ -206,11 +185,11 @@ export class ParentReportIntelligenceEngine {
     }
 
     const warnings: string[] = [];
-    if (weeklyStudyMinutes < 20) {
-      warnings.push("کاتی خوێندنی ڕۆژانە زۆر کەمە؛ هانی بدەن کاتی زیاتر تەرخان بکات.");
+    if (hasStudyDurationData && weeklyStudyMinutes < 20) {
+      warnings.push("کاتی خوێندنی ڕۆژانە کەمە؛ هانی بدەن کاتی زیاتر تەرخان بکات.");
     }
     if (weakAreas.length > 3) {
-      warnings.push("چەند بابەتێکی زۆر بە ناڕوونی ماونەتەوە، پێویستی بە سەرنجی تایبەتە.");
+      warnings.push("چەند بابەتێکی زۆر بە ناڕوونی ماونەتەوە، پێویستی بە سەرنجی تایبەتە لە ماڵەوە.");
     }
 
     return {
@@ -227,9 +206,15 @@ export class ParentReportIntelligenceEngine {
       latestAssessmentScore,
       strongAreas,
       weakAreas,
-      adaptiveRecommendation,
+      adaptiveRecommendation: adaptiveRecommendation || undefined,
       parentGuidance,
       warnings,
+      dataQuality: {
+        hasStudyDurationData,
+        hasAssessmentData: assessmentCount > 0 || latestAssessmentScore !== undefined,
+        hasStrengthData: strongAreas.length > 0,
+        hasWeaknessData: weakAreas.length > 0,
+      }
     };
   }
 }
