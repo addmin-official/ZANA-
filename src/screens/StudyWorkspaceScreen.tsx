@@ -10,6 +10,7 @@ import { ZanaCard } from "../components/ZanaCard.tsx";
 import { ZanaButton } from "../components/ZanaButton.tsx";
 import { ExplainPanel } from "../features/study/explain/index.ts";
 import { PracticePanel } from "../features/study/practice/index.ts";
+import { AskPanel } from "../features/study/ask/index.ts";
 import {
   ArrowLeft,
   BookOpen,
@@ -56,7 +57,7 @@ interface WorkspaceContent {
   practice: PracticeQuestion[];
   summary: string[];
   formula: FormulaData;
-  smartQuestions: { q: string; a: string }[];
+  smartQuestions?: { q: string; a: string }[];
 }
 
 const WORKSPACE_CONTENT_DB: Record<string, WorkspaceContent> = {
@@ -423,11 +424,6 @@ export function StudyWorkspaceScreen({ profile, onNavigate }: StudyWorkspaceScre
   const [isAnswered, setIsAnswered] = useState(false);
   const [practiceCompleted, setPracticeCompleted] = useState(false);
 
-  // Ask states
-  const [userQuestion, setUserQuestion] = useState("");
-  const [chatHistory, setChatHistory] = useState<{ sender: "user" | "ai"; message: string }[]>([]);
-  const [isAiResponding, setIsAiResponding] = useState(false);
-
   // Reset indices on concept shift
   useEffect(() => {
     setExplainStepIndex(0);
@@ -435,8 +431,6 @@ export function StudyWorkspaceScreen({ profile, onNavigate }: StudyWorkspaceScre
     setSelectedOption(null);
     setIsAnswered(false);
     setPracticeCompleted(false);
-    setChatHistory([]);
-    setUserQuestion("");
   }, [currentNodeId]);
 
   // UI helpers for subjects in Kurdish
@@ -480,35 +474,6 @@ export function StudyWorkspaceScreen({ profile, onNavigate }: StudyWorkspaceScre
       const updatedSnapshot = { ...nextSnapshot };
       setLseSnapshot(updatedSnapshot);
     }
-  };
-
-  // Submit User Custom Question in Ask panel
-  const handleAskQuestion = (textToSend?: string) => {
-    const questionText = textToSend || userQuestion;
-    if (!questionText.trim() || isAiResponding) return;
-
-    const newHistory = [...chatHistory, { sender: "user" as const, message: questionText }];
-    setChatHistory(newHistory);
-    setUserQuestion("");
-    setIsAiResponding(true);
-
-    // Simulate guided tutor response matching the current lesson constraints
-    setTimeout(() => {
-      // Find matching smart question
-      const foundMatch = content.smartQuestions.find(
-        sq => sq.q.toLowerCase().includes(questionText.toLowerCase()) || questionText.toLowerCase().includes(sq.q.toLowerCase())
-      );
-
-      let reply = "";
-      if (foundMatch) {
-        reply = foundMatch.a;
-      } else {
-        reply = `پەیوەست بە وانەی "${activeLesson.title}"، ${profile.name}ی خۆشەویست؛ پێویستە هەمیشە تەرکیز بخەینە سەر ${activeNode.title}. لەم بابەتەدا، جێبەجێکردنی دروستی بنەما و یاساکان گەرەنتی نمرەی بەرزە لە تاقیکردنەوەی کۆتایی. ئایا دەتەوێت زانیاری زیاترت پێبدەم لەسەر یەکێک لەم خاڵانە؟`;
-      }
-
-      setChatHistory([...newHistory, { sender: "ai" as const, message: reply }]);
-      setIsAiResponding(false);
-    }, 800);
   };
 
   // Handle Practice Quiz option click
@@ -707,69 +672,11 @@ export function StudyWorkspaceScreen({ profile, onNavigate }: StudyWorkspaceScre
 
           {/* TAB 3: ASK */}
           {activeAction === "ask" && (
-            <div className="space-y-4">
-              {/* Question list overlay if history empty */}
-              {chatHistory.length === 0 && (
-                <div className="space-y-2.5">
-                  <p className="font-sans text-xs text-slate-400">وەڵامی خێرا بۆ ئەو پرسیارانەی لە مێشکت دان:</p>
-                  <div className="space-y-1.5">
-                    {content.smartQuestions.map((sq, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => handleAskQuestion(sq.q)}
-                        className="w-full p-2.5 rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 text-right font-sans text-xs text-slate-700 flex items-center justify-between hover:border-slate-200 transition-all cursor-pointer min-h-[48px]"
-                      >
-                        <span className="truncate pr-1">{sq.q}</span>
-                        <ChevronLeft className="w-4 h-4 text-slate-400 shrink-0" />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Chat Scroll area */}
-              {chatHistory.length > 0 && (
-                <div className="space-y-3 max-h-[160px] overflow-y-auto pr-1">
-                  {chatHistory.map((item, idx) => (
-                    <div
-                      key={idx}
-                      className={`flex gap-2.5 ${item.sender === "user" ? "justify-start" : "justify-end"}`}
-                    >
-                      <div
-                        className={`p-3 rounded-2xl max-w-[85%] text-xs font-sans leading-relaxed ${
-                          item.sender === "user"
-                            ? "bg-blue-600 text-white rounded-tr-none"
-                            : "bg-slate-50 border border-slate-100 text-slate-700 rounded-tl-none"
-                        }`}
-                      >
-                        {item.message}
-                      </div>
-                    </div>
-                  ))}
-                  {isAiResponding && (
-                    <div className="text-left font-sans text-[10px] text-slate-400 italic">زانا لە کاتی بیرکردنەوە و وەڵامدانەوەدایە...</div>
-                  )}
-                </div>
-              )}
-
-              {/* Input bar */}
-              <div className="flex gap-2 border-t border-slate-50 pt-3">
-                <input
-                  type="text"
-                  value={userQuestion}
-                  onChange={(e) => setUserQuestion(e.target.value)}
-                  placeholder="لێرە هەر پرسیارێکی زانستیت هەیە بنووسە..."
-                  onKeyDown={(e) => e.key === "Enter" && handleAskQuestion()}
-                  className="flex-1 px-3.5 py-2 border border-slate-200 rounded-xl font-sans text-xs focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 text-right min-h-[44px]"
-                />
-                <button
-                  onClick={() => handleAskQuestion()}
-                  className="w-10 h-10 bg-blue-600 hover:bg-blue-700 text-white rounded-xl flex items-center justify-center shrink-0 cursor-pointer"
-                >
-                  <Send className="w-4 h-4 rotate-180" />
-                </button>
-              </div>
-            </div>
+            <AskPanel
+              studentProfile={profile}
+              curriculumSnapshot={cipSnapshot}
+              sessionSnapshot={lseSnapshot}
+            />
           )}
 
           {/* TAB 4: SUMMARY */}

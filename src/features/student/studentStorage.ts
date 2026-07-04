@@ -5,33 +5,52 @@ const PROFILE_KEY = "zana:student-profile";
 
 const isBrowser = typeof window !== "undefined" && typeof window.localStorage !== "undefined";
 
-export function migrateStudentProfile(raw: any): StudentProfile {
+interface LegacyProfileInput {
+  id?: string;
+  name?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  activeSubject?: string;
+  subject?: string;
+  onboardingCompleted?: boolean;
+  onboarded?: boolean;
+  grade?: string;
+  stream?: string;
+  level?: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+export function migrateStudentProfile(raw: unknown): StudentProfile {
   const now = new Date().toISOString();
+  const rawObj = isRecord(raw) ? (raw as LegacyProfileInput) : {};
   
   // 1. Preserve or fallback basic fields
-  const id = typeof raw?.id === "string" ? raw.id : "stud_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now();
-  const name = typeof raw?.name === "string" ? raw.name.trim() : "";
-  const createdAt = typeof raw?.createdAt === "string" ? raw.createdAt : now;
-  const updatedAt = typeof raw?.updatedAt === "string" ? raw.updatedAt : now;
+  const id = typeof rawObj.id === "string" ? rawObj.id : "stud_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now();
+  const name = typeof rawObj.name === "string" ? rawObj.name.trim() : "";
+  const createdAt = typeof rawObj.createdAt === "string" ? rawObj.createdAt : now;
+  const updatedAt = typeof rawObj.updatedAt === "string" ? rawObj.updatedAt : now;
 
   // 2. Migration rules for subject
-  let rawSubject = raw?.activeSubject;
+  let rawSubject = rawObj.activeSubject;
   if (rawSubject === undefined || rawSubject === null) {
-    rawSubject = raw?.subject;
+    rawSubject = rawObj.subject;
   }
   const activeSubject = getValidatedSubject(rawSubject);
 
   // 3. Migration rules for onboarded
-  let rawOnboarded = raw?.onboardingCompleted;
+  let rawOnboarded = rawObj.onboardingCompleted;
   if (rawOnboarded === undefined || rawOnboarded === null) {
-    rawOnboarded = raw?.onboarded;
+    rawOnboarded = rawObj.onboarded;
   }
   const onboardingCompleted = typeof rawOnboarded === "boolean" ? rawOnboarded : false;
 
   // 4. Validate other fields
-  const grade = getValidatedGrade(raw?.grade);
-  const stream = getValidatedStream(raw?.stream);
-  const level = getValidatedLevel(raw?.level);
+  const grade = getValidatedGrade(rawObj.grade);
+  const stream = getValidatedStream(rawObj.stream);
+  const level = getValidatedLevel(rawObj.level);
 
   const migrated: StudentProfile = {
     id,

@@ -9,10 +9,34 @@ dotenv.config();
 
 const PORT = 3000;
 
-// Lazy initialization of the Gemini API Client
-let aiClient: any = null;
+// Safe error message helper to avoid exposing raw provider error messages
+function getSafeErrorMessage(err: unknown, defaultMsg: string): string {
+  if (err && typeof err === "object" && "message" in err) {
+    const msg = String((err as { message: unknown }).message);
+    if (
+      msg.includes("API_KEY") ||
+      msg.includes("key") ||
+      msg.includes("GoogleGenAI") ||
+      msg.includes("grecaptcha") ||
+      msg.includes("FetchError") ||
+      msg.includes("API key")
+    ) {
+      return "پەیوەندی بە زانا نەکرا. تکایە دڵنیابە لە هێڵی ئینتەرنێت یان ڕێکخستنی کلیلی زانا و دووبارە هەوڵ بدەرەوە.";
+    }
+    return msg;
+  }
+  return defaultMsg;
+}
 
-function getAiClient() {
+interface ChatMessageInput {
+  sender: string;
+  text: string;
+}
+
+// Lazy initialization of the Gemini API Client
+let aiClient: GoogleGenAI | null = null;
+
+function getAiClient(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error("کلیل (GEMINI_API_KEY) بۆ سیستەمی زیرەکی زانا بەردەست نییە لە ڕێکخستنەکاندا. تکایە كلیلەکە لە پانێڵی Secrets دابنێ.");
@@ -53,7 +77,7 @@ async function startServer() {
       });
 
       // Map chat history to Gemini API format
-      const contents = (history || []).map((msg: any) => ({
+      const contents = (history || []).map((msg: ChatMessageInput) => ({
         role: msg.sender === "user" ? "user" : "model",
         parts: [{ text: msg.text }],
       }));
@@ -82,9 +106,9 @@ async function startServer() {
         text: replyText,
         isEducational,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error in /api/chat:", err);
-      res.status(500).json({ error: err.message || "کێشەیەک ڕوویدا لە کاتی وەرگرتنی وەڵامی زانا." });
+      res.status(500).json({ error: getSafeErrorMessage(err, "کێشەیەک ڕوویدا لە کاتی وەرگرتنی وەڵامی زانا.") });
     }
   });
 
@@ -183,9 +207,9 @@ ${historySummary.join("\n")}
         completed: isLast,
         finalLevel,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error in /api/assessment:", err);
-      res.status(500).json({ error: err.message || "کێشەیەک ڕوویدا لە کاتی تاقیکردنەوەدا." });
+      res.status(500).json({ error: getSafeErrorMessage(err, "کێشەیەک ڕوویدا لە کاتی تاقیکردنەوەدا.") });
     }
   });
 
@@ -241,9 +265,66 @@ ${historySummary.join("\n")}
       res.json({
         recommendation: responseJson.recommendation || "مامۆستا زانا زۆر هیوای سەرکەوتن بۆ قوتابی دەکات. هەمیشە هاندەری بن لە پۆلدا.",
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error in /api/report:", err);
-      res.status(500).json({ error: err.message || "ڕاپۆرت دروستکردن سەرکەوتوو نەبوو." });
+      res.status(500).json({ error: getSafeErrorMessage(err, "ڕاپۆرت دروستکردن سەرکەوتوو نەبوو.") });
+    }
+  });
+
+  // 3.5. STUDY ASK ENDPOINT
+  app.post("/api/study/ask", async (req: Request, res: Response) => {
+    try {
+      const { message, history, context } = req.body;
+
+      if (!message || !context) {
+        return res.status(400).json({ error: "داواکارییەکە کەم و کوڕی تێدایە." });
+      }
+
+      const ai = getAiClient();
+      const systemInstruction = buildSystemPrompt({
+        studentName: context.studentName,
+        grade: context.grade,
+        subject: context.subject,
+        level: context.level,
+        mode: "ask",
+      });
+
+      // Map chat history to Gemini API format
+      const contents = (history || []).map((msg: { role: "student" | "zana"; text: string }) => ({
+        role: msg.role === "student" ? "user" : "model",
+        parts: [{ text: msg.text }],
+      }));
+
+      // Append the latest user query
+      contents.push({
+        role: "user",
+        parts: [{ text: message }],
+      });
+
+      // Get model name from process.env.GEMINI_PRIMARY_MODEL or fallback to gemini-2.5-flash
+      const modelName = process.env.GEMINI_PRIMARY_MODEL || "gemini-2.5-flash";
+
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents,
+        config: {
+          systemInstruction,
+          temperature: 0.5,
+        },
+      });
+
+      const replyText = response.text || "ببوورە، من نەمتوانی لە پرسیارەکەت تێبگەم. تکایە دووبارە پرسیارەکەت بنووسەوە.";
+      
+      // Determine if educational or unrelated topic redirect
+      const isEducational = !replyText.includes("بوارە وانەییەکانی من نییە") && !replyText.includes("دەرەوەی بوارە وانەییەکانی منە");
+
+      res.json({
+        text: replyText,
+        isEducational,
+      });
+    } catch (err: unknown) {
+      console.error("Error in /api/study/ask:", err);
+      res.status(500).json({ error: getSafeErrorMessage(err, "کێشەیەک ڕوویدا لە کاتی وەرگرتنی وەڵامی زانا.") });
     }
   });
 
