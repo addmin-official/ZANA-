@@ -83,7 +83,7 @@ export function ProfileScreen({ profile, onUpdateProfile, onResetAll }: ProfileS
             </label>
             <select
               value={grade}
-              onChange={(e) => setGrade(e.target.value)}
+              onChange={(e) => setGrade(e.target.value as any)}
               className="w-full font-sans text-sm min-h-[48px] px-3 rounded-xl border border-slate-200 bg-white text-right"
               style={{ direction: "rtl" }}
             >
@@ -102,7 +102,7 @@ export function ProfileScreen({ profile, onUpdateProfile, onResetAll }: ProfileS
             </label>
             <select
               value={subject}
-              onChange={(e) => setSubject(e.target.value)}
+              onChange={(e) => setSubject(e.target.value as any)}
               className="w-full font-sans text-sm min-h-[48px] px-3 rounded-xl border border-slate-200 bg-white text-right"
               style={{ direction: "rtl" }}
             >
@@ -121,7 +121,7 @@ export function ProfileScreen({ profile, onUpdateProfile, onResetAll }: ProfileS
             </label>
             <select
               value={level}
-              onChange={(e) => setLevel(e.target.value)}
+              onChange={(e) => setLevel(e.target.value as any)}
               className="w-full font-sans text-sm min-h-[48px] px-3 rounded-xl border border-slate-200 bg-white text-right"
               style={{ direction: "rtl" }}
             >

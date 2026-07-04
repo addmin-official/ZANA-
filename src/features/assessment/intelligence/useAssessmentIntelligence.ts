@@ -73,8 +73,8 @@ export function useAssessmentIntelligence(
     (mode: AssessmentMode) => {
       setError(null);
       try {
-        const activeNode = lseSnapshot?.activeNode;
-        const activeLesson = lseSnapshot?.activeLesson;
+        const activeNode = (lseSnapshot as any)?.activeNode;
+        const activeLesson = (lseSnapshot as any)?.activeLesson;
 
         const newSession = AssessmentStateEngine.startAssessment({
           studentId,
@@ -247,16 +247,16 @@ export function useAssessmentIntelligence(
 
       // Map concept IDs to readable titles using CIP snapshot
       const weakAreas = session.weakConceptIds.map(id => {
-        if (cipSnapshot && cipSnapshot.graph && cipSnapshot.graph.nodes) {
-          const node = cipSnapshot.graph.nodes.find((n: any) => n.id === id);
+        if (cipSnapshot && (cipSnapshot as any).graph && (cipSnapshot as any).graph.nodes) {
+          const node = (cipSnapshot as any).graph.nodes.find((n: any) => n.id === id);
           if (node) return node.title;
         }
         return "بەهێزکردنی لایەنەکان";
       });
 
       const strongAreas = session.strongConceptIds.map(id => {
-        if (cipSnapshot && cipSnapshot.graph && cipSnapshot.graph.nodes) {
-          const node = cipSnapshot.graph.nodes.find((n: any) => n.id === id);
+        if (cipSnapshot && (cipSnapshot as any).graph && (cipSnapshot as any).graph.nodes) {
+          const node = (cipSnapshot as any).graph.nodes.find((n: any) => n.id === id);
           if (node) return node.title;
         }
         return "خاڵە متمانەبەخشەکان";

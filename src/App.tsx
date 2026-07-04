@@ -91,7 +91,7 @@ export default function App() {
           />
         );
       default:
-        return <DailySparkScreen profile={profile} onNavigate={setActiveTab} onStartAssessment={handleStartAssessment} />;
+        return <DailySparkScreen profile={profile} onNavigate={(tab) => setActiveTab(tab as any)} onStartAssessment={handleStartAssessment} />;
     }
   };
 

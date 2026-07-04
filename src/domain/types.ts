@@ -19,7 +19,11 @@ export type DomainEventType =
   | "GOAL_CREATED"
   | "GOAL_COMPLETED"
   | "REPORT_GENERATED"
-  | "DAILY_SPARK_TRIGGERED";
+  | "DAILY_SPARK_TRIGGERED"
+  | "VISION_QUESTION_SUBMITTED"
+  | "VISION_TEXT_EXTRACTED"
+  | "VISION_EXPLANATION_COMPLETED"
+  | "VISION_PROCESSING_FAILED";
 
 export type DomainEventSource =
   | "student-portal"
@@ -176,6 +180,36 @@ export interface DailySparkTriggeredPayload {
   type: string;
 }
 
+export interface VisionQuestionSubmittedPayload {
+  studentId: string;
+  subject: string;
+  sessionId?: string;
+  mode: string;
+  imageMimeType: string;
+  imageSizeBytes: number;
+}
+
+export interface VisionTextExtractedPayload {
+  studentId: string;
+  subject: string;
+  sessionId?: string;
+  confidence: "low" | "medium" | "high";
+}
+
+export interface VisionExplanationCompletedPayload {
+  studentId: string;
+  subject: string;
+  sessionId?: string;
+  mode: string;
+}
+
+export interface VisionProcessingFailedPayload {
+  studentId: string;
+  subject: string;
+  sessionId?: string;
+  error: string;
+}
+
 // Map the specific payload to its event types
 export type DomainEventMap = {
   STUDENT_CREATED: BaseDomainEvent<StudentCreatedPayload>;
@@ -199,6 +233,10 @@ export type DomainEventMap = {
   GOAL_COMPLETED: BaseDomainEvent<GoalCompletedPayload>;
   REPORT_GENERATED: BaseDomainEvent<ReportGeneratedPayload>;
   DAILY_SPARK_TRIGGERED: BaseDomainEvent<DailySparkTriggeredPayload>;
+  VISION_QUESTION_SUBMITTED: BaseDomainEvent<VisionQuestionSubmittedPayload>;
+  VISION_TEXT_EXTRACTED: BaseDomainEvent<VisionTextExtractedPayload>;
+  VISION_EXPLANATION_COMPLETED: BaseDomainEvent<VisionExplanationCompletedPayload>;
+  VISION_PROCESSING_FAILED: BaseDomainEvent<VisionProcessingFailedPayload>;
 };
 
 // Generic Domain Event representation

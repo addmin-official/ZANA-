@@ -11,6 +11,7 @@ import { ZanaButton } from "../components/ZanaButton.tsx";
 import { ExplainPanel } from "../features/study/explain/index.ts";
 import { PracticePanel } from "../features/study/practice/index.ts";
 import { AskPanel } from "../features/study/ask/index.ts";
+import { VisionCapturePanel, VisionQuestionEngine } from "../features/vision/index.ts";
 import { useAdaptiveLearning } from "../features/adaptive/useAdaptiveLearning.ts";
 import {
   ArrowLeft,
@@ -28,7 +29,8 @@ import {
   AlertCircle,
   Send,
   Check,
-  Brain
+  Brain,
+  Camera
 } from "lucide-react";
 
 // =========================================================================
@@ -419,7 +421,7 @@ export function StudyWorkspaceScreen({ profile, onNavigate }: StudyWorkspaceScre
   const content: WorkspaceContent = WORKSPACE_CONTENT_DB[currentNodeId] || generateFallbackContent(activeNode as CurriculumNode);
 
   // States
-  const [activeAction, setActiveAction] = useState<"explain" | "practice" | "ask" | "summary" | "formula">("explain");
+  const [activeAction, setActiveAction] = useState<"explain" | "practice" | "ask" | "summary" | "formula" | "vision">("explain");
   const [explainStepIndex, setExplainStepIndex] = useState(0);
   
   // Practice states
@@ -452,6 +454,7 @@ export function StudyWorkspaceScreen({ profile, onNavigate }: StudyWorkspaceScre
     { id: "explain" as const, label: "ڕوونکردنەوە", icon: Sparkles },
     { id: "practice" as const, label: "ڕاهێنان", icon: Award },
     { id: "ask" as const, label: "پرسیارکردن", icon: HelpCircle },
+    { id: "vision" as const, label: "وێنەی پرسیار", icon: Camera },
     { id: "summary" as const, label: "پوختە", icon: FileText },
     { id: "formula" as const, label: "یاساکان", icon: Brain }
   ];
@@ -697,6 +700,7 @@ export function StudyWorkspaceScreen({ profile, onNavigate }: StudyWorkspaceScre
                 {activeAction === "explain" && "ڕوونکردنەوەی فێربوونی زیرەک"}
                 {activeAction === "practice" && "سەکۆی ڕاهێنانی بەهێزکەر"}
                 {activeAction === "ask" && "بەرەی وەڵامدانەوەی خێرا"}
+                {activeAction === "vision" && "شیکارکردنی پرسیار بە وێنە"}
                 {activeAction === "summary" && "تەوەر و خاڵە سەرەکییەکان"}
                 {activeAction === "formula" && "هاوکێشە و یاسا سەرەکییەکان"}
               </span>
@@ -734,6 +738,13 @@ export function StudyWorkspaceScreen({ profile, onNavigate }: StudyWorkspaceScre
               studentProfile={profile}
               curriculumSnapshot={cipSnapshot}
               sessionSnapshot={lseSnapshot}
+            />
+          )}
+
+          {/* TAB 3.5: VISION */}
+          {activeAction === "vision" && (
+            <VisionCapturePanel
+              context={VisionQuestionEngine.buildStudyContext(profile, cipSnapshot, lseSnapshot)}
             />
           )}
 

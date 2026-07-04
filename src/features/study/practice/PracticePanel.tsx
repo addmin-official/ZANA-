@@ -140,7 +140,7 @@ export function PracticePanel({
 
       {/* 2. QUESTIONS WORKSPACE */}
       <motion.div
-        variants={containerVariants}
+        variants={containerVariants as any}
         initial="hidden"
         animate="show"
         className="space-y-4"
@@ -153,7 +153,7 @@ export function PracticePanel({
           return (
             <motion.div
               key={question.id}
-              variants={itemVariants}
+              variants={itemVariants as any}
               className={`bg-white border rounded-2xl p-4 shadow-2xs space-y-3.5 transition-all duration-300 ${
                 isAnswered
                   ? isCorrect

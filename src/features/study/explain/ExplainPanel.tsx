@@ -231,7 +231,7 @@ export function ExplainPanel({
 
       {/* 2. PEDAGOGICAL EXPANDABLE WORKSPACE */}
       <motion.div
-        variants={containerVariants}
+        variants={containerVariants as any}
         initial="hidden"
         animate="show"
         className="space-y-3"
@@ -244,7 +244,7 @@ export function ExplainPanel({
           return (
             <motion.div
               key={section.id}
-              variants={itemVariants}
+              variants={itemVariants as any}
               className={`border rounded-2xl overflow-hidden transition-all duration-300 shadow-xs ${blockStyles}`}
             >
               {/* Card Header */}

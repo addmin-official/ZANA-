@@ -4,10 +4,17 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import { buildSystemPrompt } from "./src/ai/buildSystemPrompt.ts";
+import multer from "multer";
 
 dotenv.config();
 
 const PORT = 3000;
+
+// Setup memory storage for safe uploads up to 5MB
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
 
 // Safe error message helper to avoid exposing raw provider error messages
 function getSafeErrorMessage(err: unknown, defaultMsg: string): string {
@@ -325,6 +332,127 @@ ${historySummary.join("\n")}
     } catch (err: unknown) {
       console.error("Error in /api/study/ask:", err);
       res.status(500).json({ error: getSafeErrorMessage(err, "کێشەیەک ڕوویدا لە کاتی وەرگرتنی وەڵامی زانا.") });
+    }
+  });
+
+  // 3.6. STUDY VISION ENDPOINT
+  // TODO: Implement rate limiting for vision uploads here when a rate limiter is available
+  app.post("/api/study/vision", upload.single("image"), async (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "هیچ وێنەیەک ڕەوانە نەکراوە." });
+      }
+
+      const mode = req.body.mode || "explain";
+      const contextStr = req.body.context;
+      const editedText = req.body.editedText;
+
+      if (!contextStr) {
+        return res.status(400).json({ error: "زانیارییەکان تەواو نین بۆ شیکارکردنی وێنەکە." });
+      }
+
+      const context = JSON.parse(contextStr);
+
+      const ai = getAiClient();
+      const systemInstruction = buildSystemPrompt({
+        studentName: context.studentName,
+        grade: context.grade,
+        subject: context.subject,
+        level: context.level,
+        mode: "ask",
+      });
+
+      // Construct pedagogical instructions based on the requested mode
+      let modeInstructions = "";
+      if (mode === "extract_only") {
+        modeInstructions = "تەنها دەقی ناو وێنەکە بە تەواوی و بە ڕوونی دەربهێنە بەبێ هیچ ڕوونکردنەوەیەک یان وەڵامدانەوەیەک.";
+      } else if (mode === "hint") {
+        modeInstructions = "شیکاری تەواوی پرسیارەکە مەکە. تەنها ڕێنمایی زۆر سەرەکی، سەرەداو یان ڕێگای گونجاو پێشکەش بکە بە شێوازی سوقراتی میهرەبان بۆ یارمەتیدانی قوتابی تا خۆی بگاتە وەڵام.";
+      } else if (mode === "step_by_step") {
+        modeInstructions = "وردترین شیکاری هەنگاو بە هەنگاوی لۆجیکی پێشکەش بکە بۆ شیکارکردنی پرسیارەکە لە پڕۆگرامەکەدا. هەر هەنگاوێک بە ڕوونی ڕوون بکەرەوە.";
+      } else if (mode === "formula") {
+        modeInstructions = "هەموو یاساکان، تیۆرمەکان، و هاوکێشە بیرکاریی یان فیزیاییە سەرەکییەکان کە پێویستن بۆ شیکاری ئەم جۆرە پرسیارە دەستنیشان بکە و ڕوونیان بکەرەوە.";
+      } else {
+        modeInstructions = "وەڵامی فێرکاری و ڕوونکردنەوەی تەواوی چەمکەکە پێشکەش بکە. ئەگەر پرسیارەکە تاقیکردنەوە یان ڕاهێنان دەردەکەوێت، پێش پێشکەشکردنی ئەنجام یان وەڵامی کۆتایی، سەرەتا پێویستە شێواز و مێتۆدی شیکارەکە بە تەواوی ڕوون بکەیتەوە.";
+      }
+
+      const userInstructionsPrompt = `
+تۆ یاریدەدەرێکی فێربوونی زیرەکی خوێندکارانی کوردستانیت بە ناوی 'زانا'.
+وێنەیەک هاوپێچ کراوە لە لایەن قوتابی ${context.studentName || "قوتابی"} لە پۆلی ${context.grade} لە بابەتی ${context.subject}.
+وانەی چالاکی ئێستا: ${context.lessonTitle || "چەمکەکانی خوێندن"}.
+
+شێوازی داواکراو: ${mode}
+ڕێنمایی گشتی بۆ وەڵامدانەوە:
+${modeInstructions}
+
+ئەرکەکانت:
+١. دەقی وێنەکە دەربهێنە بە وردی. ئەگەر دەقەکە ناڕوونە، دڵنیایی بە نزم بنووسە. هیچ نووسین یان هاوکێشەیەک لە خۆتەوە دامەهێنە ئەگەر بە ڕوونی نەخوێندرایەوە.
+٢. پشکنین بکە ئایا بابەتەکە پەیوەندی بە بابەتی سەرەکی خوێندنی قوتابی (بابەتی: ${context.subject}) هەیە یان نا. ئەگەر پرسیارەکە هی بابەتێکی جیاوازە (بۆ نموونە پرسیارەکە مێژووە بەڵام بابەتی ئێستا بیرکارییە)، هۆشدارییەکی میهرەبانانە بە کوردی سۆرانی لە لیستی 'warnings' بنووسە: 'ئەم پرسیارە وەک بابەتێکی دەرەوەی ${context.subject === "math" ? "بیرکاری" : context.subject === "physics" ? "فیزیا" : context.subject === "chemistry" ? "کیمیا" : "ئینگلیزی"} دەردەکەوێت. ئایا دڵنیایت دەتەوێت بەردەوام بیت؟'.
+٣. هەرگیز ئیدیعای ئەوە مەکە کە ئەم پرسیارە پرسیارێکی فەرمی یان نیشتمانییە، مەگەر بە بەڵگە و دەقی ڕوون تێیدا نووسرابێت.
+٤. ئەگەر قوتابی خۆی دەستکاری دەقەکەی کردبوو (${editedText ? `دەقی نوێی دەستکاریکراو لەلایەن قوتابی: ${editedText}` : "قوتابی دەستکاری نەکردووە"}), ئەوا لە شیکار و ڕوونکردنەوەکەتدا زیاتر پشت بەو دەقە دەستکاریکراوە ببەستە.
+٥. وەڵامەکەت بە زمانی کوردی سۆرانیی فەرمی، زۆر پاراو و دڵسۆزانە پێشکەش بکە بە فۆرماتی Markdown.
+
+پێویستە ئەنجامی وەڵامەکەت تەنها بە فۆرماتی JSON و بەم شێوازەی خوارەوە بێت:
+{
+  "extractedText": "دەقی دەرهێنراوی وێنەکە لێرە بنووسە",
+  "detectedSubject": "بابەتی دۆزراوە (بیرکاری/فیزیا/کیمیا/ئینگلیزی/یان هیتر)",
+  "responseText": "ڕوونکردنەوەی زانا بەپێی شێوازی داواکراو و بە فۆرماتی Markdown",
+  "confidence": "high یان medium یان low",
+  "warnings": ["هۆشدارییەکان ئەگەر هەبن لێرە بنووسە بە کوردی سۆرانی"]
+}
+`;
+
+      const visionModel = process.env.GEMINI_VISION_MODEL || "gemini-2.5-flash";
+
+      const response = await ai.models.generateContent({
+        model: visionModel,
+        contents: [
+          {
+            inlineData: {
+              data: req.file.buffer.toString("base64"),
+              mimeType: req.file.mimetype,
+            },
+          },
+          userInstructionsPrompt,
+        ],
+        config: {
+          systemInstruction,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              extractedText: {
+                type: Type.STRING,
+                description: "Strictly extracted text of the question or formula from the image.",
+              },
+              detectedSubject: {
+                type: Type.STRING,
+                description: "The primary academic subject, e.g., 'math', 'physics', 'chemistry', 'english' or 'other'.",
+              },
+              responseText: {
+                type: Type.STRING,
+                description: "The educational explanation/hints formatted in rich markdown.",
+              },
+              confidence: {
+                type: Type.STRING,
+                description: "The visual extraction confidence level, must be high, medium, or low.",
+              },
+              warnings: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: "Any warning messages in formal Kurdish Sorani (e.g. if subject mismatch).",
+              },
+            },
+            required: ["extractedText", "confidence", "warnings"],
+          },
+        },
+      });
+
+      const responseJson = JSON.parse(response.text || "{}");
+      res.json(responseJson);
+    } catch (err: unknown) {
+      console.error("Error in /api/study/vision:", err);
+      res.status(500).json({ error: getSafeErrorMessage(err, "کێشەیەک لە کاتی خوێندنەوەی وێنەکەدا ڕوویدا.") });
     }
   });
 
