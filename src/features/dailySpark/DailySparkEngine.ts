@@ -212,8 +212,24 @@ export class DailySparkEngine {
       });
     }
 
-    // Sort candidates: High priority first, then medium, then low
+    // Sort candidates prioritizing: 1. review_weakness, 2. practice_concept (practice_more), 3. continue_learning, then others
     candidateCards.sort((a, b) => {
+      const typePriority: Record<string, number> = {
+        "review_weakness": 10,
+        "practice_concept": 8,
+        "continue_learning": 6,
+        "complete_goal": 4,
+        "start_assessment": 2,
+        "rest_reminder": 1,
+      };
+      
+      const priorityA = typePriority[a.type] || 0;
+      const priorityB = typePriority[b.type] || 0;
+      
+      if (priorityB !== priorityA) {
+        return priorityB - priorityA;
+      }
+      
       const priorityWeights = { high: 3, medium: 2, low: 1 };
       return priorityWeights[b.priority] - priorityWeights[a.priority];
     });

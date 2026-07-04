@@ -11,6 +11,7 @@ import { ZanaButton } from "../components/ZanaButton.tsx";
 import { ExplainPanel } from "../features/study/explain/index.ts";
 import { PracticePanel } from "../features/study/practice/index.ts";
 import { AskPanel } from "../features/study/ask/index.ts";
+import { useAdaptiveLearning } from "../features/adaptive/useAdaptiveLearning.ts";
 import {
   ArrowLeft,
   BookOpen,
@@ -379,6 +380,9 @@ export function StudyWorkspaceScreen({ profile, onNavigate }: StudyWorkspaceScre
     );
   });
 
+  // Adaptive Learning Loop hook
+  const { lastDecision } = useAdaptiveLearning(profile);
+
   const session = lseSnapshot.currentSession;
   const currentNodeId = session?.currentNodeId || "12_sci_math_con1";
 
@@ -627,6 +631,60 @@ export function StudyWorkspaceScreen({ profile, onNavigate }: StudyWorkspaceScre
           ))}
         </div>
       </div>
+
+      {/* 3.5. ADAPTIVE RECOMMENDATION CARD */}
+      {lastDecision && (
+        <ZanaCard
+          className="border-indigo-100 bg-indigo-50/40 relative overflow-hidden"
+          header={
+            <div className="flex items-center gap-2 w-full justify-between">
+              <div className="flex items-center gap-2">
+                <Brain className="w-4 h-4 text-indigo-600 shrink-0 animate-pulse" />
+                <span className="font-sans text-xs font-black text-indigo-900">ڕێڕەوی فێربوونی زیرەک</span>
+              </div>
+              <span className="bg-indigo-100 text-indigo-800 text-[8px] font-sans px-2 py-0.5 rounded-full font-bold">پێشنیارکراو</span>
+            </div>
+          }
+        >
+          <div className="text-right space-y-3">
+            <div>
+              <h4 className="font-sans font-black text-sm text-indigo-950">
+                {lastDecision.action === "review_weakness" && "پێداچوونەوە بکە"}
+                {lastDecision.action === "practice_more" && "ڕاهێنانی زیاتر بکە"}
+                {lastDecision.action === "advance_next_lesson" && "بەردەوام بە وانەی داهاتوو"}
+                {lastDecision.action === "continue_learning" && "بەردەوام بە لەسەر خوێندن"}
+              </h4>
+              <p className="font-sans text-xs text-slate-600 mt-1 leading-relaxed">
+                {lastDecision.message}
+              </p>
+            </div>
+
+            <div className="flex items-center justify-between border-t border-indigo-100/60 pt-2.5">
+              <span className="font-sans text-[10px] text-indigo-600 font-bold flex items-center gap-1">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>پێشنیاری دەستبەجێ بەپێی ئاستی دوا هەڵسەنگاندنت</span>
+              </span>
+
+              <button
+                onClick={() => {
+                  if (lastDecision.targetMode) {
+                    if (lastDecision.targetMode === "review") {
+                      setActiveAction("explain");
+                    } else if (lastDecision.targetMode === "practice") {
+                      setActiveAction("practice");
+                    } else {
+                      setActiveAction("explain");
+                    }
+                  }
+                }}
+                className="bg-indigo-600 text-white font-sans text-[10px] font-bold px-3 py-1.5 rounded-xl hover:bg-indigo-700 transition-colors shadow-xs cursor-pointer"
+              >
+                جێبەجێکردنی ڕێنمایی
+              </button>
+            </div>
+          </div>
+        </ZanaCard>
+      )}
 
       {/* 4. AI GUIDED TEACHING AREA */}
       <ZanaCard
