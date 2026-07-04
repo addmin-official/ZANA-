@@ -364,7 +364,7 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
                   let desc = "";
                   if (val === "beginner") desc = "پێویستم بە کات و ڕوونکردنەوەی بنەڕەتی زیاتر هەیە.";
                   if (val === "intermediate") desc = "تێگەیشتنم مامناوەندە، تەنها دەمەوێت لێهاتووتر بم.";
-                  if (val === "advanced") desc = "ئاستم بەرزە و ئامادەم بۆ شیکاری پرسیاری وزاری سەخت.";
+                  if (val === "advanced") desc = "ئاستم بەرزە و ئامادەم بۆ شیکاری پرسیاری وەزاری سەخت.";
 
                   return (
                     <button

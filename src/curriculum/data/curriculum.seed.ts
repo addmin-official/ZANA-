@@ -166,7 +166,7 @@ export const CURRICULUM_SEED: CurriculumNode[] = [
     id: "12_sci_phys_sk1",
     type: "skill",
     title: "لێهاتوویی: ئەژمارکردنی هێز و تاودان",
-    description: "توانای چارەسەرکردنی پرسیاری وزاری سەبارەت بە هێزی ڕووت و تاودان",
+    description: "توانای چارەسەرکردنی پرسیاری وەزاری سەبارەت بە هێزی ڕووت و تاودان",
     grade: "12",
     stream: "scientific",
     subject: "physics",

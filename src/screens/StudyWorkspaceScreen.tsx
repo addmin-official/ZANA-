@@ -9,6 +9,7 @@ import { LearningMode } from "../session/types.ts";
 import { ZanaCard } from "../components/ZanaCard.tsx";
 import { ZanaButton } from "../components/ZanaButton.tsx";
 import { ExplainPanel } from "../features/study/explain/index.ts";
+import { PracticePanel } from "../features/study/practice/index.ts";
 import {
   ArrowLeft,
   BookOpen,
@@ -616,7 +617,7 @@ export function StudyWorkspaceScreen({ profile, onNavigate }: StudyWorkspaceScre
               <span className="text-slate-600">ئاستی {
                 activeNode.difficulty === "basic" || activeNode.difficulty === "introductory" ? "سەرەتا" :
                 activeNode.difficulty === "intermediate" ? "مامناوەند" :
-                activeNode.difficulty === "advanced" ? "پێشکەوتوو" : "ئاستی وزاری"
+                activeNode.difficulty === "advanced" ? "پێشکەوتوو" : "ئاستی وەزاری"
               }</span>
             </div>
           </div>
@@ -695,69 +696,13 @@ export function StudyWorkspaceScreen({ profile, onNavigate }: StudyWorkspaceScre
 
           {/* TAB 2: PRACTICE */}
           {activeAction === "practice" && (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <span className="inline-block bg-indigo-50 border border-indigo-100 rounded-md px-2 py-0.5 text-[9px] font-bold text-indigo-700 font-sans">پرسیاری پڕاکتیکی {currentQuizIdx + 1}</span>
-                <p className="font-sans text-xs font-bold text-slate-800 leading-normal">{currentQuiz.question}</p>
-              </div>
-
-              {/* Options Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 pt-1">
-                {currentQuiz.options.map((option, idx) => {
-                  const isSelected = selectedOption === idx;
-                  const isCorrect = idx === currentQuiz.correctIndex;
-                  
-                  let optionClass = "border-slate-100 hover:bg-slate-50 hover:border-slate-300";
-                  if (isAnswered) {
-                    if (isCorrect) {
-                      optionClass = "border-emerald-300 bg-emerald-50 text-emerald-800 font-bold";
-                    } else if (isSelected) {
-                      optionClass = "border-rose-300 bg-rose-50 text-rose-800";
-                    } else {
-                      optionClass = "border-slate-100 opacity-60";
-                    }
-                  }
-
-                  return (
-                    <button
-                      key={idx}
-                      disabled={isAnswered}
-                      onClick={() => handleOptionClick(idx)}
-                      className={`w-full p-3 rounded-xl border text-right font-sans text-xs transition-all flex items-center justify-between min-h-[48px] ${optionClass} ${!isAnswered ? "cursor-pointer" : "cursor-default"}`}
-                    >
-                      <span>{option}</span>
-                      {isAnswered && isCorrect && <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0 mr-2" />}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Explanation section */}
-              {isAnswered && (
-                <div className="bg-slate-50 border border-slate-100 p-3.5 rounded-xl text-right animate-fade-in">
-                  <div className="flex items-center gap-1.5 mb-1 text-slate-700">
-                    <AlertCircle className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                    <span className="font-sans text-[10px] font-black">شرۆڤەی مامۆستا زانا:</span>
-                  </div>
-                  <p className="font-sans text-xs text-slate-500 leading-relaxed">{currentQuiz.explanation}</p>
-                  
-                  {/* Next question trigger */}
-                  {content.practice.length > 1 && currentQuizIdx < content.practice.length - 1 && (
-                    <button
-                      onClick={() => {
-                        setCurrentQuizIdx(prev => prev + 1);
-                        setSelectedOption(null);
-                        setIsAnswered(false);
-                      }}
-                      className="mt-3.5 text-xs text-blue-600 font-sans font-bold hover:underline flex items-center gap-1 justify-end w-full cursor-pointer"
-                    >
-                      <span>تەقەلایەکی تر بکە</span>
-                      <ChevronLeft className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
+            <PracticePanel
+              studentProfile={profile}
+              curriculumSnapshot={cipSnapshot}
+              sessionSnapshot={lseSnapshot}
+              onNavigate={onNavigate}
+              onConceptCompleted={handleContinueLearning}
+            />
           )}
 
           {/* TAB 3: ASK */}

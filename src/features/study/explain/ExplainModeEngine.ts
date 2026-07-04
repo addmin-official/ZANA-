@@ -22,7 +22,7 @@ export function getDifficultyLabelKu(difficulty: string): string {
     case "advanced":
       return "پێشکەوتوو";
     case "exam_level":
-      return "ئاستی وزاری";
+      return "ئاستی وەزاری";
     default:
       return "مامناوەند";
   }
