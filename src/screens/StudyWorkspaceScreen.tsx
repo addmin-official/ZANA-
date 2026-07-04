@@ -8,6 +8,7 @@ import { CurriculumNode } from "../curriculum/types.ts";
 import { LearningMode } from "../session/types.ts";
 import { ZanaCard } from "../components/ZanaCard.tsx";
 import { ZanaButton } from "../components/ZanaButton.tsx";
+import { ExplainPanel } from "../features/study/explain/index.ts";
 import {
   ArrowLeft,
   BookOpen,
@@ -613,9 +614,9 @@ export function StudyWorkspaceScreen({ profile, onNavigate }: StudyWorkspaceScre
             <div className="flex items-center gap-1 bg-slate-50 border border-slate-100 rounded-lg px-2 py-0.5 text-[9px] font-sans">
               <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
               <span className="text-slate-600">ئاستی {
-                activeNode.difficulty === "basic" ? "سەرەتایی" :
-                activeNode.difficulty === "intermediate" ? "ناوەند" :
-                activeNode.difficulty === "advanced" ? "پێشکەوتوو" : "وزاری"
+                activeNode.difficulty === "basic" || activeNode.difficulty === "introductory" ? "سەرەتا" :
+                activeNode.difficulty === "intermediate" ? "مامناوەند" :
+                activeNode.difficulty === "advanced" ? "پێشکەوتوو" : "ئاستی وزاری"
               }</span>
             </div>
           </div>
@@ -683,38 +684,13 @@ export function StudyWorkspaceScreen({ profile, onNavigate }: StudyWorkspaceScre
         <div className="text-right space-y-4">
           {/* TAB 1: EXPLAIN */}
           {activeAction === "explain" && (
-            <div className="space-y-4">
-              <div className="bg-blue-50/30 border border-blue-50 p-4 rounded-xl space-y-1.5">
-                <h4 className="font-sans font-bold text-sm text-blue-800 flex items-center gap-1.5">
-                  <span className="w-5 h-5 rounded-md bg-blue-100 text-blue-700 flex items-center justify-center text-[11px] font-sans font-black">{explainStepIndex + 1}</span>
-                  {content.explainSteps[explainStepIndex]?.title}
-                </h4>
-                <p className="font-sans text-xs text-slate-600 leading-relaxed mt-2">
-                  {content.explainSteps[explainStepIndex]?.body}
-                </p>
-              </div>
-
-              {/* Steps control footer */}
-              <div className="flex items-center justify-between pt-1">
-                <span className="font-sans text-[10px] text-slate-400">هەنگاوی {explainStepIndex + 1} لە {content.explainSteps.length}</span>
-                <div className="flex gap-1.5">
-                  <button
-                    disabled={explainStepIndex === 0}
-                    onClick={() => setExplainStepIndex(prev => prev - 1)}
-                    className="p-1.5 border border-slate-100 rounded-lg hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-40"
-                  >
-                    <ChevronLeft className="w-4 h-4 rotate-180" />
-                  </button>
-                  <button
-                    disabled={explainStepIndex === content.explainSteps.length - 1}
-                    onClick={() => setExplainStepIndex(prev => prev + 1)}
-                    className="px-3.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-sans font-bold transition-all cursor-pointer disabled:opacity-40"
-                  >
-                    هەنگاوی دواتر
-                  </button>
-                </div>
-              </div>
-            </div>
+            <ExplainPanel
+              studentProfile={profile}
+              curriculumSnapshot={cipSnapshot}
+              sessionSnapshot={lseSnapshot}
+              onNavigate={onNavigate}
+              onNextStep={() => setActiveAction("practice")}
+            />
           )}
 
           {/* TAB 2: PRACTICE */}
