@@ -116,10 +116,13 @@ export function logMinimalError(route: string, category: SafeErrorCategory, erro
   }
 }
 
-function getSafeErrorMessage(err: unknown, defaultMsg?: string): string {
-  const category = classifyError(err);
-  logMinimalError("API Endpoint", category, err);
-  return getClientSafeErrorMessage(category);
+export class UploadValidationError extends Error {
+  readonly code: "UNSUPPORTED_MIME_TYPE" = "UNSUPPORTED_MIME_TYPE";
+
+  constructor(message: string) {
+    super(message);
+    this.name = "UploadValidationError";
+  }
 }
 
 // 2. STRICT MULTER FILE FILTER
@@ -132,9 +135,7 @@ export const fileFilter = (
   if (allowedMimeTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    const err = new Error("Unsupported MIME type");
-    (err as unknown as Record<string, unknown>).code = "UNSUPPORTED_MIME_TYPE";
-    cb(err);
+    cb(new UploadValidationError("Unsupported MIME type"));
   }
 };
 
@@ -174,7 +175,7 @@ function rateLimitMiddleware(limit: number, windowMs: number) {
 
     if (isRateLimited(ip, limit, windowMs)) {
       const category: SafeErrorCategory = "validation";
-      logMinimalError(req.originalUrl + " [rate-limit]", category, new Error(`Rate limit exceeded for IP: ${ip}`));
+      logMinimalError(req.originalUrl + " [rate-limit]", category);
       return res.status(429).json({
         error: "داواکارییەکان زۆر بوون؛ تکایە چەند خولەکێک چاوەڕێ بکە و دووبارە هەوڵ بدەرەوە.",
       });
@@ -260,11 +261,11 @@ async function startServer() {
       res.json({
         text: replyText,
         isEducational,
-        modelUsed: undefined, // ensure we do not leak the model name
       });
     } catch (err: unknown) {
-      console.error("Error in /api/chat:", err);
-      res.status(500).json({ error: getSafeErrorMessage(err, "کێشەیەک ڕوویدا لە کاتی وەرگرتنی وەڵامی زانا.") });
+      const category = classifyError(err);
+      logMinimalError("/api/chat", category);
+      res.status(500).json({ error: getClientSafeErrorMessage(category) });
     }
   });
 
@@ -364,8 +365,9 @@ ${historySummary.join("\n")}
         finalLevel,
       });
     } catch (err: unknown) {
-      console.error("Error in /api/assessment:", err);
-      res.status(500).json({ error: getSafeErrorMessage(err, "کێشەیەک ڕوویدا لە کاتی تاقیکردنەوەدا.") });
+      const category = classifyError(err);
+      logMinimalError("/api/assessment", category);
+      res.status(500).json({ error: getClientSafeErrorMessage(category) });
     }
   });
 
@@ -422,8 +424,9 @@ ${historySummary.join("\n")}
         recommendation: responseJson.recommendation || "مامۆستا زانا زۆر هیوای سەرکەوتن بۆ قوتابی دەکات. هەمیشە هاندەری بن لە پۆلدا.",
       });
     } catch (err: unknown) {
-      console.error("Error in /api/report:", err);
-      res.status(500).json({ error: getSafeErrorMessage(err, "ڕاپۆرت دروستکردن سەرکەوتوو نەبوو.") });
+      const category = classifyError(err);
+      logMinimalError("/api/report", category);
+      res.status(500).json({ error: getClientSafeErrorMessage(category) });
     }
   });
 
@@ -476,8 +479,9 @@ ${historySummary.join("\n")}
         isEducational,
       });
     } catch (err: unknown) {
-      console.error("Error in /api/study/ask:", err);
-      res.status(500).json({ error: getSafeErrorMessage(err, "کێشەیەک ڕوویدا لە کاتی وەرگرتنی وەڵامی زانا.") });
+      const category = classifyError(err);
+      logMinimalError("/api/study/ask", category);
+      res.status(500).json({ error: getClientSafeErrorMessage(category) });
     }
   });
 
@@ -490,44 +494,50 @@ ${historySummary.join("\n")}
       try {
         if (!req.file) {
           const category: SafeErrorCategory = "validation";
-          logMinimalError("/api/study/vision [file-missing]", category, new Error("No image file uploaded"));
+          logMinimalError("/api/study/vision [file-missing]", category);
           return res.status(400).json({ error: getClientSafeErrorMessage(category) });
         }
 
         const isValidSignature = validateImageSignature(req.file.buffer, req.file.mimetype);
         if (!isValidSignature) {
           const category: SafeErrorCategory = "unsupported_file";
-          logMinimalError("/api/study/vision [invalid-signature]", category, new Error(`Magic bytes did not match declared MIME: ${req.file.mimetype}`));
+          logMinimalError("/api/study/vision [invalid-signature]", category);
           return res.status(415).json({ error: getClientSafeErrorMessage(category) });
         }
 
-        const contextStr = req.body.context;
-        const editedText = req.body.editedText;
-        const mode = req.body.mode || "explain";
+        interface VisionRequestBody {
+          context?: string;
+          editedText?: string;
+          mode?: string;
+        }
+        const body = req.body as VisionRequestBody;
+        const contextStr = body.context;
+        const editedText = body.editedText;
+        const mode = body.mode || "explain";
 
         const allowedModes = ["explain", "extract_only", "hint", "step_by_step", "formula"];
         if (!allowedModes.includes(mode)) {
           const category: SafeErrorCategory = "validation";
-          logMinimalError("/api/study/vision [mode-invalid]", category, new Error(`Invalid mode: ${mode}`));
+          logMinimalError("/api/study/vision [mode-invalid]", category);
           return res.status(400).json({ error: getClientSafeErrorMessage(category) });
         }
 
         if (!contextStr) {
           const category: SafeErrorCategory = "validation";
-          logMinimalError("/api/study/vision [context-missing]", category, new Error("Context missing"));
+          logMinimalError("/api/study/vision [context-missing]", category);
           return res.status(400).json({ error: getClientSafeErrorMessage(category) });
         }
 
         if (typeof contextStr !== "string") {
           const category: SafeErrorCategory = "validation";
-          logMinimalError("/api/study/vision [context-not-string]", category, new Error("Context is not a string"));
+          logMinimalError("/api/study/vision [context-not-string]", category);
           return res.status(400).json({ error: getClientSafeErrorMessage(category) });
         }
 
         // Enforce maximum size constraint on the context payload (50KB)
         if (contextStr.length > 50 * 1024) {
           const category: SafeErrorCategory = "validation";
-          logMinimalError("/api/study/vision [context-oversized]", category, new Error("Context exceeds size limit of 50KB"));
+          logMinimalError("/api/study/vision [context-oversized]", category);
           return res.status(400).json({ error: getClientSafeErrorMessage(category) });
         }
 
@@ -540,7 +550,7 @@ ${historySummary.join("\n")}
           context = parsed as StudyContext;
         } catch (e: unknown) {
           const category: SafeErrorCategory = "validation";
-          logMinimalError("/api/study/vision [context-json-parse]", category, e);
+          logMinimalError("/api/study/vision [context-json-parse]", category);
           return res.status(400).json({ error: getClientSafeErrorMessage(category) });
         }
 
@@ -554,19 +564,19 @@ ${historySummary.join("\n")}
           !context.level || typeof context.level !== "string" || !context.level.trim()
         ) {
           const category: SafeErrorCategory = "validation";
-          logMinimalError("/api/study/vision [context-fields]", category, new Error("Required context fields (studentId, grade, stream, subject, level) missing or invalid"));
+          logMinimalError("/api/study/vision [context-fields]", category);
           return res.status(400).json({ error: getClientSafeErrorMessage(category) });
         }
 
         if (context.lessonTitle !== undefined && typeof context.lessonTitle !== "string") {
           const category: SafeErrorCategory = "validation";
-          logMinimalError("/api/study/vision [lessonTitle]", category, new Error("lessonTitle must be string"));
+          logMinimalError("/api/study/vision [lessonTitle]", category);
           return res.status(400).json({ error: getClientSafeErrorMessage(category) });
         }
 
         if (context.conceptTitle !== undefined && typeof context.conceptTitle !== "string") {
           const category: SafeErrorCategory = "validation";
-          logMinimalError("/api/study/vision [conceptTitle]", category, new Error("conceptTitle must be string"));
+          logMinimalError("/api/study/vision [conceptTitle]", category);
           return res.status(400).json({ error: getClientSafeErrorMessage(category) });
         }
 
@@ -668,8 +678,9 @@ ${modeInstructions}
         const responseJson = JSON.parse(response.text || "{}");
         res.json(responseJson);
       } catch (err: unknown) {
-        console.error("Error in /api/study/vision:", err);
-        res.status(500).json({ error: getSafeErrorMessage(err, "کێشەیەک لە کاتی خوێندنەوەی وێنەکەدا ڕوویدا.") });
+        const category = classifyError(err);
+        logMinimalError("/api/study/vision", category);
+        res.status(500).json({ error: getClientSafeErrorMessage(category) });
       } finally {
         if (req.file && req.file.buffer) {
           req.file.buffer = Buffer.alloc(0);
@@ -680,7 +691,7 @@ ${modeInstructions}
     (err: unknown, req: Request, res: Response, next: express.NextFunction) => {
       const category = classifyError(err);
       const statusCode = category === "upload_too_large" ? 413 : category === "unsupported_file" ? 415 : 400;
-      logMinimalError("/api/study/vision [multer-error]", category, err);
+      logMinimalError("/api/study/vision [multer-error]", category);
       return res.status(statusCode).json({ error: getClientSafeErrorMessage(category) });
     }
   );
