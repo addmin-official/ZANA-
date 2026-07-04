@@ -1,4 +1,5 @@
 export interface ParentReportSnapshot {
+  internalReportId: string;
   generatedAt: string;
   studentName: string;
   gradeLabel: string;

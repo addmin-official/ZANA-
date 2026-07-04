@@ -20,6 +20,16 @@ function isSessionFinishedPayload(
   return "totalDurationSeconds" in candidate && typeof candidate.totalDurationSeconds === "number";
 }
 
+function hashString(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(36).toUpperCase();
+}
+
 export interface ParentReportInput {
   studentProfile: StudentProfile;
   sipSnapshot: StudentIntelligenceSnapshot;
@@ -192,8 +202,14 @@ export class ParentReportIntelligenceEngine {
       warnings.push("چەند بابەتێکی زۆر بە ناڕوونی ماونەتەوە، پێویستی بە سەرنجی تایبەتە لە ماڵەوە.");
     }
 
+    const generatedAt = new Date().toISOString();
+    const idHash = hashString(studentProfile.id);
+    const timestampMs = new Date(generatedAt).getTime().toString().slice(-6);
+    const internalReportId = `PR-ZANA-${idHash}-${timestampMs}`;
+
     return {
-      generatedAt: new Date().toISOString(),
+      internalReportId,
+      generatedAt,
       studentName: studentProfile.name || "قوتابی زانا",
       gradeLabel,
       streamLabel,
