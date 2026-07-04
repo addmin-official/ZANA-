@@ -9,8 +9,8 @@ export function useTutorChat(profile: StudentProfile) {
 
   // Load chat messages whenever profile's current subject changes
   useEffect(() => {
-    if (profile.onboarded && profile.subject) {
-      const saved = ZanaStorage.getChatMessages(profile.subject);
+    if (profile.onboardingCompleted && profile.activeSubject) {
+      const saved = ZanaStorage.getChatMessages(profile.activeSubject);
       
       // If there are no messages, insert a warm educational welcome greeting from Zana
       if (saved.length === 0) {
@@ -19,11 +19,11 @@ export function useTutorChat(profile: StudentProfile) {
           sender: "zana",
           text: `بەخێربێیت قوتابی خۆشەویست **${profile.name}**! من مامۆستا **زانا**م. 
 خۆشحاڵم کە ئەمڕۆ بەیەکەوە پڕۆگرامی **${
-            profile.subject === "math"
+            profile.activeSubject === "math"
               ? "بیرکاری"
-              : profile.subject === "physics"
+              : profile.activeSubject === "physics"
               ? "فیزیا"
-              : profile.subject === "chemistry"
+              : profile.activeSubject === "chemistry"
               ? "کیمیا"
               : "ئینگلیزی"
           }**ی پۆلی **${profile.grade}** دەخوێنین.
@@ -34,14 +34,14 @@ export function useTutorChat(profile: StudentProfile) {
           timestamp: new Date().toLocaleTimeString("ku-IQ", { hour: "2-digit", minute: "2-digit" }),
           isEducational: true
         };
-        ZanaStorage.saveChatMessages(profile.subject, [welcomeMessage]);
+        ZanaStorage.saveChatMessages(profile.activeSubject, [welcomeMessage]);
         setMessages([welcomeMessage]);
       } else {
         setMessages(saved);
       }
       setError(null);
     }
-  }, [profile.subject, profile.grade, profile.name, profile.level, profile.onboarded]);
+  }, [profile.activeSubject, profile.grade, profile.name, profile.level, profile.onboardingCompleted]);
 
   const sendMessage = async (text: string) => {
     if (!text.trim()) return;
@@ -56,7 +56,7 @@ export function useTutorChat(profile: StudentProfile) {
 
     const updatedMessages = [...messages, userMsg];
     setMessages(updatedMessages);
-    ZanaStorage.saveChatMessages(profile.subject, updatedMessages);
+    ZanaStorage.saveChatMessages(profile.activeSubject, updatedMessages);
     
     // Increment study metrics
     ZanaStorage.incrementQuestions(1);
@@ -75,7 +75,7 @@ export function useTutorChat(profile: StudentProfile) {
 
       const finalMessages = [...updatedMessages, zanaMsg];
       setMessages(finalMessages);
-      ZanaStorage.saveChatMessages(profile.subject, finalMessages);
+      ZanaStorage.saveChatMessages(profile.activeSubject, finalMessages);
     } catch (err: any) {
       setError(err.message || "کێشەیەک لە پەیوەندیکردن بە سێرڤەر ڕوویدا.");
     } finally {
@@ -84,7 +84,7 @@ export function useTutorChat(profile: StudentProfile) {
   };
 
   const clearChat = () => {
-    ZanaStorage.clearChatMessages(profile.subject);
+    ZanaStorage.clearChatMessages(profile.activeSubject);
     setMessages([]);
     // Force re-trigger of initial welcome greeting
     setError(null);

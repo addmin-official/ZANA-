@@ -27,7 +27,7 @@ export function ZanaHeader({ profile }: ZanaHeaderProps) {
         </div>
 
         {/* Student Mini Badge */}
-        {profile.onboarded && (
+        {profile.onboardingCompleted && (
           <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1">
             <Award className="w-4 h-4 text-amber-500" />
             <div className="text-right">

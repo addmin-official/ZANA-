@@ -24,13 +24,13 @@ export class RuleEngine {
   /**
    * Evaluates a system state, student profile, or text response against active constitutional rules.
    */
-  public validateProfile(profile: { name: string; grade: string; subject: string; level: string; onboarded: boolean }): ValidationReport {
+  public validateProfile(profile: { name: string; grade: string; activeSubject: string; level: string; onboardingCompleted: boolean }): ValidationReport {
     const activeRules = this.loader.loadActiveRules();
     const violations: RuleViolation[] = [];
 
     for (const rule of activeRules) {
       if (rule.id === "prod-rule-onboarding-first") {
-        if (!profile.onboarded && (profile.name || profile.subject)) {
+        if (!profile.onboardingCompleted && (profile.name || profile.activeSubject)) {
           // Onboarding check failure simulation/evaluation
           violations.push({
             ruleId: rule.id,

@@ -19,9 +19,7 @@ export function useStudentProfile() {
       level: "intermediate",
       onboardingCompleted: false,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      subject: "math",
-      onboarded: false
+      updatedAt: new Date().toISOString()
     };
   });
 
@@ -48,9 +46,9 @@ export function useStudentProfile() {
       if (updates.grade !== undefined) mappedUpdates.grade = getValidatedGrade(updates.grade);
       if (updates.stream !== undefined) mappedUpdates.stream = getValidatedStream(updates.stream);
       
-      // Support both activeSubject and legacy subject key
-      const sub = updates.activeSubject !== undefined ? updates.activeSubject : (updates as any).subject;
-      if (sub !== undefined) mappedUpdates.activeSubject = getValidatedSubject(sub);
+      // Support both activeSubject and legacy subject key safely
+      const rawSubject = updates.activeSubject !== undefined ? updates.activeSubject : (updates as { subject?: unknown }).subject;
+      if (rawSubject !== undefined) mappedUpdates.activeSubject = getValidatedSubject(rawSubject);
       
       const lvl = updates.level !== undefined ? updates.level : undefined;
       if (lvl !== undefined) mappedUpdates.level = getValidatedLevel(lvl);
@@ -71,9 +69,7 @@ export function useStudentProfile() {
       level: "intermediate",
       onboardingCompleted: false,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      subject: "math",
-      onboarded: false
+      updatedAt: new Date().toISOString()
     };
     setProfileState(guest);
   };
@@ -89,9 +85,7 @@ export function useStudentProfile() {
       level: "intermediate",
       onboardingCompleted: false,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      subject: "math",
-      onboarded: false
+      updatedAt: new Date().toISOString()
     };
     setProfileState(guest);
   };
@@ -143,9 +137,7 @@ export function useStudentProfile() {
       level: "intermediate",
       onboardingCompleted: false,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      subject: "math",
-      onboarded: false
+      updatedAt: new Date().toISOString()
     };
     setProfileState(guest);
   };

@@ -24,11 +24,11 @@ export function AssessmentScreen({ profile, onProfileUpdate, onNavigate }: Asses
   };
 
   const activeSubjectName =
-    profile.subject === "math"
+    profile.activeSubject === "math"
       ? "بیرکاری"
-      : profile.subject === "physics"
+      : profile.activeSubject === "physics"
       ? "فیزیا"
-      : profile.subject === "chemistry"
+      : profile.activeSubject === "chemistry"
       ? "کیمیا"
       : "ئینگلیزی";
 

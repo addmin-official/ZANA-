@@ -747,7 +747,7 @@ export function StudyWorkspaceScreen({ profile, onNavigate }: StudyWorkspaceScre
                     </div>
                   ))}
                   {isAiResponding && (
-                    <div className="text-left font-sans text-[10px] text-slate-400 italic">دەنوسێت...</div>
+                    <div className="text-left font-sans text-[10px] text-slate-400 italic">زانا لە کاتی بیرکردنەوە و وەڵامدانەوەدایە...</div>
                   )}
                 </div>
               )}
@@ -758,7 +758,7 @@ export function StudyWorkspaceScreen({ profile, onNavigate }: StudyWorkspaceScre
                   type="text"
                   value={userQuestion}
                   onChange={(e) => setUserQuestion(e.target.value)}
-                  placeholder="لێرە هەر پرسیارێکت هەیە بینوسە..."
+                  placeholder="لێرە هەر پرسیارێکی زانستیت هەیە بنووسە..."
                   onKeyDown={(e) => e.key === "Enter" && handleAskQuestion()}
                   className="flex-1 px-3.5 py-2 border border-slate-200 rounded-xl font-sans text-xs focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 text-right min-h-[44px]"
                 />

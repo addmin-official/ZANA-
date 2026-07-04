@@ -1,21 +1,69 @@
 import { StudentProfile, StudentProfileDraft } from "./studentTypes.ts";
+import { getValidatedGrade, getValidatedStream, getValidatedSubject, getValidatedLevel } from "./studentDefaults.ts";
 
 const PROFILE_KEY = "zana:student-profile";
 
 const isBrowser = typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+
+export function migrateStudentProfile(raw: any): StudentProfile {
+  const now = new Date().toISOString();
+  
+  // 1. Preserve or fallback basic fields
+  const id = typeof raw?.id === "string" ? raw.id : "stud_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now();
+  const name = typeof raw?.name === "string" ? raw.name.trim() : "";
+  const createdAt = typeof raw?.createdAt === "string" ? raw.createdAt : now;
+  const updatedAt = typeof raw?.updatedAt === "string" ? raw.updatedAt : now;
+
+  // 2. Migration rules for subject
+  let rawSubject = raw?.activeSubject;
+  if (rawSubject === undefined || rawSubject === null) {
+    rawSubject = raw?.subject;
+  }
+  const activeSubject = getValidatedSubject(rawSubject);
+
+  // 3. Migration rules for onboarded
+  let rawOnboarded = raw?.onboardingCompleted;
+  if (rawOnboarded === undefined || rawOnboarded === null) {
+    rawOnboarded = raw?.onboarded;
+  }
+  const onboardingCompleted = typeof rawOnboarded === "boolean" ? rawOnboarded : false;
+
+  // 4. Validate other fields
+  const grade = getValidatedGrade(raw?.grade);
+  const stream = getValidatedStream(raw?.stream);
+  const level = getValidatedLevel(raw?.level);
+
+  const migrated: StudentProfile = {
+    id,
+    name,
+    grade,
+    stream,
+    activeSubject,
+    level,
+    onboardingCompleted,
+    createdAt,
+    updatedAt
+  };
+
+  // Save the migrated canonical profile back to zana:student-profile
+  if (isBrowser) {
+    try {
+      window.localStorage.setItem(PROFILE_KEY, JSON.stringify(migrated));
+    } catch (e) {
+      console.error("Error saving migrated profile to localStorage:", e);
+    }
+  }
+
+  return migrated;
+}
 
 export function getStudentProfile(): StudentProfile | null {
   if (!isBrowser) return null;
   try {
     const data = window.localStorage.getItem(PROFILE_KEY);
     if (!data) return null;
-    const profile = JSON.parse(data) as StudentProfile;
-    // Align backwards-compatible properties
-    if (profile) {
-      profile.subject = profile.activeSubject;
-      profile.onboarded = profile.onboardingCompleted;
-    }
-    return profile;
+    const raw = JSON.parse(data);
+    return migrateStudentProfile(raw);
   } catch (error) {
     console.error("Error reading student profile from localStorage:", error);
     return null;
@@ -25,11 +73,8 @@ export function getStudentProfile(): StudentProfile | null {
 export function saveStudentProfile(profile: StudentProfile): void {
   if (!isBrowser) return;
   try {
-    // Sync backward compatibility fields
     const profileToSave: StudentProfile = {
       ...profile,
-      subject: profile.activeSubject,
-      onboarded: profile.onboardingCompleted,
       updatedAt: new Date().toISOString()
     };
     window.localStorage.setItem(PROFILE_KEY, JSON.stringify(profileToSave));
@@ -62,9 +107,7 @@ export function createStudentProfile(draft: StudentProfileDraft): StudentProfile
     level: draft.level,
     onboardingCompleted: true,
     createdAt: now,
-    updatedAt: now,
-    subject: draft.activeSubject,
-    onboarded: true
+    updatedAt: now
   };
   
   saveStudentProfile(profile);
@@ -84,10 +127,6 @@ export function updateStudentProfile(
     level: updates.level !== undefined ? updates.level : current.level,
     updatedAt: new Date().toISOString()
   };
-  
-  // Keep backward compatibility fields aligned
-  updatedProfile.subject = updatedProfile.activeSubject;
-  updatedProfile.onboarded = updatedProfile.onboardingCompleted;
   
   saveStudentProfile(updatedProfile);
   return updatedProfile;

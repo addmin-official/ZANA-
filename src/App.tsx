@@ -8,6 +8,7 @@ import { AssessmentScreen } from "./screens/AssessmentScreen.tsx";
 import { ParentReportScreen } from "./screens/ParentReportScreen.tsx";
 import { ProfileScreen } from "./screens/ProfileScreen.tsx";
 import { useStudentProfile } from "./features/student/useStudentProfile.ts";
+import { SubjectKey } from "./features/student/studentTypes.ts";
 import { NavTab } from "./components/BottomNavigation.tsx";
 
 export default function App() {
@@ -17,8 +18,8 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<NavTab>("daily");
   const [isAssessmentMode, setIsAssessmentMode] = useState(false);
 
-  const handleSelectSubject = (subjectId: string) => {
-    updateProfile({ subject: subjectId as any });
+  const handleSelectSubject = (subjectId: SubjectKey) => {
+    updateProfile({ activeSubject: subjectId });
   };
 
   const handleStartAssessment = () => {
@@ -31,7 +32,7 @@ export default function App() {
   };
 
   // If student has not gone through onboarding
-  if (!profile.onboarded) {
+  if (!profile.onboardingCompleted) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col justify-center px-4">
         <OnboardingScreen onComplete={completeOnboarding} />

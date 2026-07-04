@@ -9,7 +9,7 @@ export function useParentReport(profile: StudentProfile) {
   const [error, setError] = useState<string | null>(null);
 
   const loadReport = async (forceRefresh = false) => {
-    if (!profile.onboarded) return;
+    if (!profile.onboardingCompleted) return;
 
     setError(null);
     const progress = ZanaStorage.getProgress();
@@ -19,7 +19,7 @@ export function useParentReport(profile: StudentProfile) {
       setReport({
         studentName: profile.name,
         grade: profile.grade,
-        subject: profile.subject,
+        subject: profile.activeSubject,
         level: profile.level,
         totalSessions: progress.totalSessions,
         weeklyQuestionCount: progress.weeklyQuestionCount,
@@ -41,10 +41,10 @@ export function useParentReport(profile: StudentProfile) {
       
       // Determine some smart mock weak areas based on the subject
       let weakAreas = ["هاوکێشەی هێڵی"];
-      if (profile.subject === "math") weakAreas = ["ڕێساکانی گرتە (Derivative Rules)", "ڕووبەری سێگۆشە"];
-      else if (profile.subject === "physics") weakAreas = ["یاسای ئۆم", "جووڵە بە تاودانی نەگۆڕ"];
-      else if (profile.subject === "chemistry") weakAreas = ["هاوسەنگکردنی کارلێکەکان", "پێوەری pH"];
-      else if (profile.subject === "english") weakAreas = ["Modal verbs", "Passive Voice"];
+      if (profile.activeSubject === "math") weakAreas = ["ڕێساکانی گرتە (Derivative Rules)", "ڕووبەری سێگۆشە"];
+      else if (profile.activeSubject === "physics") weakAreas = ["یاسای ئۆم", "جووڵە بە تاودانی نەگۆڕ"];
+      else if (profile.activeSubject === "chemistry") weakAreas = ["هاوسەنگکردنی کارلێکەکان", "پێوەری pH"];
+      else if (profile.activeSubject === "english") weakAreas = ["Modal verbs", "Passive Voice"];
 
       const updatedProgress = {
         ...progress,
@@ -57,7 +57,7 @@ export function useParentReport(profile: StudentProfile) {
       setReport({
         studentName: profile.name,
         grade: profile.grade,
-        subject: profile.subject,
+        subject: profile.activeSubject,
         level: profile.level,
         totalSessions: progress.totalSessions,
         weeklyQuestionCount: progress.weeklyQuestionCount,
@@ -73,10 +73,10 @@ export function useParentReport(profile: StudentProfile) {
   };
 
   useEffect(() => {
-    if (profile.onboarded) {
+    if (profile.onboardingCompleted) {
       loadReport();
     }
-  }, [profile.onboarded, profile.subject, profile.level]);
+  }, [profile.onboardingCompleted, profile.activeSubject, profile.level]);
 
   return {
     report,

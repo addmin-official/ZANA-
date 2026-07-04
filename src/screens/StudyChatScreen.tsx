@@ -31,11 +31,11 @@ export function StudyChatScreen({ profile }: StudyChatScreenProps) {
   };
 
   const activeSubjectName =
-    profile.subject === "math"
+    profile.activeSubject === "math"
       ? "بیرکاری"
-      : profile.subject === "physics"
+      : profile.activeSubject === "physics"
       ? "فیزیا"
-      : profile.subject === "chemistry"
+      : profile.activeSubject === "chemistry"
       ? "کیمیا"
       : "ئینگلیزی";
 

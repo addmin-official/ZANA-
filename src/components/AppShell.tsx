@@ -11,7 +11,7 @@ interface AppShellProps {
 }
 
 export function AppShell({ children, profile, activeTab, onTabChange }: AppShellProps) {
-  const showNav = profile.onboarded;
+  const showNav = profile.onboardingCompleted;
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col antialiased">

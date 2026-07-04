@@ -14,7 +14,7 @@ interface ProfileScreenProps {
 export function ProfileScreen({ profile, onUpdateProfile, onResetAll }: ProfileScreenProps) {
   const [name, setName] = useState(profile.name);
   const [grade, setGrade] = useState(profile.grade);
-  const [subject, setSubject] = useState(profile.subject);
+  const [subject, setSubject] = useState(profile.activeSubject);
   const [level, setLevel] = useState(profile.level);
   const [showSuccess, setShowSuccess] = useState(false);
 
@@ -27,7 +27,7 @@ export function ProfileScreen({ profile, onUpdateProfile, onResetAll }: ProfileS
       onUpdateProfile({
         name: name.trim(),
         grade,
-        subject,
+        activeSubject: subject,
         level
       });
       setShowSuccess(true);

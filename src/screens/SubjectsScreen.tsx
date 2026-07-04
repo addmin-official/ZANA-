@@ -1,18 +1,18 @@
 import { useState } from "react";
 import { ZanaCard } from "../components/ZanaCard.tsx";
 import { ZanaButton } from "../components/ZanaButton.tsx";
-import { StudentProfile } from "../services/storage.ts";
+import { StudentProfile, SubjectKey } from "../features/student/studentTypes.ts";
 import { SUBJECTS_DATA, CurriculumSubject } from "../data/subjects.ts";
 import { BookOpen, Calculator, Flame, Atom, Languages, ChevronDown, ChevronUp, MessageSquare } from "lucide-react";
 
 interface SubjectsScreenProps {
   profile: StudentProfile;
-  onSelectSubject: (subjectId: string) => void;
+  onSelectSubject: (subjectId: SubjectKey) => void;
   onNavigate: (tab: string) => void;
 }
 
 export function SubjectsScreen({ profile, onSelectSubject, onNavigate }: SubjectsScreenProps) {
-  const [expandedSubject, setExpandedSubject] = useState<string | null>(profile.subject);
+  const [expandedSubject, setExpandedSubject] = useState<string | null>(profile.activeSubject);
 
   const getSubjectIcon = (iconName: string) => {
     switch (iconName) {
@@ -34,7 +34,7 @@ export function SubjectsScreen({ profile, onSelectSubject, onNavigate }: Subject
   };
 
   const handleStartStudy = (id: string) => {
-    onSelectSubject(id);
+    onSelectSubject(id as SubjectKey);
     onNavigate("chat");
   };
 
@@ -54,7 +54,7 @@ export function SubjectsScreen({ profile, onSelectSubject, onNavigate }: Subject
       <div className="space-y-4">
         {SUBJECTS_DATA.map((subject) => {
           const isExpanded = expandedSubject === subject.id;
-          const isActiveSubject = profile.subject === subject.id;
+          const isActiveSubject = profile.activeSubject === subject.id;
           const chapters = subject.grades[profile.grade] || [];
 
           return (

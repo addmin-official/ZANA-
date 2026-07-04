@@ -13,7 +13,7 @@ export function useAssessment(profile: StudentProfile, onProfileUpdate: (profile
     setLoading(true);
 
     const initialState: Omit<AssessmentState, "id"> = {
-      subject: profile.subject,
+      subject: profile.activeSubject,
       grade: profile.grade,
       currentQuestion: 1,
       totalQuestions: 5,

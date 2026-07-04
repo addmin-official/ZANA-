@@ -62,8 +62,8 @@ export function DailySparkScreen({ profile, onNavigate, onStartAssessment }: Dai
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-4" dir="rtl">
         <AlertCircle className="w-12 h-12 text-rose-500" />
-        <h3 className="font-sans font-bold text-lg text-slate-900">هەڵەیەک ڕوویدا لە بارکردنی زانیارییەکان</h3>
-        <p className="font-sans text-sm text-slate-500 max-w-sm">تکایە لاپەڕەکە نوێ بکەرەوە یان دواتر تاقی بکەرەوە.</p>
+        <h3 className="font-sans font-bold text-lg text-slate-900">کێشەیەک لە بارکردنی زانیارییەکاندا ڕوویدا</h3>
+        <p className="font-sans text-sm text-slate-500 max-w-sm">تکایە لاپەڕەکە نوێ بکەرەوە یان کەمێکی تر هەوڵبدەرەوە.</p>
       </div>
     );
   }
@@ -159,7 +159,7 @@ export function DailySparkScreen({ profile, onNavigate, onStartAssessment }: Dai
         <div className="bg-white border border-slate-100 p-4 rounded-2xl shadow-sm text-right flex flex-col justify-between">
           <div>
             <Clock className="w-4 h-4 text-blue-500 mb-2" />
-            <p className="font-sans text-[10px] font-bold text-slate-400 uppercase tracking-wide">کاتی ئەمڕۆ</p>
+            <p className="font-sans text-[10px] font-bold text-slate-400 uppercase tracking-wide">خوێندنی ئەمڕۆ</p>
           </div>
           <div className="mt-2">
             <span className="font-sans font-black text-xl text-slate-800">{progressSummary.todayStudyMinutes}</span>
@@ -183,7 +183,7 @@ export function DailySparkScreen({ profile, onNavigate, onStartAssessment }: Dai
         <div className="bg-white border border-slate-100 p-4 rounded-2xl shadow-sm text-right flex flex-col justify-between">
           <div>
             <BookOpen className="w-4 h-4 text-emerald-500 mb-2" />
-            <p className="font-sans text-[10px] font-bold text-slate-400 uppercase tracking-wide">پێشکەوتن</p>
+            <p className="font-sans text-[10px] font-bold text-slate-400 uppercase tracking-wide">کۆی گشتی</p>
           </div>
           <div className="mt-2">
             <span className="font-sans font-black text-xl text-slate-800">{progressSummary.completionPercentage}</span>
@@ -195,7 +195,7 @@ export function DailySparkScreen({ profile, onNavigate, onStartAssessment }: Dai
       {/* Secondary Recommended Cards */}
       {secondaryCards.length > 0 && (
         <div className="space-y-3 text-right">
-          <h4 className="font-sans font-bold text-sm text-slate-800 mr-1">ئەرکە سوودبەخشەکانی تر</h4>
+          <h4 className="font-sans font-bold text-sm text-slate-800 mr-1">ڕاسپاردەکانی تری خوێندن</h4>
           <div className="space-y-3">
             {secondaryCards.map((card) => (
               <div

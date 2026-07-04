@@ -16,10 +16,6 @@ export interface StudentProfile {
   onboardingCompleted: boolean;
   createdAt: string;
   updatedAt: string;
-
-  // Backwards compatibility fields
-  subject: SubjectKey;
-  onboarded: boolean;
 }
 
 export interface StudentProfileDraft {

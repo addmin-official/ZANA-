@@ -122,8 +122,8 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
                 <h2 className="font-sans font-extrabold text-2xl text-slate-900 leading-tight">
                   بەخێربێیت بۆ زانا 🎓
                 </h2>
-                <p className="font-sans text-sm text-slate-500 mt-2 max-w-xs mx-auto">
-                  یەکەمین پلاتفۆرمی فێرکاری زیرەک بە زمانی شیرینی کوردی بۆ پۆلەکانی ٩ بۆ ١٢
+                <p className="font-sans text-xs text-slate-500 mt-2 max-w-sm mx-auto leading-relaxed">
+                  هاوڕێی زیرەکی فێربوونی تۆ؛ بە کوردییەکی ڕوون، هەنگاو بە هەنگاو یارمەتیت دەدات تا باشتر تێبگەیت، زیاتر ڕاهێنان بکەیت و بە متمانەوە پێش بکەویت.
                 </p>
               </div>
 
@@ -133,8 +133,8 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
                     <Sparkles className="w-4 h-4" />
                   </div>
                   <div>
-                    <h4 className="font-sans font-bold text-sm text-slate-800">سەعاتی دیالۆگی زانستی</h4>
-                    <p className="font-sans text-xs text-slate-500 mt-0.5">بە ئاسانی وەڵامی پرسیارە قورسەکانی بیرکاری، فیزیا و کیمیا بە شێوازی هەنگاو بە هەنگاو وەربگرە.</p>
+                    <h4 className="font-sans font-bold text-sm text-slate-800">فێربوونی هەنگاو بە هەنگاو</h4>
+                    <p className="font-sans text-xs text-slate-500 mt-0.5 leading-relaxed">زانا وانەکان بە زمانی سادە، نموونەی کارپێکراو و ڕاهێنانی کورت ڕوون دەکاتەوە.</p>
                   </div>
                 </div>
 
@@ -143,8 +143,8 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
                     <Award className="w-4 h-4" />
                   </div>
                   <div>
-                    <h4 className="font-sans font-bold text-sm text-slate-800">پشکنینی بەهێزی ئاست (Diagnostic)</h4>
-                    <p className="font-sans text-xs text-slate-500 mt-0.5">لە ڕێگەی پرسیاری دیاریکراوەوە، ئاستی ڕاستەقینەی خۆت بزانە و بەرەوپێشی ببە.</p>
+                    <h4 className="font-sans font-bold text-sm text-slate-800">هەڵسەنگاندنی ئاست</h4>
+                    <p className="font-sans text-xs text-slate-500 mt-0.5 leading-relaxed">لە سەرەتادا ئاستت دەناسێت، پاشان ڕێگای فێربوونت بەپێی تواناکانت ڕێکدەخات.</p>
                   </div>
                 </div>
 
@@ -153,14 +153,14 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
                     <BookOpen className="w-4 h-4" />
                   </div>
                   <div>
-                    <h4 className="font-sans font-bold text-sm text-slate-800">بریسکەی فێربوونی ڕۆژانە</h4>
-                    <p className="font-sans text-xs text-slate-500 mt-0.5">ڕۆژانە زانیاری سەرنجڕاکێش و پوخت بە دەست بهێنە کە هاوکارە بۆ باشترکردنی ئاستت.</p>
+                    <h4 className="font-sans font-bold text-sm text-slate-800">پێشکەوتنی ڕۆژانە</h4>
+                    <p className="font-sans text-xs text-slate-500 mt-0.5 leading-relaxed">هەر ڕۆژ ئەرکێکی بچووک و گونجاوت پێدەدات، تا بەردەوام بمێنیت و هەست بە پێشکەوتن بکەیت.</p>
                   </div>
                 </div>
               </div>
 
               <ZanaButton variant="primary" fullWidth onClick={handleNext} className="mt-2 h-12">
-                <span>دەستپێکردنی گەشتەکە</span>
+                <span>دەست پێ بکەین</span>
                 <ChevronLeft className="w-5 h-5 mr-2" />
               </ZanaButton>
             </div>
@@ -173,9 +173,9 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
                 <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center mb-2">
                   <User className="w-6 h-6" />
                 </div>
-                <h3 className="font-sans font-bold text-xl text-slate-800">ناوی تەواوت چییە؟</h3>
+                <h3 className="font-sans font-bold text-xl text-slate-800">ناوت چییە؟</h3>
                 <p className="font-sans text-sm text-slate-500">
-                  ناوی خۆت لێرە بنووسە تا زانا بتوانێت لە کاتی گفتوگۆدا ڕاستەوخۆ بە ناوی خۆتەوە یارمەتیت بدات.
+                  ناوت بنووسە تا زانا بتوانێت بە شێوەیەکی نزیکتر و تایبەتتر یارمەتیت بدات.
                 </p>
               </div>
 
@@ -187,7 +187,7 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
                     setName(e.target.value);
                     if (e.target.value.trim()) setError("");
                   }}
-                  placeholder="بۆ نموونە: سۆران ئاراس"
+                  placeholder="نموونە: سۆران، ئارام، ڕۆژین"
                   className="w-full font-sans text-base min-h-[50px] px-4 rounded-xl border border-slate-200 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all text-right"
                   autoFocus
                 />
@@ -212,9 +212,9 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
                 <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center mb-2">
                   <School className="w-6 h-6" />
                 </div>
-                <h3 className="font-sans font-bold text-xl text-slate-800">لە چ پۆلێک دەخوێنیت؟</h3>
+                <h3 className="font-sans font-bold text-xl text-slate-800">لە کام پۆل دەخوێنیت؟</h3>
                 <p className="font-sans text-sm text-slate-500">
-                  پۆلی خوێندنی خۆت هەڵبژێرە بۆ پێشکەشکردنی بابەت و سەرچاوەی دروست.
+                  پۆلەکەت هەڵبژێرە، بۆ ئەوەی وانە و ڕاهێنانەکان گونجاو بن.
                 </p>
               </div>
 
@@ -253,18 +253,18 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
                 <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center mb-2">
                   <BookMarked className="w-6 h-6" />
                 </div>
-                <h3 className="font-sans font-bold text-xl text-slate-800">لقی خوێندنەکەت چییە؟</h3>
-                <p className="font-sans text-sm text-slate-500">
+                <h3 className="font-sans font-bold text-xl text-slate-800">ڕێڕەوی خوێندنت چییە؟</h3>
+                <p className="font-sans text-sm text-slate-500 font-medium">
                   {grade === "11" || grade === "12"
-                    ? "خوێندنی پۆلی ۱۱ و ۱۲ بەپێی پڕۆگرامی وەزارەت بەش دەکرێت بۆ لقی زانستی یان وێژەیی."
-                    : "بۆ پۆلەکانی ٩ و ١٠، بە شێوەیەکی گشتی لق گشتی دەبێت، بەڵام دەتوانیت لقی تریش دەستنیشان بکەیت."}
+                    ? "ڕێڕەوی خوێندنی پۆلی ١١ و ١٢ بەپێی پڕۆگرامی وەزارەت دیاری دەکرێت بە زانستی یان وێژەیی."
+                    : "بۆ ئەم پۆلە، ڕێڕەوی گشتی گونجاوترینە، بەڵام دەتوانیت بژاردەکانی تریش تاقی بکەیتەوە."}
                 </p>
               </div>
 
               {/* Special warning style for 11 and 12 */}
               {(grade === "11" || grade === "12") && (
                 <div className="bg-amber-50 border border-amber-100 text-amber-800 px-3.5 py-2.5 rounded-xl font-sans text-xs">
-                  📌 <strong>ئاگاداری:</strong> بۆ ئەم پۆلە لقی <strong>گشتی</strong> بوونی نییە، تکایە لقەکەت بە دروستی هەڵبژێرە.
+                  📌 <strong>ئاگاداری:</strong> بۆ ئەم پۆلە ڕێڕەوی <strong>گشتی</strong> بوونی نییە، تکایە ڕێڕەوەکەت بە دروستی هەڵبژێرە.
                 </div>
               )}
 
@@ -311,9 +311,9 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
                 <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center mb-2">
                   <BookOpen className="w-6 h-6" />
                 </div>
-                <h3 className="font-sans font-bold text-xl text-slate-800">بابەتی خوێندنی دەستپێک</h3>
-                <p className="font-sans text-sm text-slate-500">
-                  لەم بابەتەوە گەشتی فێربوونەکەت لەگەڵ زانا دەست پێ دەکات (دواتر دەتوانیت بیگۆڕیت).
+                <h3 className="font-sans font-bold text-xl text-slate-800">لە کام بابەت دەست پێ بکەین؟</h3>
+                <p className="font-sans text-sm text-slate-500 font-medium">
+                  بابەتێک هەڵبژێرە. دواتر دەتوانیت هەرکاتێک بابەتەکە بگۆڕیت.
                 </p>
               </div>
 
@@ -352,9 +352,9 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
                 <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center mb-2">
                   <Award className="w-6 h-6" />
                 </div>
-                <h3 className="font-sans font-bold text-xl text-slate-800">ئاستی خۆت چۆن دەبینیت؟</h3>
-                <p className="font-sans text-sm text-slate-500">
-                  ئاستی زانستی سەرەتاییت هەڵبژێرە تا وەڵامەکان گونجاو بن (دواتر لە ڕێگەی دەستنیشانکردنەوە باشتر دەبێت).
+                <h3 className="font-sans font-bold text-xl text-slate-800">ئێستا خۆت چۆن دەبینیت؟</h3>
+                <p className="font-sans text-sm text-slate-500 font-medium">
+                  ئەمە تەنها بۆ ئەوەیە زانا ڕوونکردنەوەکان بەپێی ئاستی تۆ ڕێکبخات.
                 </p>
               </div>
 
@@ -401,9 +401,9 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
                 <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center mb-2">
                   <CheckCircle2 className="w-6 h-6" />
                 </div>
-                <h3 className="font-sans font-bold text-xl text-slate-800">پشتڕاستکردنەوەی زانیارییەکان</h3>
-                <p className="font-sans text-sm text-slate-500">
-                  هاوڕێ دڵسۆزەکەمان، چاوێک بەم زانیارییانەدا بخشێنە پێش ئەوەی گەشتی فێربوون دەست پێ بکەین:
+                <h3 className="font-sans font-bold text-xl text-slate-800">ئامادەی دەستپێکردنیت؟</h3>
+                <p className="font-sans text-sm text-slate-500 font-medium">
+                  زانا ئێستا پڕۆفایلی فێربوونت ئامادە دەکات و ڕێگایەکی گونجاو بۆ پێشکەوتنت پێشنیار دەکات.
                 </p>
               </div>
 
@@ -417,7 +417,7 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
                   <span className="font-sans text-sm font-extrabold text-slate-800">{GRADE_LABELS[grade]}</span>
                 </div>
                 <div className="flex justify-between items-center pt-3 py-1">
-                  <span className="font-sans text-xs text-slate-400">لقی خوێندن</span>
+                  <span className="font-sans text-xs text-slate-400">ڕێڕەوی خوێندن</span>
                   <span className="font-sans text-sm font-extrabold text-slate-800">{STREAM_LABELS[stream]}</span>
                 </div>
                 <div className="flex justify-between items-center pt-3 py-1">
@@ -435,7 +435,7 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
               </div>
 
               <ZanaButton variant="success" fullWidth onClick={handleSubmit} className="h-12 mt-4">
-                <span>ئامادەم، دەست پێ بکە!</span>
+                <span>ئامادەم، دەست پێ بکەین</span>
                 <ChevronLeft className="w-5 h-5 mr-2" />
               </ZanaButton>
             </div>

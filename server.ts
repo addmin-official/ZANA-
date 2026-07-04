@@ -47,7 +47,7 @@ async function startServer() {
       const systemInstruction = buildSystemPrompt({
         studentName: profile.name,
         grade: profile.grade,
-        subject: profile.subject,
+        subject: profile.activeSubject,
         level: profile.level,
         mode: "chat",
       });
@@ -101,7 +101,7 @@ async function startServer() {
       const systemInstruction = buildSystemPrompt({
         studentName: profile.name,
         grade: profile.grade,
-        subject: profile.subject,
+        subject: profile.activeSubject,
         level: profile.level,
         mode: "assessment",
       });
@@ -202,13 +202,13 @@ ${historySummary.join("\n")}
       const systemInstruction = buildSystemPrompt({
         studentName: profile.name,
         grade: profile.grade,
-        subject: profile.subject,
+        subject: profile.activeSubject,
         level: profile.level,
         mode: "report",
       });
 
       const reportPrompt = `
-ڕاپۆرتی گەشەکردنی زانستی فەرمی بنووسە بۆ دایک و باوکی قوتابی ${profile.name} کە پۆلی ${profile.grade}یە و ئاستی خوێندنی ${profile.level}یە لە بابەتی ${profile.subject}.
+ڕاپۆرتی گەشەکردنی زانستی فەرمی بنووسە بۆ دایک و باوکی قوتابی ${profile.name} کە پۆلی ${profile.grade}یە و ئاستی خوێندنی ${profile.level}یە لە بابەتی ${profile.activeSubject}.
 ئامارە سەرەکییەکان:
 - خولەکانی گفتوگۆ: ${summaryStats.totalSessions} جار
 - پرسیارە گۆڕدراوەکانی چات: ${summaryStats.weeklyQuestionCount} پرسیار

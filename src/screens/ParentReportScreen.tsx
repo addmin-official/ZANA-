@@ -12,11 +12,11 @@ export function ParentReportScreen({ profile }: ParentReportScreenProps) {
   const { report, loading, error, refreshReport } = useParentReport(profile);
 
   const activeSubjectName =
-    profile.subject === "math"
+    profile.activeSubject === "math"
       ? "بیرکاری"
-      : profile.subject === "physics"
+      : profile.activeSubject === "physics"
       ? "فیزیا"
-      : profile.subject === "chemistry"
+      : profile.activeSubject === "chemistry"
       ? "کیمیا"
       : "ئینگلیزی";
 
@@ -124,7 +124,7 @@ export function ParentReportScreen({ profile }: ParentReportScreenProps) {
               <p className="font-sans font-black text-slate-800 text-lg mt-0.5">{report.currentProgressPercent}%</p>
             </div>
             <div className="border border-slate-100 p-2.5 rounded-xl">
-              <span className="font-sans text-[10px] text-slate-400">خولەکانی خوێندن</span>
+              <span className="font-sans text-[10px] text-slate-400">دانیشتنەکانی خوێندن</span>
               <p className="font-sans font-black text-slate-800 text-lg mt-0.5">{report.totalSessions}</p>
             </div>
             <div className="border border-slate-100 p-2.5 rounded-xl">
@@ -136,7 +136,7 @@ export function ParentReportScreen({ profile }: ParentReportScreenProps) {
 
         {/* Weak Areas Summary */}
         <div className="space-y-2">
-          <h4 className="font-sans font-bold text-sm text-slate-800">بەشەکان کە پێویستیان بە چاککردنە (Weak Areas)</h4>
+          <h4 className="font-sans font-bold text-sm text-slate-800">ئەو لایەنانەی پێویستیان بە بەهێزکردنە (خاڵە لاوازەکان)</h4>
           <div className="flex flex-wrap gap-1.5 justify-start">
             {report.weakAreas.map((area, idx) => (
               <span key={idx} className="font-sans text-xs font-semibold text-slate-600 bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1">

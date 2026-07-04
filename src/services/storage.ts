@@ -113,10 +113,7 @@ export const ZanaStorage = {
       level: "intermediate",
       onboardingCompleted: false,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      // Backward compatibility fields
-      subject: "math",
-      onboarded: false
+      updatedAt: new Date().toISOString()
     };
   },
 
