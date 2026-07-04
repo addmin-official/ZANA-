@@ -485,6 +485,45 @@ ${historySummary.join("\n")}
     }
   });
 
+  function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null;
+  }
+
+  function isStudyContext(value: unknown): value is StudyContext {
+    if (!isRecord(value)) return false;
+    const { studentId, grade, stream, subject, level, lessonTitle, conceptTitle } = value;
+    if (typeof studentId !== "string" || !studentId.trim()) return false;
+    if (typeof grade !== "string" || !grade.trim()) return false;
+    if (typeof stream !== "string" || !stream.trim()) return false;
+    if (typeof subject !== "string" || !subject.trim()) return false;
+    if (typeof level !== "string" || !level.trim()) return false;
+    if (lessonTitle !== undefined && typeof lessonTitle !== "string") return false;
+    if (conceptTitle !== undefined && typeof conceptTitle !== "string") return false;
+    return true;
+  }
+
+  interface VisionResponse {
+    extractedText: string;
+    detectedSubject?: string;
+    responseText?: string;
+    confidence: "low" | "medium" | "high";
+    warnings: string[];
+  }
+
+  function isVisionResponse(value: unknown): value is VisionResponse {
+    if (!isRecord(value)) return false;
+    const { extractedText, detectedSubject, responseText, confidence, warnings } = value;
+    if (typeof extractedText !== "string") return false;
+    if (detectedSubject !== undefined && typeof detectedSubject !== "string") return false;
+    if (responseText !== undefined && typeof responseText !== "string") return false;
+    if (confidence !== "low" && confidence !== "medium" && confidence !== "high") return false;
+    if (!Array.isArray(warnings)) return false;
+    for (const warning of warnings) {
+      if (typeof warning !== "string") return false;
+    }
+    return true;
+  }
+
   // 3.6. STUDY VISION ENDPOINT
   app.post(
     "/api/study/vision",
@@ -505,15 +544,17 @@ ${historySummary.join("\n")}
           return res.status(415).json({ error: getClientSafeErrorMessage(category) });
         }
 
-        interface VisionRequestBody {
-          context?: string;
-          editedText?: string;
-          mode?: string;
+        const body: unknown = req.body;
+        if (!isRecord(body)) {
+          const category: SafeErrorCategory = "validation";
+          logMinimalError("/api/study/vision [body-invalid]", category);
+          return res.status(400).json({ error: getClientSafeErrorMessage(category) });
         }
-        const body = req.body as VisionRequestBody;
+
         const contextStr = body.context;
         const editedText = body.editedText;
-        const mode = body.mode || "explain";
+        const modeRaw = body.mode;
+        const mode = typeof modeRaw === "string" ? modeRaw : "explain";
 
         const allowedModes = ["explain", "extract_only", "hint", "step_by_step", "formula"];
         if (!allowedModes.includes(mode)) {
@@ -541,52 +582,33 @@ ${historySummary.join("\n")}
           return res.status(400).json({ error: getClientSafeErrorMessage(category) });
         }
 
-        let context: StudyContext;
+        let parsed: unknown;
         try {
-          const parsed = JSON.parse(contextStr);
-          if (!parsed || typeof parsed !== "object") {
-            throw new Error("Context is not a valid JSON object");
-          }
-          context = parsed as StudyContext;
+          parsed = JSON.parse(contextStr);
         } catch (e: unknown) {
           const category: SafeErrorCategory = "validation";
           logMinimalError("/api/study/vision [context-json-parse]", category);
           return res.status(400).json({ error: getClientSafeErrorMessage(category) });
         }
 
-        // Validate mandatory context fields
-        if (
-          !context ||
-          typeof context.studentId !== "string" || !context.studentId.trim() ||
-          !context.grade || typeof context.grade !== "string" || !context.grade.trim() ||
-          !context.stream || typeof context.stream !== "string" || !context.stream.trim() ||
-          !context.subject || typeof context.subject !== "string" || !context.subject.trim() ||
-          !context.level || typeof context.level !== "string" || !context.level.trim()
-        ) {
+        if (!isStudyContext(parsed)) {
           const category: SafeErrorCategory = "validation";
           logMinimalError("/api/study/vision [context-fields]", category);
           return res.status(400).json({ error: getClientSafeErrorMessage(category) });
         }
 
-        if (context.lessonTitle !== undefined && typeof context.lessonTitle !== "string") {
-          const category: SafeErrorCategory = "validation";
-          logMinimalError("/api/study/vision [lessonTitle]", category);
-          return res.status(400).json({ error: getClientSafeErrorMessage(category) });
-        }
-
-        if (context.conceptTitle !== undefined && typeof context.conceptTitle !== "string") {
-          const category: SafeErrorCategory = "validation";
-          logMinimalError("/api/study/vision [conceptTitle]", category);
-          return res.status(400).json({ error: getClientSafeErrorMessage(category) });
-        }
+        const context = parsed;
 
         const ai = getAiClient();
         const systemInstruction = buildSystemPrompt({
           studentName: undefined, // Do not pass student name to AI to preserve privacy
           grade: context.grade,
+          stream: context.stream,
           subject: context.subject,
           level: context.level,
-          mode: "ask",
+          lessonTitle: context.lessonTitle,
+          conceptTitle: context.conceptTitle,
+          mode: "vision",
         });
 
         // Construct pedagogical instructions based on the requested mode
@@ -603,12 +625,23 @@ ${historySummary.join("\n")}
           modeInstructions = "وەڵامی فێرکاری و ڕوونکردنەوەی تەواوی چەمکەکە پێشکەش بکە. ئەگەر پرسیارەکە تاقیکردنەوە یان ڕاهێنان دەردەکەوێت, پێش پێشکەشکردنی ئەنجام یان وەڵامی کۆتایی, سەرەتا پێویستە شێواز و مێتۆدی شیکارەکە بە تەواوی ڕوون بکەیتەوە.";
         }
 
+        let modeKurdish = "ڕوونکردنەوەی فێرکاریی گشتی (explain)";
+        if (mode === "extract_only") {
+          modeKurdish = "تەنها دەرهێنانی دەق (extract_only)";
+        } else if (mode === "hint") {
+          modeKurdish = "پێدانی سەرەداو و یارمەتیدان (hint)";
+        } else if (mode === "step_by_step") {
+          modeKurdish = "شیکاری هەنگاو بە هەنگاو (step_by_step)";
+        } else if (mode === "formula") {
+          modeKurdish = "یاسا و هاوکێشەکان (formula)";
+        }
+
         const userInstructionsPrompt = `
-تۆ یاریدەدەرێکی فێربوونی زیرەکی خوێندکارانی کوردستانیت بە ناوی 'زانا'.
+تۆ زانایت، یاریدەدەری زیرەکی فێربوونی قوتابیان.
 وێنەیەک هاوپێچ کراوە لە لایەن قوتابی لە پۆلی ${context.grade} لە بابەتی ${context.subject}.
 وانەی چالاکی ئێستا: ${context.lessonTitle || "چەمکەکانی خوێندن"}.
 
-شێوازی داواکراو: ${mode}
+شێوازی داواکراو: ${modeKurdish}
 ڕێنمایی گشتی بۆ وەڵامدانەوە:
 ${modeInstructions}
 
@@ -675,8 +708,23 @@ ${modeInstructions}
           },
         });
 
-        const responseJson = JSON.parse(response.text || "{}");
-        res.json(responseJson);
+        const responseText = response.text || "{}";
+        let parsedResponse: unknown;
+        try {
+          parsedResponse = JSON.parse(responseText);
+        } catch (e: unknown) {
+          const category: SafeErrorCategory = "internal";
+          logMinimalError("/api/study/vision [response-json-parse]", category);
+          return res.status(500).json({ error: getClientSafeErrorMessage(category) });
+        }
+
+        if (!isVisionResponse(parsedResponse)) {
+          const category: SafeErrorCategory = "internal";
+          logMinimalError("/api/study/vision [response-validation-failed]", category);
+          return res.status(500).json({ error: getClientSafeErrorMessage(category) });
+        }
+
+        res.json(parsedResponse);
       } catch (err: unknown) {
         const category = classifyError(err);
         logMinimalError("/api/study/vision", category);
