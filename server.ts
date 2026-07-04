@@ -21,11 +21,21 @@ export type SafeErrorCategory =
   | "provider_unavailable"
   | "internal";
 
+export interface StudyContext {
+  studentId: string;
+  grade: string;
+  stream: string;
+  subject: string;
+  level: string;
+  lessonTitle?: string;
+  conceptTitle?: string;
+}
+
 export function classifyError(error: unknown): SafeErrorCategory {
   if (!error) return "internal";
 
   if (error && typeof error === "object") {
-    const errObj = error as Record<string, any>;
+    const errObj = error as Record<string, unknown>;
     if (errObj.code === "LIMIT_FILE_SIZE") {
       return "upload_too_large";
     }
@@ -53,17 +63,6 @@ export function classifyError(error: unknown): SafeErrorCategory {
   }
 
   if (
-    lowerMsg.includes("validation") ||
-    lowerMsg.includes("invalid") ||
-    lowerMsg.includes("bad request") ||
-    lowerMsg.includes("missing") ||
-    lowerMsg.includes("json") ||
-    lowerMsg.includes("syntaxerror")
-  ) {
-    return "validation";
-  }
-
-  if (
     lowerMsg.includes("api_key") ||
     lowerMsg.includes("api key") ||
     lowerMsg.includes("googlegenai") ||
@@ -75,6 +74,17 @@ export function classifyError(error: unknown): SafeErrorCategory {
     lowerMsg.includes("connect")
   ) {
     return "provider_unavailable";
+  }
+
+  if (
+    lowerMsg.includes("validation") ||
+    lowerMsg.includes("invalid") ||
+    lowerMsg.includes("bad request") ||
+    lowerMsg.includes("missing") ||
+    lowerMsg.includes("json") ||
+    lowerMsg.includes("syntaxerror")
+  ) {
+    return "validation";
   }
 
   return "internal";
@@ -113,14 +123,18 @@ function getSafeErrorMessage(err: unknown, defaultMsg?: string): string {
 }
 
 // 2. STRICT MULTER FILE FILTER
-const fileFilter = (req: any, file: any, cb: any) => {
+export const fileFilter = (
+  req: Request,
+  file: Express.Multer.File,
+  cb: multer.FileFilterCallback
+): void => {
   const allowedMimeTypes = ["image/jpeg", "image/png", "image/webp"];
   if (allowedMimeTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
     const err = new Error("Unsupported MIME type");
-    (err as any).code = "UNSUPPORTED_MIME_TYPE";
-    cb(err, false);
+    (err as unknown as Record<string, unknown>).code = "UNSUPPORTED_MIME_TYPE";
+    cb(err);
   }
 };
 
@@ -131,13 +145,13 @@ const upload = multer({
 });
 
 // 3. RATE-LIMITING
-interface RateLimitRecord {
+export interface RateLimitRecord {
   timestamps: number[];
 }
 
-const rateLimitDb = new Map<string, RateLimitRecord>();
+export const rateLimitDb = new Map<string, RateLimitRecord>();
 
-function isRateLimited(ip: string, limit: number, windowMs: number): boolean {
+export function isRateLimited(ip: string, limit: number, windowMs: number): boolean {
   const now = Date.now();
   const record = rateLimitDb.get(ip) || { timestamps: [] };
   
@@ -154,7 +168,7 @@ function isRateLimited(ip: string, limit: number, windowMs: number): boolean {
 }
 
 function rateLimitMiddleware(limit: number, windowMs: number) {
-  return (req: Request, res: Response, next: any) => {
+  return (req: Request, res: Response, next: express.NextFunction) => {
     const rawIp = req.headers["x-forwarded-for"] || req.ip || req.socket.remoteAddress || "unknown";
     const ip = Array.isArray(rawIp) ? rawIp[0] : String(rawIp).split(",")[0].trim();
 
@@ -468,95 +482,118 @@ ${historySummary.join("\n")}
   });
 
   // 3.6. STUDY VISION ENDPOINT
-  const uploadSingleImage = upload.single("image");
   app.post(
     "/api/study/vision",
-    rateLimitMiddleware(30, 10 * 60 * 1000),
-    (req: Request, res: Response) => {
-      uploadSingleImage(req, res, async (err: any) => {
-        if (err) {
-          const category: SafeErrorCategory = classifyError(err);
-          logMinimalError("/api/study/vision [multer-error]", category, err);
+    rateLimitMiddleware(10, 10 * 60 * 1000),
+    upload.single("image"),
+    async (req: Request, res: Response) => {
+      try {
+        if (!req.file) {
+          const category: SafeErrorCategory = "validation";
+          logMinimalError("/api/study/vision [file-missing]", category, new Error("No image file uploaded"));
           return res.status(400).json({ error: getClientSafeErrorMessage(category) });
         }
 
+        const isValidSignature = validateImageSignature(req.file.buffer, req.file.mimetype);
+        if (!isValidSignature) {
+          const category: SafeErrorCategory = "unsupported_file";
+          logMinimalError("/api/study/vision [invalid-signature]", category, new Error(`Magic bytes did not match declared MIME: ${req.file.mimetype}`));
+          return res.status(415).json({ error: getClientSafeErrorMessage(category) });
+        }
+
+        const contextStr = req.body.context;
+        const editedText = req.body.editedText;
+        const mode = req.body.mode || "explain";
+
+        const allowedModes = ["explain", "extract_only", "hint", "step_by_step", "formula"];
+        if (!allowedModes.includes(mode)) {
+          const category: SafeErrorCategory = "validation";
+          logMinimalError("/api/study/vision [mode-invalid]", category, new Error(`Invalid mode: ${mode}`));
+          return res.status(400).json({ error: getClientSafeErrorMessage(category) });
+        }
+
+        if (!contextStr) {
+          const category: SafeErrorCategory = "validation";
+          logMinimalError("/api/study/vision [context-missing]", category, new Error("Context missing"));
+          return res.status(400).json({ error: getClientSafeErrorMessage(category) });
+        }
+
+        if (typeof contextStr !== "string") {
+          const category: SafeErrorCategory = "validation";
+          logMinimalError("/api/study/vision [context-not-string]", category, new Error("Context is not a string"));
+          return res.status(400).json({ error: getClientSafeErrorMessage(category) });
+        }
+
+        // Enforce maximum size constraint on the context payload (50KB)
+        if (contextStr.length > 50 * 1024) {
+          const category: SafeErrorCategory = "validation";
+          logMinimalError("/api/study/vision [context-oversized]", category, new Error("Context exceeds size limit of 50KB"));
+          return res.status(400).json({ error: getClientSafeErrorMessage(category) });
+        }
+
+        let context: StudyContext;
         try {
-          const contextStr = req.body.context;
-          const editedText = req.body.editedText;
-          const mode = req.body.mode || "general";
-
-          if (!contextStr) {
-            const category: SafeErrorCategory = "validation";
-            logMinimalError("/api/study/vision [context-missing]", category, new Error("Context missing"));
-            return res.status(400).json({ error: getClientSafeErrorMessage(category) });
+          const parsed = JSON.parse(contextStr);
+          if (!parsed || typeof parsed !== "object") {
+            throw new Error("Context is not a valid JSON object");
           }
+          context = parsed as StudyContext;
+        } catch (e: unknown) {
+          const category: SafeErrorCategory = "validation";
+          logMinimalError("/api/study/vision [context-json-parse]", category, e);
+          return res.status(400).json({ error: getClientSafeErrorMessage(category) });
+        }
 
-          // Enforce maximum size constraint on the context payload (50KB)
-          if (contextStr.length > 50 * 1024) {
-            const category: SafeErrorCategory = "validation";
-            logMinimalError("/api/study/vision [context-oversized]", category, new Error("Context exceeds size limit of 50KB"));
-            return res.status(400).json({ error: getClientSafeErrorMessage(category) });
-          }
+        // Validate mandatory context fields
+        if (
+          !context ||
+          typeof context.studentId !== "string" || !context.studentId.trim() ||
+          !context.grade || typeof context.grade !== "string" || !context.grade.trim() ||
+          !context.stream || typeof context.stream !== "string" || !context.stream.trim() ||
+          !context.subject || typeof context.subject !== "string" || !context.subject.trim() ||
+          !context.level || typeof context.level !== "string" || !context.level.trim()
+        ) {
+          const category: SafeErrorCategory = "validation";
+          logMinimalError("/api/study/vision [context-fields]", category, new Error("Required context fields (studentId, grade, stream, subject, level) missing or invalid"));
+          return res.status(400).json({ error: getClientSafeErrorMessage(category) });
+        }
 
-          let context: any;
-          try {
-            context = JSON.parse(contextStr);
-          } catch (e) {
-            const category: SafeErrorCategory = "validation";
-            logMinimalError("/api/study/vision [context-json-parse]", category, e);
-            return res.status(400).json({ error: getClientSafeErrorMessage(category) });
-          }
+        if (context.lessonTitle !== undefined && typeof context.lessonTitle !== "string") {
+          const category: SafeErrorCategory = "validation";
+          logMinimalError("/api/study/vision [lessonTitle]", category, new Error("lessonTitle must be string"));
+          return res.status(400).json({ error: getClientSafeErrorMessage(category) });
+        }
 
-          // Validate mandatory context fields
-          if (
-            !context ||
-            typeof context.studentId !== "string" || !context.studentId.trim() ||
-            !context.grade ||
-            !context.stream ||
-            !context.subject ||
-            !context.level
-          ) {
-            const category: SafeErrorCategory = "validation";
-            logMinimalError("/api/study/vision [context-fields]", category, new Error("Required context fields (studentId, grade, stream, subject, level) missing or invalid"));
-            return res.status(400).json({ error: getClientSafeErrorMessage(category) });
-          }
+        if (context.conceptTitle !== undefined && typeof context.conceptTitle !== "string") {
+          const category: SafeErrorCategory = "validation";
+          logMinimalError("/api/study/vision [conceptTitle]", category, new Error("conceptTitle must be string"));
+          return res.status(400).json({ error: getClientSafeErrorMessage(category) });
+        }
 
-          if (context.lessonTitle && typeof context.lessonTitle !== "string") {
-            const category: SafeErrorCategory = "validation";
-            logMinimalError("/api/study/vision [lessonTitle]", category, new Error("lessonTitle must be string"));
-            return res.status(400).json({ error: getClientSafeErrorMessage(category) });
-          }
+        const ai = getAiClient();
+        const systemInstruction = buildSystemPrompt({
+          studentName: undefined, // Do not pass student name to AI to preserve privacy
+          grade: context.grade,
+          subject: context.subject,
+          level: context.level,
+          mode: "ask",
+        });
 
-          if (context.conceptTitle && typeof context.conceptTitle !== "string") {
-            const category: SafeErrorCategory = "validation";
-            logMinimalError("/api/study/vision [conceptTitle]", category, new Error("conceptTitle must be string"));
-            return res.status(400).json({ error: getClientSafeErrorMessage(category) });
-          }
+        // Construct pedagogical instructions based on the requested mode
+        let modeInstructions = "";
+        if (mode === "extract_only") {
+          modeInstructions = "تەنها دەقی ناو وێنەکە بە تەواوی و بە ڕوونی دەربهێنە بەبێ هیچ ڕوونکردنەوەیەک یان وەڵامدانەوەیەک.";
+        } else if (mode === "hint") {
+          modeInstructions = "شیکاری تەواوی پرسیارەکە مەکە. تەنها ڕێنمایی زۆر سەرەکی, سەرەداو یان ڕێگای گونجاو پێشکەش بکە بە شێوازی سوقراتی میهرەبان بۆ یارمەتیدانی قوتابی تا خۆی بگاتە وەڵام.";
+        } else if (mode === "step_by_step") {
+          modeInstructions = "وردترین شیکاری هەنگاو بە هەنگاوی لۆجیکی پێشکەش بکە بۆ شیکارکردنی پرسیارەکە لە پڕۆگرامەکەدا. هەر هەنگاوێک بە ڕوونی ڕوون بکەرەوە.";
+        } else if (mode === "formula") {
+          modeInstructions = "هەموو یاساکان, تیۆرمەکان, و هاوکێشە بیرکاریی یان فیزیاییە سەرەکییەکان کە پێویستن بۆ شیکاری ئەم جۆرە پرسیارە دەستنیشان بکە و ڕوونیان بکەرەوە.";
+        } else {
+          modeInstructions = "وەڵامی فێرکاری و ڕوونکردنەوەی تەواوی چەمکەکە پێشکەش بکە. ئەگەر پرسیارەکە تاقیکردنەوە یان ڕاهێنان دەردەکەوێت, پێش پێشکەشکردنی ئەنجام یان وەڵامی کۆتایی, سەرەتا پێویستە شێواز و مێتۆدی شیکارەکە بە تەواوی ڕوون بکەیتەوە.";
+        }
 
-          const ai = getAiClient();
-          const systemInstruction = buildSystemPrompt({
-            studentName: undefined, // Do not pass student name to AI to preserve privacy
-            grade: context.grade,
-            subject: context.subject,
-            level: context.level,
-            mode: "ask",
-          });
-
-          // Construct pedagogical instructions based on the requested mode
-          let modeInstructions = "";
-          if (mode === "extract_only") {
-            modeInstructions = "تەنها دەقی ناو وێنەکە بە تەواوی و بە ڕوونی دەربهێنە بەبێ هیچ ڕوونکردنەوەیەک یان وەڵامدانەوەیەک.";
-          } else if (mode === "hint") {
-            modeInstructions = "شیکاری تەواوی پرسیارەکە مەکە. تەنها ڕێنمایی زۆر سەرەکی, سەرەداو یان ڕێگای گونجاو پێشکەش بکە بە شێوازی سوقراتی میهرەبان بۆ یارمەتیدانی قوتابی تا خۆی بگاتە وەڵام.";
-          } else if (mode === "step_by_step") {
-            modeInstructions = "وردترین شیکاری هەنگاو بە هەنگاوی لۆجیکی پێشکەش بکە بۆ شیکارکردنی پرسیارەکە لە پڕۆگرامەکەدا. هەر هەنگاوێک بە ڕوونی ڕوون بکەرەوە.";
-          } else if (mode === "formula") {
-            modeInstructions = "هەموو یاساکان, تیۆرمەکان, و هاوکێشە بیرکاریی یان فیزیاییە سەرەکییەکان کە پێویستن بۆ شیکاری ئەم جۆرە پرسیارە دەستنیشان بکە و ڕوونیان بکەرەوە.";
-          } else {
-            modeInstructions = "وەڵامی فێرکاری و ڕوونکردنەوەی تەواوی چەمکەکە پێشکەش بکە. ئەگەر پرسیارەکە تاقیکردنەوە یان ڕاهێنان دەردەکەوێت, پێش پێشکەشکردنی ئەنجام یان وەڵامی کۆتایی, سەرەتا پێویستە شێواز و مێتۆدی شیکارەکە بە تەواوی ڕوون بکەیتەوە.";
-          }
-
-          const userInstructionsPrompt = `
+        const userInstructionsPrompt = `
 تۆ یاریدەدەرێکی فێربوونی زیرەکی خوێندکارانی کوردستانیت بە ناوی 'زانا'.
 وێنەیەک هاوپێچ کراوە لە لایەن قوتابی لە پۆلی ${context.grade} لە بابەتی ${context.subject}.
 وانەی چالاکی ئێستا: ${context.lessonTitle || "چەمکەکانی خوێندن"}.
@@ -567,7 +604,7 @@ ${modeInstructions}
 
 ئەرکەکانت:
 ١. دەقی وێنەکە دەربهێنە بە وردی. ئەگەر دەقەکە ناڕوونە، دڵنیایی بە نزم بنووسە. هیچ نووسین یان هاوکێشەیەک لە خۆتەوە دامەهێنە ئەگەر بە ڕوونی نەخوێندرایەوە.
-٢. پشکنین بکە ئایا بابەتەکە پەیوەندی بە بابەتی سەرەکی خوێندنی قوتابی (بابەتی: ${context.subject}) هەیە یان نا. ئەگەر پرسیارەکە هی بابەتێکی جیاوازە (بۆ نموونە پرسیارەکە مێژووە بەڵام بابەتی ئێستا بیرکارییە)، هۆشدارییەکی میهرەبانانە بە کوردی سۆرانی لە لیستی 'warnings' بنووسە: 'ئەم پرسیارە وەک بابەتێکی دەرەوەی ${context.subject === "math" ? "بیرکاری" : context.subject === "physics" ? "فیزیا" : context.subject === "chemistry" ? "کیمیا" : "ئینگلیزی"} دەردەکەوێت. ئایا دڵنیایت دەتەوێت بەردەوام بیت؟'.
+٢. پشکنین بکە ئایا بابەتەکە پەیوەندی بە بابەتی سەرەکی خوێندنی قوتابی (بابەتی: ${context.subject}) هەیە یان نا. ئەگەر پرسیارەکە هی بابەتێکی جیاوازە (بۆ نموونە پرسیارەکە مێژووە بەڵام بابەتی ئێستا بیرکارییە)، هۆشدارییەکی میهرەبانانە بە کوردی سۆرانی لە لیستی 'warnings' بنووسە: 'ئەم پرسیارە وەک بابەتێکی دەرەوەی ${context.subject === "math" ? "بیرکاری" : context.subject === "physics" ? "فیزیا" : context.subject === "chemistry" ? "کیمیا" : "ئینگلیزی"} دەردەکەوێت. ئایا دڵنیایت دەتەوێت بەردەوام بیر بکەیتەوە؟'.
 ٣. هەرگیز ئیدیعای ئەوە مەکە کە ئەم پرسیارە پرسیارێکی فەرمی یان نیشتمانییە، مەگەر بە بەڵگە و دەقی ڕوون تێیدا نووسرابێت.
 ٤. ئەگەر قوتابی خۆی دەستکاری دەقەکەی کردبوو (${editedText ? `دەقی نوێی دەستکاریکراو لەلایەن قوتابی: ${editedText}` : "قوتابی دەستکاری نەکردووە"}), ئەوا لە شیکار و ڕوونکردنەوەکەتدا زیاتر پشت بەو دەقە دەستکاریکراوە ببەستە.
 ٥. وەڵامەکەت بە زمانی کوردی سۆرانیی فەرمی، زۆر پاراو و دڵسۆزانە پێشکەش بکە بە فۆرماتی Markdown.
@@ -582,59 +619,69 @@ ${modeInstructions}
 }
 `;
 
-          const visionModel = getVisionModel();
+        const visionModel = getVisionModel();
 
-          const response = await ai.models.generateContent({
-            model: visionModel,
-            contents: [
-              {
-                inlineData: {
-                  data: req.file.buffer.toString("base64"),
-                  mimeType: req.file.mimetype,
-                },
-              },
-              userInstructionsPrompt,
-            ],
-            config: {
-              systemInstruction,
-              responseMimeType: "application/json",
-              responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                  extractedText: {
-                    type: Type.STRING,
-                    description: "Strictly extracted text of the question or formula from the image.",
-                  },
-                  detectedSubject: {
-                    type: Type.STRING,
-                    description: "The primary academic subject, e.g., 'math', 'physics', 'chemistry', 'english' or 'other'.",
-                  },
-                  responseText: {
-                    type: Type.STRING,
-                    description: "The educational explanation/hints formatted in rich markdown.",
-                  },
-                  confidence: {
-                    type: Type.STRING,
-                    description: "The visual extraction confidence level, must be high, medium, or low.",
-                  },
-                  warnings: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING },
-                    description: "Any warning messages in formal Kurdish Sorani (e.g. if subject mismatch).",
-                  },
-                },
-                required: ["extractedText", "confidence", "warnings"],
+        const response = await ai.models.generateContent({
+          model: visionModel,
+          contents: [
+            {
+              inlineData: {
+                data: req.file.buffer.toString("base64"),
+                mimeType: req.file.mimetype,
               },
             },
-          });
+            userInstructionsPrompt,
+          ],
+          config: {
+            systemInstruction,
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                extractedText: {
+                  type: Type.STRING,
+                  description: "Strictly extracted text of the question or formula from the image.",
+                },
+                detectedSubject: {
+                  type: Type.STRING,
+                  description: "The primary academic subject, e.g., 'math', 'physics', 'chemistry', 'english' or 'other'.",
+                },
+                responseText: {
+                  type: Type.STRING,
+                  description: "The educational explanation/hints formatted in rich markdown.",
+                },
+                confidence: {
+                  type: Type.STRING,
+                  description: "The visual extraction confidence level, must be high, medium, or low.",
+                },
+                warnings: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                  description: "Any warning messages in formal Kurdish Sorani (e.g. if subject mismatch).",
+                },
+              },
+              required: ["extractedText", "confidence", "warnings"],
+            },
+          },
+        });
 
-          const responseJson = JSON.parse(response.text || "{}");
-          res.json(responseJson);
-        } catch (err: unknown) {
-          console.error("Error in /api/study/vision:", err);
-          res.status(500).json({ error: getSafeErrorMessage(err, "کێشەیەک لە کاتی خوێندنەوەی وێنەکەدا ڕوویدا.") });
+        const responseJson = JSON.parse(response.text || "{}");
+        res.json(responseJson);
+      } catch (err: unknown) {
+        console.error("Error in /api/study/vision:", err);
+        res.status(500).json({ error: getSafeErrorMessage(err, "کێشەیەک لە کاتی خوێندنەوەی وێنەکەدا ڕوویدا.") });
+      } finally {
+        if (req.file && req.file.buffer) {
+          req.file.buffer = Buffer.alloc(0);
         }
-      });
+      }
+    },
+    // Custom error handler for Multer/routing errors specifically for /api/study/vision
+    (err: unknown, req: Request, res: Response, next: express.NextFunction) => {
+      const category = classifyError(err);
+      const statusCode = category === "upload_too_large" ? 413 : category === "unsupported_file" ? 415 : 400;
+      logMinimalError("/api/study/vision [multer-error]", category, err);
+      return res.status(statusCode).json({ error: getClientSafeErrorMessage(category) });
     }
   );
 
@@ -658,4 +705,6 @@ ${modeInstructions}
   });
 }
 
-startServer();
+if (process.env.NODE_ENV !== "test") {
+  startServer();
+}
