@@ -110,7 +110,7 @@ export class ExplainModeEngine {
 
     const subjectLabel = curriculumSnapshot.resolution.subjectLabel || "وانە";
     const gradeLabel = curriculumSnapshot.resolution.gradeLabel || "پۆل";
-    const streamLabel = curriculumSnapshot.resolution.streamLabel || "لقی";
+    const streamLabel = curriculumSnapshot.resolution.streamLabel || "ڕێڕەوی";
     const difficultyLabel = getDifficultyLabelKu(activeNode.difficulty);
 
     // Load rich concept content or generate default fallback content

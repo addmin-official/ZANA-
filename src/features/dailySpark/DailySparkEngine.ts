@@ -25,7 +25,7 @@ export class DailySparkEngine {
     const studentName = studentProfile.name;
     const subjectLabel = cipSnapshot.resolution.subjectLabel || "وانە";
     const gradeLabel = cipSnapshot.resolution.gradeLabel || "پۆل";
-    const streamLabel = cipSnapshot.resolution.streamLabel || "لقی";
+    const streamLabel = cipSnapshot.resolution.streamLabel || "ڕێڕەوی";
 
     const now = new Date();
     const hours = now.getHours();

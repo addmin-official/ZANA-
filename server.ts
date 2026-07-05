@@ -489,6 +489,13 @@ ${historySummary.join("\n")}
     return typeof value === "object" && value !== null;
   }
 
+  const VISION_REQUEST_MODES = ["explain", "extract_only", "hint", "step_by_step", "formula"] as const;
+  type VisionRequestMode = typeof VISION_REQUEST_MODES[number];
+
+  function isVisionRequestMode(value: unknown): value is VisionRequestMode {
+    return typeof value === "string" && (VISION_REQUEST_MODES as readonly string[]).includes(value);
+  }
+
   function isStudyContext(value: unknown): value is StudyContext {
     if (!isRecord(value)) return false;
     const { studentId, grade, stream, subject, level, lessonTitle, conceptTitle } = value;
@@ -552,16 +559,31 @@ ${historySummary.join("\n")}
         }
 
         const contextStr = body.context;
-        const editedText = body.editedText;
-        const modeRaw = body.mode;
-        const mode = typeof modeRaw === "string" ? modeRaw : "explain";
+        const editedTextRaw = body.editedText;
+        const modeRaw = body.mode !== undefined ? body.mode : "explain";
 
-        const allowedModes = ["explain", "extract_only", "hint", "step_by_step", "formula"];
-        if (!allowedModes.includes(mode)) {
+        let editedText: string | undefined;
+        if (editedTextRaw !== undefined) {
+          if (typeof editedTextRaw !== "string") {
+            const category: SafeErrorCategory = "validation";
+            logMinimalError("/api/study/vision [editedText-not-string]", category);
+            return res.status(400).json({ error: getClientSafeErrorMessage(category) });
+          }
+          const trimmed = editedTextRaw.trim();
+          if (trimmed.length > 5000) {
+            const category: SafeErrorCategory = "validation";
+            logMinimalError("/api/study/vision [editedText-oversized]", category);
+            return res.status(400).json({ error: getClientSafeErrorMessage(category) });
+          }
+          editedText = trimmed;
+        }
+
+        if (!isVisionRequestMode(modeRaw)) {
           const category: SafeErrorCategory = "validation";
           logMinimalError("/api/study/vision [mode-invalid]", category);
           return res.status(400).json({ error: getClientSafeErrorMessage(category) });
         }
+        const mode = modeRaw;
 
         if (!contextStr) {
           const category: SafeErrorCategory = "validation";
@@ -625,15 +647,15 @@ ${historySummary.join("\n")}
           modeInstructions = "وەڵامی فێرکاری و ڕوونکردنەوەی تەواوی چەمکەکە پێشکەش بکە. ئەگەر پرسیارەکە تاقیکردنەوە یان ڕاهێنان دەردەکەوێت, پێش پێشکەشکردنی ئەنجام یان وەڵامی کۆتایی, سەرەتا پێویستە شێواز و مێتۆدی شیکارەکە بە تەواوی ڕوون بکەیتەوە.";
         }
 
-        let modeKurdish = "ڕوونکردنەوەی فێرکاریی گشتی (explain)";
+        let modeKurdish = "ڕوونکردنەوەی فێرکاریی گشتی";
         if (mode === "extract_only") {
-          modeKurdish = "تەنها دەرهێنانی دەق (extract_only)";
+          modeKurdish = "تەنها دەرهێنانی دەق";
         } else if (mode === "hint") {
-          modeKurdish = "پێدانی سەرەداو و یارمەتیدان (hint)";
+          modeKurdish = "پێدانی سەرەداو و یارمەتیدان";
         } else if (mode === "step_by_step") {
-          modeKurdish = "شیکاری هەنگاو بە هەنگاو (step_by_step)";
+          modeKurdish = "شیکاری هەنگاو بە هەنگاو";
         } else if (mode === "formula") {
-          modeKurdish = "یاسا و هاوکێشەکان (formula)";
+          modeKurdish = "یاسا و هاوکێشەکان";
         }
 
         const userInstructionsPrompt = `

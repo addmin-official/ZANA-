@@ -210,7 +210,7 @@ export class PracticeModeEngine {
 
     const subjectLabel = curriculumSnapshot.resolution.subjectLabel || "وانە";
     const gradeLabel = curriculumSnapshot.resolution.gradeLabel || "پۆل";
-    const streamLabel = curriculumSnapshot.resolution.streamLabel || "لقی";
+    const streamLabel = curriculumSnapshot.resolution.streamLabel || "ڕێڕەوی";
 
     // Load or generate questions
     let questions = DETAILED_QUESTIONS_DB[activeNode.id];
