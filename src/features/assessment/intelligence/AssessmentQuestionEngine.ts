@@ -400,7 +400,7 @@ export function generateAssessmentQuestions(input: QuestionEngineInput): Assessm
       {
         id: `q_fb_mc1_${cleanSubject}`,
         type: "multiple_choice",
-        prompt: `سەبارەت بە چەمکی “${conceptName}” لە بابەتەکانی پۆلی ${grade} لقی ${stream === "scientific" ? "زانستی" : "گشتی/وێژەیی"}، کام گوزارشت ڕاستە؟`,
+        prompt: `سەبارەت بە چەمکی “${conceptName}” لە بابەتەکانی پۆلی ${grade} ڕێڕەوی ${stream === "scientific" ? "زانستی" : (stream === "literary" ? "وێژەیی" : "گشتی")}، کام گوزارشت ڕاستە؟`,
         choices: [
           "ئەم بابەتە گرنگییەکی زۆری هەیە لە شیکارە وەزارییەکاندا",
           "ئەم چەمکە تەنها لە تاقیگەکاندا سوودی لێ دەبینرێت",

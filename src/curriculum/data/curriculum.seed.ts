@@ -441,7 +441,7 @@ export const CURRICULUM_SEED: CurriculumNode[] = [
     id: "12_lit_math_sub",
     type: "subject",
     title: "بیرکاری ١٢ - وێژەیی",
-    description: "بناغە و ناساندنی ئامار و لایەنەکانی بیرکاری بۆ لقی وێژەیی",
+    description: "بناغە و ناساندنی ئامار و لایەنەکانی بیرکاری بۆ ڕێڕەوی وێژەیی",
     grade: "12",
     stream: "literary",
     subject: "math",

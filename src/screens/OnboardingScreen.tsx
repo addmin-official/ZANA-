@@ -31,7 +31,7 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
   const [step, setStep] = useState(1);
   const [name, setName] = useState("");
   const [grade, setGrade] = useState<StudentGrade>("12");
-  const [stream, setStream] = useState<AcademicStream>("scientific");
+  const [stream, setStream] = useState<AcademicStream | "">("");
   const [subject, setSubject] = useState<SubjectKey>("math");
   const [level, setLevel] = useState<StudentLevel>("intermediate");
   const [error, setError] = useState("");
@@ -41,12 +41,10 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
   // Handles updating grade and automatically adjusting default stream
   const handleSelectGrade = (selectedGrade: StudentGrade) => {
     setGrade(selectedGrade);
-    if (selectedGrade === "11" || selectedGrade === "12") {
-      if (stream === "general") {
-        setStream("scientific");
-      }
-    } else {
+    if (selectedGrade === "9") {
       setStream("general");
+    } else {
+      setStream(""); // Force manual selection for 10, 11, 12
     }
   };
 
@@ -62,11 +60,32 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
       }
       setError("");
     }
+    
+    // Automatically skip step 4 if Grade 9 is selected
+    if (step === 3 && grade === "9") {
+      setStream("general");
+      setStep(5);
+      return;
+    }
+
+    if (step === 4) {
+      if (grade !== "9" && stream !== "scientific" && stream !== "literary") {
+        setError("تکایە ڕێڕەوی خوێندنت دیاری بکە.");
+        return;
+      }
+      setError("");
+    }
+
     setStep((prev) => Math.min(prev + 1, totalSteps));
   };
 
   const handleBack = () => {
     setError("");
+    // Automatically skip step 4 on back navigation if Grade 9 is selected
+    if (step === 5 && grade === "9") {
+      setStep(3);
+      return;
+    }
     setStep((prev) => Math.max(prev - 1, 1));
   };
 
@@ -76,7 +95,8 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
       setStep(2);
       return;
     }
-    onComplete(name.trim(), grade, subject, level, stream);
+    const finalStream = grade === "9" ? "general" : stream;
+    onComplete(name.trim(), grade, subject, level, finalStream || "scientific");
   };
 
   const progressPercentage = (step / totalSteps) * 100;
@@ -255,14 +275,14 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
                 </div>
                 <h3 className="font-sans font-bold text-xl text-slate-800">ڕێڕەوی خوێندنت چییە؟</h3>
                 <p className="font-sans text-sm text-slate-500 font-medium">
-                  {grade === "11" || grade === "12"
-                    ? "ڕێڕەوی خوێندنی پۆلی ١١ و ١٢ بەپێی پڕۆگرامی وەزارەت دیاری دەکرێت بە زانستی یان وێژەیی."
-                    : "بۆ ئەم پۆلە، ڕێڕەوی گشتی گونجاوترینە، بەڵام دەتوانیت بژاردەکانی تریش تاقی بکەیتەوە."}
+                  {grade === "9"
+                    ? "پۆلی ٩ بە شێوەی گشتی ڕێکدەخرێت."
+                    : "تکایە ڕێڕەوی خوێندنت دیاری بکە."}
                 </p>
               </div>
 
-              {/* Special warning style for 11 and 12 */}
-              {(grade === "11" || grade === "12") && (
+              {/* Special warning style for 10, 11, and 12 */}
+              {(grade === "10" || grade === "11" || grade === "12") && (
                 <div className="bg-amber-50 border border-amber-100 text-amber-800 px-3.5 py-2.5 rounded-xl font-sans text-xs">
                   📌 <strong>ئاگاداری:</strong> بۆ ئەم پۆلە ڕێڕەوی <strong>گشتی</strong> بوونی نییە، تکایە ڕێڕەوەکەت بە دروستی هەڵبژێرە.
                 </div>
@@ -272,10 +292,10 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
                 {/* Dynamically filter stream list */}
                 {(Object.keys(STREAM_LABELS) as AcademicStream[])
                   .filter((val) => {
-                    if (grade === "11" || grade === "12") {
-                      return val !== "general"; // Exclude general for 11/12
+                    if (grade === "10" || grade === "11" || grade === "12") {
+                      return val === "scientific" || val === "literary";
                     }
-                    return true;
+                    return val === "general";
                   })
                   .map((val) => {
                     const isSelected = stream === val;
@@ -283,7 +303,10 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
                       <button
                         key={val}
                         type="button"
-                        onClick={() => setStream(val)}
+                        onClick={() => {
+                          setStream(val);
+                          setError("");
+                        }}
                         className={`min-h-[52px] w-full px-4 rounded-xl border font-sans text-base font-semibold text-right transition-all flex items-center justify-between cursor-pointer ${
                           isSelected
                             ? "bg-blue-50/70 border-blue-500 text-blue-700 shadow-sm"
@@ -296,6 +319,12 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
                     );
                   })}
               </div>
+
+              {error && (
+                <p className="font-sans text-xs text-red-500 mt-1 font-medium">
+                  ⚠️ {error}
+                </p>
+              )}
 
               <ZanaButton variant="primary" fullWidth onClick={handleNext} className="h-12 mt-4">
                 <span>بەردەوام بە</span>

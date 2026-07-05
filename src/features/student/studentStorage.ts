@@ -45,12 +45,23 @@ export function migrateStudentProfile(raw: unknown): StudentProfile {
   if (rawOnboarded === undefined || rawOnboarded === null) {
     rawOnboarded = rawObj.onboarded;
   }
-  const onboardingCompleted = typeof rawOnboarded === "boolean" ? rawOnboarded : false;
+  let onboardingCompleted = typeof rawOnboarded === "boolean" ? rawOnboarded : false;
 
   // 4. Validate other fields
   const grade = getValidatedGrade(rawObj.grade);
-  const stream = getValidatedStream(rawObj.stream);
+  let stream = getValidatedStream(rawObj.stream);
   const level = getValidatedLevel(rawObj.level);
+
+  // Apply academic stream rules for migration
+  if (grade === "9") {
+    stream = "general";
+  } else {
+    // Grade is "10", "11", or "12"
+    if (stream !== "scientific" && stream !== "literary") {
+      stream = "scientific";
+      onboardingCompleted = false; // Force stream selection again
+    }
+  }
 
   const migrated: StudentProfile = {
     id,
@@ -117,11 +128,21 @@ export function createStudentProfile(draft: StudentProfileDraft): StudentProfile
   // Stable random ID generation
   const uniqueId = "stud_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now();
   
+  let grade = draft.grade;
+  let stream = draft.stream;
+  if (grade === "9") {
+    stream = "general";
+  } else {
+    if (stream !== "scientific" && stream !== "literary") {
+      stream = "scientific";
+    }
+  }
+
   const profile: StudentProfile = {
     id: uniqueId,
     name: draft.name.trim(),
-    grade: draft.grade,
-    stream: draft.stream,
+    grade,
+    stream,
     activeSubject: draft.activeSubject,
     level: draft.level,
     onboardingCompleted: true,
@@ -137,11 +158,22 @@ export function updateStudentProfile(
   current: StudentProfile,
   updates: Partial<StudentProfileDraft>
 ): StudentProfile {
+  let grade = updates.grade !== undefined ? updates.grade : current.grade;
+  let stream = updates.stream !== undefined ? updates.stream : current.stream;
+
+  if (grade === "9") {
+    stream = "general";
+  } else {
+    if (stream !== "scientific" && stream !== "literary") {
+      stream = "scientific";
+    }
+  }
+
   const updatedProfile: StudentProfile = {
     ...current,
     name: updates.name !== undefined ? updates.name.trim() : current.name,
-    grade: updates.grade !== undefined ? updates.grade : current.grade,
-    stream: updates.stream !== undefined ? updates.stream : current.stream,
+    grade,
+    stream,
     activeSubject: updates.activeSubject !== undefined ? updates.activeSubject : current.activeSubject,
     level: updates.level !== undefined ? updates.level : current.level,
     updatedAt: new Date().toISOString()

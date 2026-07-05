@@ -26,10 +26,21 @@ export function useStudentProfile() {
   const isOnboarded = profile.onboardingCompleted;
 
   const createProfile = (draft: StudentProfileDraft): StudentProfile => {
+    const validatedGrade = getValidatedGrade(draft.grade);
+    let validatedStream = getValidatedStream(draft.stream);
+    
+    if (validatedGrade === "9") {
+      validatedStream = "general";
+    } else {
+      if (validatedStream !== "scientific" && validatedStream !== "literary") {
+        validatedStream = "scientific";
+      }
+    }
+
     const validatedDraft: StudentProfileDraft = {
       name: sanitizeStudentName(draft.name),
-      grade: getValidatedGrade(draft.grade),
-      stream: getValidatedStream(draft.stream),
+      grade: validatedGrade,
+      stream: validatedStream,
       activeSubject: getValidatedSubject(draft.activeSubject),
       level: getValidatedLevel(draft.level)
     };
@@ -48,8 +59,30 @@ interface LegacyUpdateFields {
     setProfileState((prev) => {
       const mappedUpdates: Partial<StudentProfileDraft> = {};
       if (updates.name !== undefined) mappedUpdates.name = sanitizeStudentName(updates.name);
-      if (updates.grade !== undefined) mappedUpdates.grade = getValidatedGrade(updates.grade);
-      if (updates.stream !== undefined) mappedUpdates.stream = getValidatedStream(updates.stream);
+      
+      let nextGrade = prev.grade;
+      if (updates.grade !== undefined) {
+        nextGrade = getValidatedGrade(updates.grade);
+        mappedUpdates.grade = nextGrade;
+      }
+
+      if (updates.stream !== undefined) {
+        mappedUpdates.stream = getValidatedStream(updates.stream);
+      }
+
+      // Enforce rules on update too
+      if (nextGrade === "9") {
+        mappedUpdates.stream = "general";
+      } else if (mappedUpdates.stream !== undefined) {
+        if (mappedUpdates.stream !== "scientific" && mappedUpdates.stream !== "literary") {
+          mappedUpdates.stream = "scientific";
+        }
+      } else {
+        // stream was not updated, check current stream
+        if (prev.stream !== "scientific" && prev.stream !== "literary") {
+          mappedUpdates.stream = "scientific";
+        }
+      }
       
       // Support both activeSubject and legacy subject key safely
       const rawSubject = updates.activeSubject !== undefined ? updates.activeSubject : updates.subject;
