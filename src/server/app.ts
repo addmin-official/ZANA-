@@ -1,5 +1,4 @@
 import express, { Request, Response } from "express";
-import path from "path";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import { buildSystemPrompt } from "../ai/buildSystemPrompt.ts";
@@ -11,8 +10,8 @@ dotenv.config();
 
 const app = express();
 
-// Configure Express trust proxy correctly for Firebase
-app.set("trust proxy", true);
+// Configure Express trust proxy correctly for Firebase (bounded trust)
+app.set("trust proxy", 1);
 
 // Add secure production headers where appropriate
 app.use((req, res, next) => {
@@ -23,6 +22,14 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json());
+
+// Minimal Health Endpoint
+app.get("/api/health", (req: Request, res: Response) => {
+  res.json({
+    status: "ok",
+    service: "zana-api",
+  });
+});
 
 // 1. SAFE ERROR RESPONSES
 export type SafeErrorCategory =
@@ -184,8 +191,12 @@ export function isRateLimited(ip: string, limit: number, windowMs: number): bool
 
 function rateLimitMiddleware(limit: number, windowMs: number) {
   return (req: Request, res: Response, next: express.NextFunction) => {
-    const rawIp = req.headers["x-forwarded-for"] || req.ip || req.socket.remoteAddress || "unknown";
-    const ip = Array.isArray(rawIp) ? rawIp[0] : String(rawIp).split(",")[0].trim();
+    let ip = req.ip || req.socket.remoteAddress || "unknown";
+    
+    // Normalize IPv4-mapped IPv6 addresses (e.g. ::ffff:127.0.0.1 -> 127.0.0.1)
+    if (ip.startsWith("::ffff:")) {
+      ip = ip.substring(7);
+    }
 
     if (isRateLimited(ip, limit, windowMs)) {
       const category: SafeErrorCategory = "validation";
