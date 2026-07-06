@@ -1,6 +1,5 @@
 import express, { Request, Response } from "express";
 import path from "path";
-import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import { buildSystemPrompt } from "../ai/buildSystemPrompt.ts";
@@ -777,29 +776,9 @@ ${modeInstructions}
   }
 );
 
-// 4. VITE MIDDLEWARE OR STATIC FILES
-const registerViteOrStaticMiddleware = async () => {
-  if (process.env.NODE_ENV === "test") {
-    return;
-  }
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req: Request, res: Response) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
-  }
-};
+// 4. VITE MIDDLEWARE OR STATIC FILES ARE REMOVED FROM RUNTIME TO ENSURE FIREBASE COMPATIBILITY
+// These are now handled exclusively in server.ts for local development and non-serverless starts.
 
-registerViteOrStaticMiddleware().catch((err) => {
-  console.error("Failed to register Vite or Static middleware:", err);
-});
 
 // Safe global error handler - do not expose stack traces
 app.use((err: any, req: Request, res: Response, next: express.NextFunction) => {
