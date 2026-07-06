@@ -26,7 +26,7 @@ async function bootstrap() {
     app.use(vite.middlewares);
   } else {
     // In production/local start, serve compiled dist assets
-    const distPath = path.join(process.cwd(), "dist");
+    const distPath = path.join(process.cwd(), "dist/client");
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));

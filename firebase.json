@@ -1,6 +1,6 @@
 {
   "hosting": {
-    "public": "dist",
+    "public": "dist/client",
     "ignore": [
       "firebase.json",
       "**/.*",
@@ -12,13 +12,13 @@
         "function": "api"
       },
       {
-        "source": "**",
+        "source": "**/!(*.cjs|*.map|package.json|.env|*.ts)",
         "destination": "/index.html"
       }
     ]
   },
   "functions": {
-    "source": ".",
+    "source": "dist/functions",
     "codebase": "default",
     "runtime": "nodejs22",
     "ignore": [
