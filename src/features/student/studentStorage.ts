@@ -58,7 +58,7 @@ export function migrateStudentProfile(raw: unknown): StudentProfile {
   } else {
     // Grade is "10", "11", or "12"
     if (stream !== "scientific" && stream !== "literary") {
-      stream = "scientific";
+      stream = "general";
       onboardingCompleted = false; // Force stream selection again
     }
   }
@@ -128,13 +128,13 @@ export function createStudentProfile(draft: StudentProfileDraft): StudentProfile
   // Stable random ID generation
   const uniqueId = "stud_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now();
   
-  let grade = draft.grade;
+  const grade = draft.grade;
   let stream = draft.stream;
   if (grade === "9") {
     stream = "general";
   } else {
     if (stream !== "scientific" && stream !== "literary") {
-      stream = "scientific";
+      throw new TypeError(`Invalid academic stream "${stream}" for Grade ${grade}: stream must be either "scientific" or "literary"`);
     }
   }
 
@@ -165,7 +165,7 @@ export function updateStudentProfile(
     stream = "general";
   } else {
     if (stream !== "scientific" && stream !== "literary") {
-      stream = "scientific";
+      throw new TypeError(`Invalid academic stream "${stream}" for Grade ${grade}: stream must be either "scientific" or "literary"`);
     }
   }
 

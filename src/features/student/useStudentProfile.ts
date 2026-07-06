@@ -14,7 +14,7 @@ export function useStudentProfile() {
       id: "default-guest",
       name: "",
       grade: "12",
-      stream: "general",
+      stream: "scientific",
       activeSubject: "math",
       level: "intermediate",
       onboardingCompleted: false,
@@ -27,20 +27,20 @@ export function useStudentProfile() {
 
   const createProfile = (draft: StudentProfileDraft): StudentProfile => {
     const validatedGrade = getValidatedGrade(draft.grade);
-    let validatedStream = getValidatedStream(draft.stream);
+    let stream = draft.stream;
     
     if (validatedGrade === "9") {
-      validatedStream = "general";
+      stream = "general";
     } else {
-      if (validatedStream !== "scientific" && validatedStream !== "literary") {
-        validatedStream = "scientific";
+      if (stream !== "scientific" && stream !== "literary") {
+        throw new TypeError(`Invalid academic stream "${stream}" for Grade ${validatedGrade}: stream must be either "scientific" or "literary"`);
       }
     }
 
     const validatedDraft: StudentProfileDraft = {
       name: sanitizeStudentName(draft.name),
       grade: validatedGrade,
-      stream: validatedStream,
+      stream,
       activeSubject: getValidatedSubject(draft.activeSubject),
       level: getValidatedLevel(draft.level)
     };
@@ -66,23 +66,17 @@ interface LegacyUpdateFields {
         mappedUpdates.grade = nextGrade;
       }
 
-      if (updates.stream !== undefined) {
-        mappedUpdates.stream = getValidatedStream(updates.stream);
-      }
+      let stream = updates.stream !== undefined ? updates.stream : prev.stream;
 
       // Enforce rules on update too
       if (nextGrade === "9") {
-        mappedUpdates.stream = "general";
-      } else if (mappedUpdates.stream !== undefined) {
-        if (mappedUpdates.stream !== "scientific" && mappedUpdates.stream !== "literary") {
-          mappedUpdates.stream = "scientific";
-        }
+        stream = "general";
       } else {
-        // stream was not updated, check current stream
-        if (prev.stream !== "scientific" && prev.stream !== "literary") {
-          mappedUpdates.stream = "scientific";
+        if (stream !== "scientific" && stream !== "literary") {
+          throw new TypeError(`Invalid academic stream "${stream}" for Grade ${nextGrade}: stream must be either "scientific" or "literary"`);
         }
       }
+      mappedUpdates.stream = stream;
       
       // Support both activeSubject and legacy subject key safely
       const rawSubject = updates.activeSubject !== undefined ? updates.activeSubject : updates.subject;
@@ -102,7 +96,7 @@ interface LegacyUpdateFields {
       id: "default-guest",
       name: "",
       grade: "12",
-      stream: "general",
+      stream: "scientific",
       activeSubject: "math",
       level: "intermediate",
       onboardingCompleted: false,
@@ -118,7 +112,7 @@ interface LegacyUpdateFields {
       id: "default-guest",
       name: "",
       grade: "12",
-      stream: "general",
+      stream: "scientific",
       activeSubject: "math",
       level: "intermediate",
       onboardingCompleted: false,
@@ -170,7 +164,7 @@ interface LegacyUpdateFields {
       id: "default-guest",
       name: "",
       grade: "12",
-      stream: "general",
+      stream: "scientific",
       activeSubject: "math",
       level: "intermediate",
       onboardingCompleted: false,
