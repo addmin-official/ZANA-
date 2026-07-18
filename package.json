@@ -8,16 +8,13 @@
     "dev": "tsx server.ts",
     "build:client": "vite build",
     "build:server": "esbuild server.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist/server/server.cjs",
-    "build:functions": "esbuild functions/src/index.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist/functions/index.cjs && node scripts/prepare-functions-dist.js",
-    "build": "npm run build:client && npm run build:server && npm run build:functions",
+    "build": "npm run build:client && npm run build:server",
     "start": "node dist/server/server.cjs",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "firebase:emulators": "firebase emulators:start",
-    "firebase:deploy": "firebase deploy",
-    "firebase:deploy:hosting": "firebase deploy --only hosting",
-    "firebase:deploy:functions": "firebase deploy --only functions"
+    "firebase:deploy": "firebase deploy --only hosting",
+    "firebase:deploy:hosting": "firebase deploy --only hosting"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -25,8 +22,6 @@
     "@vitejs/plugin-react": "^5.0.4",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
-    "firebase-admin": "^13.10.0",
-    "firebase-functions": "^7.2.5",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "multer": "^2.2.0",
@@ -44,6 +39,7 @@
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.3"
+    "vite": "^6.2.3",
+    "wrangler": "^4.112.0"
   }
 }

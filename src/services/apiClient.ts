@@ -17,6 +17,14 @@ export interface ReportResponse {
   recommendation: string;
 }
 
+const getApiUrl = (path: string): string => {
+  const baseUrl = import.meta.env.VITE_API_BASE_URL || "";
+  if (!baseUrl) return path;
+  const normalizedBase = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${normalizedBase}${normalizedPath}`;
+};
+
 export const ZanaApiClient = {
   async sendChatMessage(
     message: string,
@@ -24,7 +32,7 @@ export const ZanaApiClient = {
     profile: StudentProfile
   ): Promise<ChatResponse> {
     try {
-      const response = await fetch("/api/chat", {
+      const response = await fetch(getApiUrl("/api/chat"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message, history, profile }),
@@ -47,7 +55,7 @@ export const ZanaApiClient = {
     profile: StudentProfile
   ): Promise<AssessmentResponse> {
     try {
-      const response = await fetch("/api/assessment", {
+      const response = await fetch(getApiUrl("/api/assessment"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ state, profile }),
@@ -70,7 +78,7 @@ export const ZanaApiClient = {
     summaryStats: { totalSessions: number; weeklyQuestionCount: number }
   ): Promise<ReportResponse> {
     try {
-      const response = await fetch("/api/report", {
+      const response = await fetch(getApiUrl("/api/report"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ profile, summaryStats }),

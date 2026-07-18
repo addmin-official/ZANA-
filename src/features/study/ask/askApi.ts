@@ -1,11 +1,19 @@
 import { AskApiRequest, AskApiResponse } from "./askTypes.ts";
 
+const getApiUrl = (path: string): string => {
+  const baseUrl = import.meta.env.VITE_API_BASE_URL || "";
+  if (!baseUrl) return path;
+  const normalizedBase = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${normalizedBase}${normalizedPath}`;
+};
+
 export async function askZana(request: AskApiRequest): Promise<AskApiResponse> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 seconds timeout
 
   try {
-    const response = await fetch("/api/study/ask", {
+    const response = await fetch(getApiUrl("/api/study/ask"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

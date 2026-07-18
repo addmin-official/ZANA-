@@ -1,5 +1,13 @@
 import { VisionQuestionResult, VisionRequestMode, VisionStudyContext } from "./visionTypes.ts";
 
+const getApiUrl = (path: string): string => {
+  const baseUrl = import.meta.env.VITE_API_BASE_URL || "";
+  if (!baseUrl) return path;
+  const normalizedBase = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  return `${normalizedBase}${normalizedPath}`;
+};
+
 export class VisionApi {
   /**
    * Uploads the captured image to the server and retrieves ZANA's multimodal response.
@@ -22,7 +30,7 @@ export class VisionApi {
         formData.append("editedText", editedText);
       }
 
-      const response = await fetch("/api/study/vision", {
+      const response = await fetch(getApiUrl("/api/study/vision"), {
         method: "POST",
         body: formData,
         signal: controller.signal,

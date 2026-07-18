@@ -8,31 +8,12 @@
     ],
     "rewrites": [
       {
-        "source": "/api/**",
-        "function": "api"
-      },
-      {
         "source": "**/!(*.cjs|*.map|package.json|.env|*.ts)",
         "destination": "/index.html"
       }
     ]
   },
-  "functions": {
-    "source": "dist/functions",
-    "codebase": "default",
-    "runtime": "nodejs22",
-    "ignore": [
-      "node_modules",
-      ".git",
-      "firebase-debug.log",
-      "firebase-debug.*.log"
-    ]
-  },
   "emulators": {
-    "functions": {
-      "port": 5001,
-      "host": "127.0.0.1"
-    },
     "hosting": {
       "port": 5000,
       "host": "127.0.0.1"
