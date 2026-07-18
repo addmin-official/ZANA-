@@ -11,3 +11,4 @@ firebase-debug.log
 firebase-debug.*.log
 service-account*.json
 *.json.key
+.dev.vars

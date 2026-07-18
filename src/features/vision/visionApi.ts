@@ -1,8 +1,15 @@
 import { VisionQuestionResult, VisionRequestMode, VisionStudyContext } from "./visionTypes.ts";
 
 const getApiUrl = (path: string): string => {
-  const baseUrl = import.meta.env.VITE_API_BASE_URL || "";
-  if (!baseUrl) return path;
+  const baseUrl = import.meta.env.VITE_API_BASE_URL;
+  if (!baseUrl) {
+    const isDev = import.meta.env.DEV;
+    if (isDev) {
+      throw new Error("Development Error: VITE_API_BASE_URL environment variable is missing or undefined. Please configure it in your environment.");
+    } else {
+      throw new Error("ببوورە، ڕێکخستنی خزمەتگوزارییەکانی زانا تەواو نییە (VITE_API_BASE_URL دیاری نەکراوە). تکایە پەیوەندی بە سەرپەرشتیارەوە بکە.");
+    }
+  }
   const normalizedBase = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   return `${normalizedBase}${normalizedPath}`;

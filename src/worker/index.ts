@@ -165,27 +165,17 @@ function getVisionModel(env: Env): string {
 // 5. CORS AND SECURITY POLICIES
 function isOriginAllowed(origin: string | null, env: Env): boolean {
   if (!origin) {
-    // Permit requests without Origin for local healthcheck queries
+    // Permit requests without Origin for non-browser clients (e.g. server/curl testing)
     return true;
   }
   
   const allowed = (env.ALLOWED_ORIGINS || "")
     .split(",")
-    .map(o => o.trim().toLowerCase())
+    .map(o => o.trim().toLowerCase().replace(/\/$/, ""))
     .filter(Boolean);
     
-  const lowerOrigin = origin.toLowerCase();
+  const lowerOrigin = origin.toLowerCase().trim().replace(/\/$/, "");
   
-  // Localhost
-  if (lowerOrigin.startsWith("http://localhost:") || lowerOrigin === "http://localhost") {
-    return true;
-  }
-  
-  // AI Studio Development containers
-  if (lowerOrigin.includes(".run.app") || lowerOrigin.includes("europe-west1.run.app")) {
-    return true;
-  }
-
   return allowed.includes(lowerOrigin);
 }
 

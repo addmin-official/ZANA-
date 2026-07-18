@@ -35,3 +35,6 @@ jobs:
 
       - name: Build Applet
         run: npm run build
+
+      - name: Verify Worker Build
+        run: npm run build:worker

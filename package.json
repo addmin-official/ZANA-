@@ -3,18 +3,20 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "main": "dist/functions/index.cjs",
+  "main": "dist/server/server.cjs",
   "scripts": {
     "dev": "tsx server.ts",
     "build:client": "vite build",
     "build:server": "esbuild server.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist/server/server.cjs",
-    "build": "npm run build:client && npm run build:server",
+    "build:worker": "wrangler deploy --dry-run",
+    "build": "npm run build:client && npm run build:server && npm run build:worker",
     "start": "node dist/server/server.cjs",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "firebase:deploy": "firebase deploy --only hosting",
-    "firebase:deploy:hosting": "firebase deploy --only hosting"
+    "firebase:deploy:hosting": "firebase deploy --only hosting",
+    "deploy:cloudflare": "wrangler deploy"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
