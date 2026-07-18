@@ -10,7 +10,8 @@ jobs:
   validate-and-deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
       - name: Use Node.js
         uses: actions/setup-node@v4
@@ -18,35 +19,74 @@ jobs:
           node-version: 22
           cache: 'npm'
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: npm ci
 
+      # STAGE 1: Preflight Checks
+      - name: Preflight Secrets Check
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "Running Preflight checks for required deployment secrets..."
+          MISSING_SECRETS=0
+
+          if [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ]; then
+            echo "::error::Missing secret CLOUDFLARE_API_TOKEN"
+            MISSING_SECRETS=1
+          fi
+          if [ -z "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" ]; then
+            echo "::error::Missing secret CLOUDFLARE_ACCOUNT_ID"
+            MISSING_SECRETS=1
+          fi
+          if [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
+            echo "::error::Missing secret FIREBASE_SERVICE_ACCOUNT"
+            MISSING_SECRETS=1
+          fi
+          if [ -z "${{ secrets.GEMINI_API_KEY }}" ]; then
+            echo "::error::Missing secret GEMINI_API_KEY"
+            MISSING_SECRETS=1
+          fi
+          if [ -z "${{ secrets.ALLOWED_ORIGINS }}" ]; then
+            echo "::error::Missing secret ALLOWED_ORIGINS"
+            MISSING_SECRETS=1
+          fi
+          if [ -z "${{ secrets.VITE_API_BASE_URL }}" ]; then
+            echo "::error::Missing secret VITE_API_BASE_URL"
+            MISSING_SECRETS=1
+          fi
+
+          if [ $MISSING_SECRETS -ne 0 ]; then
+            echo "Preflight check failed. One or more required secrets are missing."
+            exit 1
+          fi
+          echo "All preflight checks passed successfully. Proceeding with the release pipeline."
+
+      # STAGE 2: Lint
       - name: Run Linter
-        run: npm run lint
+        run: npm run lint 2>&1 | tee lint.log
 
+      # STAGE 3: Typecheck
       - name: Run Typecheck
-        run: npm run typecheck
+        run: npm run typecheck 2>&1 | tee typecheck.log
 
-      # Pre-build worker verification to stop early if worker is broken
+      # STAGE 4: Worker Validation
       - name: Build Worker (Validation)
-        run: npm run build:worker
+        run: npm run build:worker 2>&1 | tee build-worker.log
 
+      # STAGE 5: Application Build
       - name: Build Client and Server
         env:
           VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
-        run: npm run build
+        run: npm run build 2>&1 | tee build.log
 
-      # Only deploy on push to main branch
+      # STAGE 6: Deploy Cloudflare Worker
       - name: Deploy Cloudflare Worker
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          npx wrangler deploy
-          echo "${{ secrets.GEMINI_API_KEY }}" | npx wrangler secret put GEMINI_API_KEY
-          echo "${{ secrets.ALLOWED_ORIGINS }}" | npx wrangler secret put ALLOWED_ORIGINS
+        run: npx wrangler deploy 2>&1 | tee wrangler-deploy.log
 
+      # STAGE 7: Deploy Firebase Hosting
       - name: Authenticate Firebase
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
@@ -55,16 +95,65 @@ jobs:
 
       - name: Deploy Firebase Hosting
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: npx firebase deploy --only hosting
+        run: npx firebase deploy --only hosting 2>&1 | tee firebase-deploy.log
 
+      # STAGE 8: Production Smoke Tests
       - name: Run Production Smoke Tests
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
-        run: npm run test:smoke
+        run: npm run test:smoke 2>&1 | tee smoke-test-report.log
 
-      # Cleanup sensitive files if any
+      # STAGE 9: Release Success & Metadata Generation
+      - name: Generate Release Metadata
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          WORKER_VER="unknown"
+          if [ -f wrangler-deploy.log ]; then
+            WORKER_VER=$(grep -oE "Version: [0-9]+" wrangler-deploy.log | head -n 1 || echo "latest")
+          fi
+          
+          HOSTING_VER="deployed-hosting"
+          
+          SMOKE_STATUS="SUCCESS"
+          if [ ! -f smoke-test-report.log ] || grep -q "❌" smoke-test-report.log || grep -q "FAILED" smoke-test-report.log; then
+            SMOKE_STATUS="FAILED"
+          fi
+
+          cat <<EOF > release-summary.json
+          {
+            "commit_sha": "${{ github.sha }}",
+            "deployment_time": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+            "worker_version": "$WORKER_VER",
+            "hosting_version": "$HOSTING_VER",
+            "smoke_test_results": {
+              "status": "$SMOKE_STATUS",
+              "report_file": "smoke-test-report.log"
+            }
+          }
+          EOF
+          echo "Generated Release Summary:"
+          cat release-summary.json
+
+      # Upload artifacts
+      - name: Upload Build and Release Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: |
+            build.log
+            lint.log
+            typecheck.log
+            build-worker.log
+            wrangler-deploy.log
+            firebase-deploy.log
+            smoke-test-report.log
+            release-summary.json
+
+      # Cleanup sensitive files
       - name: Cleanup
         if: always()
         run: |
           rm -f firebase-service-account.json
+
