@@ -16,7 +16,8 @@
     "typecheck": "tsc --noEmit",
     "firebase:deploy": "firebase deploy --only hosting",
     "firebase:deploy:hosting": "firebase deploy --only hosting",
-    "deploy:cloudflare": "wrangler deploy"
+    "deploy:cloudflare": "wrangler deploy",
+    "test:smoke": "node scripts/smoke-test.js"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
