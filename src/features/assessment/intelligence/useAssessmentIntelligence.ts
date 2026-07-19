@@ -13,6 +13,8 @@ import { learningSessionEngineInstance } from "../../../session/LearningSessionE
 import { safeGet, safeSet, safeRemove, ZanaStorage } from "../../../services/storage.ts";
 import { AdaptiveLearningEngine } from "../../adaptive/AdaptiveLearningEngine.ts";
 import { AdaptiveEventBridge } from "../../adaptive/AdaptiveEventBridge.ts";
+import { LocalStorageLearningRecordProvider } from "../../../learning/providers/LearningRecordProvider.ts";
+import { AdaptiveLearningEngine as StudentMasteryAdaptiveEngine } from "../../../learning/engine/AdaptiveLearningEngine.ts";
 
 /**
  * Hook to manage Assessment Intelligence Platform state,
@@ -115,6 +117,69 @@ export function useAssessmentIntelligence(
           currentQuestion.id,
           answerText
         );
+
+        // PHASE 15 - RECORD ATTEMPT FOR STUDENT MASTERY ENGINE
+        if (currentQuestion.conceptId) {
+          const lp = new LocalStorageLearningRecordProvider();
+          lp.getStudentMasteryProfile(studentId).then(async (profileData) => {
+            const currentState = await lp.getConceptMastery(studentId, currentQuestion.conceptId!);
+            const newState = StudentMasteryAdaptiveEngine.calculateNewMastery(currentState, {
+              isCorrect,
+              responseTimeMs: 8000,
+              difficulty: 2
+            });
+            await lp.saveMasteryChange(studentId, currentQuestion.conceptId!, newState);
+
+            // Misconception analysis
+            const attemptObj = {
+              id: "att_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now(),
+              studentId,
+              conceptId: currentQuestion.conceptId!,
+              isCorrect,
+              responseTimeMs: 8000,
+              difficulty: 2,
+              questionText: currentQuestion.text,
+              studentResponse: answerText,
+              timestamp: new Date().toISOString()
+            };
+            const detectedMisc = StudentMasteryAdaptiveEngine.detectMisconception(attemptObj, profileData.activeMisconceptions);
+            let updatedMisconceptions = [...profileData.activeMisconceptions];
+            if (detectedMisc) {
+              const idx = updatedMisconceptions.findIndex(m => m.misconceptionId === detectedMisc.misconceptionId && m.resolvedAt === null);
+              if (idx >= 0) {
+                updatedMisconceptions[idx] = detectedMisc;
+              } else {
+                updatedMisconceptions.push(detectedMisc);
+              }
+            } else if (isCorrect) {
+              updatedMisconceptions = updatedMisconceptions.map(m => {
+                if (m.conceptId === currentQuestion.conceptId && m.resolvedAt === null) {
+                  return { ...m, resolvedAt: new Date().toISOString() };
+                }
+                return m;
+              });
+            }
+
+            profileData.activeMisconceptions = updatedMisconceptions;
+            await lp.appendLearningEvent(studentId, {
+              id: "evt_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now(),
+              studentId,
+              timestamp: new Date().toISOString(),
+              type: "EXERCISE_ATTEMPT",
+              data: attemptObj
+            });
+
+            // Recommendation
+            const recommendation = StudentMasteryAdaptiveEngine.generateRecommendation(
+              studentId,
+              currentQuestion.conceptId!,
+              currentQuestion.conceptId!,
+              profileData,
+              []
+            );
+            await lp.saveRecommendation(recommendation);
+          }).catch(err => console.warn("Error running local mastery engine in assessment:", err));
+        }
 
         setSession(updatedSession);
         return { isCorrect, feedback };

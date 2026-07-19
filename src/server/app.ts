@@ -6,6 +6,9 @@ import multer from "multer";
 import { getPrimaryModel, getVisionModel } from "./config/aiModels.ts";
 import { validateImageSignature } from "./security/imageSignature.ts";
 import { CurriculumRetriever } from "../curriculum/retrieval/CurriculumRetriever.ts";
+import { InMemoryLearningRecordProvider } from "../learning/providers/LearningRecordProvider.ts";
+import { AdaptiveLearningEngine as StudentMasteryAdaptiveEngine } from "../learning/engine/AdaptiveLearningEngine.ts";
+import { CurriculumRegistry } from "../curriculum/registry/CurriculumRegistry.ts";
 
 dotenv.config();
 
@@ -852,6 +855,251 @@ ${modeInstructions}
 
 // 4. VITE MIDDLEWARE OR STATIC FILES ARE REMOVED FROM RUNTIME TO ENSURE FIREBASE COMPATIBILITY
 // These are now handled exclusively in server.ts for local development and non-serverless starts.
+
+
+// =========================================================================
+// STUDENT MASTERY & ADAPTIVE LEARNING ENGINE ENDPOINTS (PHASE 15)
+// =========================================================================
+const serverLearningProvider = new InMemoryLearningRecordProvider();
+
+// Helper to ensure dummy data/registration or retrieval for demo concepts
+async function getConceptTitleKu(conceptId: string): Promise<string> {
+  const registry = CurriculumRegistry.getInstance();
+  const lesson = registry.getAllLessons().find(l => l.concepts.includes(conceptId));
+  if (lesson) {
+    return conceptId; // fallback or map nicely
+  }
+  return conceptId;
+}
+
+// 1. GET MASTERY PROFILE
+app.get("/api/learning/mastery", async (req: Request, res: Response) => {
+  try {
+    const studentId = (req.query.studentId as string) || "default-guest";
+    const profile = await serverLearningProvider.getStudentMasteryProfile(studentId);
+    res.json(profile);
+  } catch (err: unknown) {
+    const category = classifyError(err);
+    logMinimalError("/api/learning/mastery", category);
+    res.status(500).json({ error: getClientSafeErrorMessage(category) });
+  }
+});
+
+// 2. GET CONCEPT MASTERY STATE
+app.get("/api/learning/mastery/:conceptId", async (req: Request, res: Response) => {
+  try {
+    const { conceptId } = req.params;
+    const studentId = (req.query.studentId as string) || "default-guest";
+    const state = await serverLearningProvider.getConceptMastery(studentId, conceptId);
+    if (!state) {
+      return res.status(404).json({ error: "چەمکی متمانە دۆزراوە بۆ ئەم قوتابییە بوونی نییە." });
+    }
+    res.json(state);
+  } catch (err: unknown) {
+    const category = classifyError(err);
+    logMinimalError("/api/learning/mastery/:conceptId", category);
+    res.status(500).json({ error: getClientSafeErrorMessage(category) });
+  }
+});
+
+// 3. GET RECOMMENDATIONS
+app.get("/api/learning/recommendations", async (req: Request, res: Response) => {
+  try {
+    const studentId = (req.query.studentId as string) || "default-guest";
+    const status = req.query.status as string;
+    const recs = await serverLearningProvider.listRecommendations(studentId, status);
+    res.json(recs);
+  } catch (err: unknown) {
+    const category = classifyError(err);
+    logMinimalError("/api/learning/recommendations", category);
+    res.status(500).json({ error: getClientSafeErrorMessage(category) });
+  }
+});
+
+// 4. POST LEARNING EVENT
+app.post("/api/learning/events", async (req: Request, res: Response) => {
+  try {
+    const { studentId, type, data } = req.body;
+    if (!studentId || !type) {
+      return res.status(400).json({ error: "زانیاری پێویست بۆ ناردنی ڕووداو بوونی نییە." });
+    }
+
+    const event = {
+      id: "evt_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now(),
+      studentId,
+      timestamp: new Date().toISOString(),
+      type,
+      data: data || {}
+    };
+
+    await serverLearningProvider.appendLearningEvent(studentId, event);
+    const profile = await serverLearningProvider.getStudentMasteryProfile(studentId);
+    res.json({ success: true, eventId: event.id, profile });
+  } catch (err: unknown) {
+    const category = classifyError(err);
+    logMinimalError("/api/learning/events", category);
+    res.status(500).json({ error: getClientSafeErrorMessage(category) });
+  }
+});
+
+// 5. POST EXERCISE ATTEMPT (PROGRESSIVE ASSESSMENT)
+app.post("/api/learning/attempts", async (req: Request, res: Response) => {
+  try {
+    const {
+      studentId,
+      conceptId,
+      isCorrect,
+      responseTimeMs,
+      difficulty,
+      questionText,
+      studentResponse,
+      misconceptionDetected
+    } = req.body;
+
+    if (!studentId || !conceptId || isCorrect === undefined) {
+      return res.status(400).json({ error: "زانیاری ناتەواو بۆ هەوڵدان لەسەر بابەت." });
+    }
+
+    const currentProfile = await serverLearningProvider.getStudentMasteryProfile(studentId);
+    const currentState = await serverLearningProvider.getConceptMastery(studentId, conceptId);
+
+    // 1. Calculate new concept mastery
+    const newState = StudentMasteryAdaptiveEngine.calculateNewMastery(currentState, {
+      isCorrect,
+      responseTimeMs: responseTimeMs || 5000,
+      difficulty: difficulty || 1
+    });
+
+    await serverLearningProvider.saveMasteryChange(studentId, conceptId, newState);
+
+    // 2. Misconception analysis
+    const attempt = {
+      id: "att_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now(),
+      studentId,
+      conceptId,
+      isCorrect,
+      responseTimeMs: responseTimeMs || 5000,
+      difficulty: difficulty || 1,
+      questionText: questionText || "",
+      studentResponse: studentResponse || "",
+      misconceptionDetected,
+      timestamp: new Date().toISOString()
+    };
+
+    const detectedMisc = StudentMasteryAdaptiveEngine.detectMisconception(attempt, currentProfile.activeMisconceptions);
+    if (detectedMisc) {
+      const index = currentProfile.activeMisconceptions.findIndex(
+        m => m.misconceptionId === detectedMisc.misconceptionId && m.resolvedAt === null
+      );
+      if (index >= 0) {
+        currentProfile.activeMisconceptions[index] = detectedMisc;
+      } else {
+        currentProfile.activeMisconceptions.push(detectedMisc);
+      }
+    } else if (isCorrect) {
+      // Resolve misconception if correct now
+      currentProfile.activeMisconceptions = currentProfile.activeMisconceptions.map(m => {
+        if (m.conceptId === conceptId && m.resolvedAt === null) {
+          return { ...m, resolvedAt: new Date().toISOString() };
+        }
+        return m;
+      });
+    }
+
+    // 3. Log event
+    const event = {
+      id: "evt_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now(),
+      studentId,
+      timestamp: new Date().toISOString(),
+      type: "EXERCISE_ATTEMPT" as const,
+      data: attempt
+    };
+    await serverLearningProvider.appendLearningEvent(studentId, event);
+
+    // 4. Generate next recommendation
+    const conceptTitleKu = await getConceptTitleKu(conceptId);
+    
+    // Check prerequisites if any (e.g. simple rule-based prerequisites for demo)
+    const prerequisites: string[] = [];
+    if (conceptId === "هاوکێشە" || conceptId === "هاوکێشەی هێڵی") {
+      prerequisites.push("گۆڕدراو");
+    }
+
+    const recommendation = StudentMasteryAdaptiveEngine.generateRecommendation(
+      studentId,
+      conceptId,
+      conceptTitleKu,
+      currentProfile,
+      prerequisites
+    );
+
+    await serverLearningProvider.saveRecommendation(recommendation);
+
+    res.json({
+      success: true,
+      masteryState: newState,
+      misconceptionDetected: detectedMisc,
+      recommendation
+    });
+  } catch (err: unknown) {
+    const category = classifyError(err);
+    logMinimalError("/api/learning/attempts", category);
+    res.status(500).json({ error: getClientSafeErrorMessage(category) });
+  }
+});
+
+// 6. POST SESSION START
+app.post("/api/learning/sessions/start", async (req: Request, res: Response) => {
+  try {
+    const { studentId } = req.body;
+    if (!studentId) {
+      return res.status(400).json({ error: "زانیاری ناسنامە پێویستە." });
+    }
+
+    const session = {
+      id: "ses_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now(),
+      studentId,
+      startTime: new Date().toISOString(),
+      endTime: null,
+      events: [],
+      focusScore: 1.0
+    };
+
+    await serverLearningProvider.createLearningSession(session);
+    res.json(session);
+  } catch (err: unknown) {
+    const category = classifyError(err);
+    logMinimalError("/api/learning/sessions/start", category);
+    res.status(500).json({ error: getClientSafeErrorMessage(category) });
+  }
+});
+
+// 7. POST SESSION END
+app.post("/api/learning/sessions/:sessionId/end", async (req: Request, res: Response) => {
+  try {
+    const { sessionId } = req.params;
+    const { studentId, focusScore } = req.body;
+    if (!studentId) {
+      return res.status(400).json({ error: "زانیاری ناسنامە پێویستە." });
+    }
+
+    const session = {
+      id: sessionId,
+      studentId,
+      startTime: new Date(Date.now() - 30 * 60 * 1000).toISOString(), // fallback
+      endTime: new Date().toISOString(),
+      events: [],
+      focusScore: focusScore !== undefined ? focusScore : 1.0
+    };
+
+    await serverLearningProvider.updateLearningSession(session);
+    res.json(session);
+  } catch (err: unknown) {
+    const category = classifyError(err);
+    logMinimalError("/api/learning/sessions/:sessionId/end", category);
+    res.status(500).json({ error: getClientSafeErrorMessage(category) });
+  }
+});
 
 
 // Safe global error handler - do not expose stack traces
