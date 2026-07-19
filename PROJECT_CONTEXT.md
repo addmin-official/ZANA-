@@ -1,3 +1,7 @@
+# ZANA Master Project Context
+
+All AI agents working on this repository must read this file before planning, modifying, reviewing, or generating code.
+This file is the authoritative project context unless a newer verified project-state document explicitly supersedes it.
 # ZANA — MASTER PROJECT CONTEXT
 VERSION: 1.0
 STATUS: ACTIVE PRODUCTION PROJECT
