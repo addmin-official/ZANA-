@@ -5,6 +5,7 @@ import { buildSystemPrompt } from "../ai/buildSystemPrompt.ts";
 import multer from "multer";
 import { getPrimaryModel, getVisionModel } from "./config/aiModels.ts";
 import { validateImageSignature } from "./security/imageSignature.ts";
+import { CurriculumRetriever } from "../curriculum/retrieval/CurriculumRetriever.ts";
 
 dotenv.config();
 
@@ -244,6 +245,26 @@ app.post("/api/chat", rateLimitMiddleware(60, 10 * 60 * 1000), async (req: Reque
       return res.status(400).json({ error: "داواکارییەکە کەم و کوڕی تێدایە." });
     }
 
+    // Curriculum Retrieval and Licensing Guard
+    const retriever = new CurriculumRetriever();
+    const retrievalResult = await retriever.retrieve({
+      grade: profile.grade,
+      subject: profile.activeSubject,
+      query: message,
+    });
+
+    const firstLesson = retrievalResult.matchedLessons[0];
+    const curriculumContext = {
+      curriculumId: firstLesson?.curriculumId || "none",
+      unitTitle: firstLesson?.unitId || undefined,
+      lessonTitle: firstLesson?.title || undefined,
+      conceptTitle: retrievalResult.matchedConcepts[0] || undefined,
+      groundingStatus: retrievalResult.groundingStatus,
+      sourceStatus: firstLesson?.sourceStatus || "NONE",
+      retrievalConfidence: retrievalResult.confidence,
+      excerpts: retrievalResult.excerpts,
+    };
+
     const ai = getAiClient();
     const systemInstruction = buildSystemPrompt({
       studentName: profile.name,
@@ -251,6 +272,7 @@ app.post("/api/chat", rateLimitMiddleware(60, 10 * 60 * 1000), async (req: Reque
       subject: profile.activeSubject,
       level: profile.level,
       mode: "chat",
+      curriculumContext,
     });
 
     // Map chat history to Gemini API format
@@ -282,6 +304,15 @@ app.post("/api/chat", rateLimitMiddleware(60, 10 * 60 * 1000), async (req: Reque
     res.json({
       text: replyText,
       isEducational,
+      groundingStatus: retrievalResult.groundingStatus,
+      curriculumMetadata: firstLesson ? {
+        id: firstLesson.id,
+        title: firstLesson.title,
+        sourceStatus: firstLesson.sourceStatus,
+        licenseId: firstLesson.licenseId,
+        metadata: firstLesson.metadata,
+      } : null,
+      confidence: retrievalResult.confidence,
     });
   } catch (err: unknown) {
     const category = classifyError(err);
@@ -460,6 +491,28 @@ app.post("/api/study/ask", rateLimitMiddleware(60, 10 * 60 * 1000), async (req: 
       return res.status(400).json({ error: "داواکارییەکە کەم و کوڕی تێدایە." });
     }
 
+    // Curriculum Retrieval and Licensing Guard
+    const retriever = new CurriculumRetriever();
+    const retrievalResult = await retriever.retrieve({
+      grade: context.grade,
+      subject: context.subject,
+      lessonTitle: context.lessonTitle,
+      conceptTitle: context.conceptTitle,
+      query: message,
+    });
+
+    const firstLesson = retrievalResult.matchedLessons[0];
+    const curriculumContext = {
+      curriculumId: firstLesson?.curriculumId || "none",
+      unitTitle: firstLesson?.unitId || undefined,
+      lessonTitle: firstLesson?.title || undefined,
+      conceptTitle: retrievalResult.matchedConcepts[0] || undefined,
+      groundingStatus: retrievalResult.groundingStatus,
+      sourceStatus: firstLesson?.sourceStatus || "NONE",
+      retrievalConfidence: retrievalResult.confidence,
+      excerpts: retrievalResult.excerpts,
+    };
+
     const ai = getAiClient();
     const systemInstruction = buildSystemPrompt({
       studentName: context.studentName,
@@ -467,6 +520,7 @@ app.post("/api/study/ask", rateLimitMiddleware(60, 10 * 60 * 1000), async (req: 
       subject: context.subject,
       level: context.level,
       mode: "ask",
+      curriculumContext,
     });
 
     // Map chat history to Gemini API format
@@ -498,6 +552,15 @@ app.post("/api/study/ask", rateLimitMiddleware(60, 10 * 60 * 1000), async (req: 
     res.json({
       text: replyText,
       isEducational,
+      groundingStatus: retrievalResult.groundingStatus,
+      curriculumMetadata: firstLesson ? {
+        id: firstLesson.id,
+        title: firstLesson.title,
+        sourceStatus: firstLesson.sourceStatus,
+        licenseId: firstLesson.licenseId,
+        metadata: firstLesson.metadata,
+      } : null,
+      confidence: retrievalResult.confidence,
     });
   } catch (err: unknown) {
     const category = classifyError(err);

@@ -2,6 +2,17 @@ import { ZANA_AI_CONSTITUTION } from "./constitutions/zana-ai-constitution.ts";
 import { SORANI_LANGUAGE_CONSTITUTION } from "./constitutions/sorani-language-constitution.ts";
 import { TEACHING_CONSTITUTION } from "./constitutions/teaching-constitution.ts";
 
+export interface CurriculumPromptContext {
+  curriculumId: string;
+  unitTitle?: string;
+  lessonTitle?: string;
+  conceptTitle?: string;
+  groundingStatus: "UNGROUNDED" | "GROUNDED";
+  sourceStatus: "NONE" | "OPEN_LICENSE" | "LICENSED";
+  retrievalConfidence: number;
+  excerpts?: string[];
+}
+
 export interface SystemPromptOptions {
   studentName?: string;
   grade: string; // e.g. "9", "10", "11", "12"
@@ -11,10 +22,11 @@ export interface SystemPromptOptions {
   mode: "chat" | "assessment" | "report" | "ask" | "vision";
   lessonTitle?: string;
   conceptTitle?: string;
+  curriculumContext?: CurriculumPromptContext;
 }
 
 export function buildSystemPrompt(options: SystemPromptOptions): string {
-  const { studentName = "قوتابی", grade, stream, subject, level, mode, lessonTitle, conceptTitle } = options;
+  const { studentName = "قوتابی", grade, stream, subject, level, mode, lessonTitle, conceptTitle, curriculumContext } = options;
 
   let modeSpecificRules = "";
 
@@ -62,6 +74,34 @@ export function buildSystemPrompt(options: SystemPromptOptions): string {
 `;
   }
 
+  let curriculumGroundingInstructions = "";
+  if (curriculumContext) {
+    const { groundingStatus, excerpts = [] } = curriculumContext;
+    if (groundingStatus === "UNGROUNDED") {
+      curriculumGroundingInstructions = `
+[ڕێساکانی بنەڕەتی پڕۆگرامی خوێندنی فەرمی - دۆخی بێ سەرچاوە یان بێ مۆڵەت]
+- تۆ نابێت بە هیچ شێوەیەک بانگەشەی ئەوە بکەیت کە ئەم وەڵامە لە کتێبی فەرمی یان سەرچاوەی فەرمی وەزارەتەوە وەرگیراوە.
+- نابێت باسی هیچ ژمارەی لاپەڕەیەک یان بەشی دیاریکراوی ناو کتێب بکەیت.
+- تەنها چەمکەکان بەپێی زانیاریی فێرکاریی گشتیی خۆت ڕوون بکەرەوە.
+- هەرگیز مەڵێ 'ئەمە هاوتایە لەگەڵ پڕۆگرامی فەرمی پۆلی دیاریکراو'.
+`;
+    } else if (groundingStatus === "GROUNDED") {
+      const excerptText = excerpts.length > 0 ? excerpts.join("\n\n") : "هیچ دەقێک بەردەست نییە.";
+      curriculumGroundingInstructions = `
+[ڕێساکانی بنەڕەتی پڕۆگرامی خوێندنی فەرمی - دۆخی سەلمێنراو بە مۆڵەتی فەرمی]
+- ئەم نووسینانەی خوارەوە بە شێوەیەکی فەرمی و یاسایی لە پڕۆگرامی خوێندنی فەرمی هەرێمەوە وەرگیراون بۆ زانا:
+=== دەستپێکی سەرچاوەی فەرمی ===
+${excerptText}
+=== کۆتایی سەرچاوەی فەرمی ===
+
+- پێویستە تەنها و تەنها لە چوارچێوەی دەقی سەرچاوەی فەرمیی هاوپێچکراوی سەرەوەدا وەڵام بدەیتەوە.
+- بە هیچ شێوەیەک زانیاری دەرەکی یان گریمانەیی تێکەڵ مەکە.
+- نابێت هیچ لاپەڕەیەک، ژمارەی بەش، یان کوتەیشنێکی نوێ لە خۆتەوە دابهێنیت کە لە دەقی سەرەوەدا نییە.
+- سەرچاوەکە بپارێزە بە تەواوی.
+`;
+    }
+  }
+
   return `
 تۆ "زانا (ZANA)"یت، مامۆستایەکی زیرەک، میهرەبان و دڵسۆزی کورد لە هەرێمی کوردستان.
 
@@ -77,7 +117,7 @@ ${TEACHING_CONSTITUTION}
 ڕێسا تایبەتەکانی دۆخی کارکردن:
 ${modeSpecificRules}
 
-زانیاریی تاکی قوتابی:
+${curriculumGroundingInstructions ? `ڕێسا و دەستوورەکانی پڕۆگرامی خوێندنی فەرمی:\n${curriculumGroundingInstructions}\n` : ""}زانیاریی تاکی قوتابی:
 - ناوی قوتابی: ${studentName}
 - پۆلی خوێندن: پۆلی ${grade}
 ${stream ? `- ڕێڕەوی خوێندن: ${stream}\n` : ""}- بابەتی خوێندن: ${subject}

@@ -9,7 +9,7 @@
     "build:client": "vite build",
     "build:server": "esbuild server.ts --bundle --platform=node --format=cjs --packages=external --outfile=dist/server/server.cjs",
     "build:worker": "wrangler deploy --dry-run",
-    "build": "npm run build:client && npm run build:server && npm run build:worker",
+    "build": "npm run build:client && npm run build:server",
     "start": "node dist/server/server.cjs",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
@@ -17,6 +17,7 @@
     "firebase:deploy": "firebase deploy --only hosting",
     "firebase:deploy:hosting": "firebase deploy --only hosting",
     "deploy:cloudflare": "wrangler deploy",
+    "test": "node --import tsx --test src/curriculum/curriculum.test.ts",
     "test:smoke": "node scripts/smoke-test.js"
   },
   "dependencies": {
