@@ -1,5 +1,13 @@
 import { StudentGrade, AcademicStream, SubjectKey, StudentLevel } from "../../features/student/studentTypes.ts";
 
+export enum DifficultyLevel {
+  FOUNDATION = "FOUNDATION",
+  EASY = "EASY",
+  STANDARD = "STANDARD",
+  CHALLENGING = "CHALLENGING",
+  ADVANCED = "ADVANCED"
+}
+
 export enum MasteryStatus {
   NOT_STARTED = "NOT_STARTED",
   INTRODUCED = "INTRODUCED",
@@ -16,7 +24,15 @@ export interface ConceptMasteryState {
   consecutiveCorrect: number;
   totalAttempts: number;
   lastAttemptedAt: string | null;
-  history: { isCorrect: boolean; timestamp: string; responseTimeMs: number; difficulty: number }[];
+  history: { isCorrect: boolean; timestamp: string; responseTimeMs: number; difficulty: DifficultyLevel }[];
+  lastChangeExplanation?: string; // Phase 15 change explanation code
+}
+
+export enum MisconceptionStatus {
+  SUSPECTED = "SUSPECTED",
+  CONFIRMED = "CONFIRMED",
+  IMPROVING = "IMPROVING",
+  RESOLVED = "RESOLVED"
 }
 
 export interface MisconceptionState {
@@ -24,8 +40,13 @@ export interface MisconceptionState {
   misconceptionId: string;
   nameKu: string;
   count: number;
-  detectedAt: string;
+  status: MisconceptionStatus;
+  confidence: "low" | "medium" | "high";
+  evidenceAttempts: string[]; // references to attempt IDs or timestamps
+  firstDetectedAt: string;
+  lastDetectedAt: string;
   resolvedAt: string | null;
+  interventionKu: string;
 }
 
 export interface StudentMasteryProfile {
@@ -57,7 +78,7 @@ export interface ExerciseAttempt {
   conceptId: string;
   isCorrect: boolean;
   responseTimeMs: number;
-  difficulty: number; // 1 (easy) to 3 (hard)
+  difficulty: DifficultyLevel; // Difficulty level enum
   questionText: string;
   studentResponse: string;
   misconceptionDetected?: string; // ID or name of misconception if any

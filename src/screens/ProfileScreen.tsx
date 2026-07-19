@@ -18,7 +18,8 @@ export function ProfileScreen({ profile, onUpdateProfile, onResetAll }: ProfileS
   const [subject, setSubject] = useState(profile.activeSubject);
   const [level, setLevel] = useState(profile.level);
   const [showSuccess, setShowSuccess] = useState(false);
-  const { profile: masteryProfile, recommendations: recs, activeMisconceptions: misconceptions, loading } = useStudentMastery(profile.id);
+  const { profile: masteryProfile, recommendations: recs, loading } = useStudentMastery(profile.id);
+  const misconceptions = masteryProfile?.activeMisconceptions || [];
 
   // Destruction confirmations
   const [showConfirmResetAll, setShowConfirmResetAll] = useState(false);

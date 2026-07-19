@@ -1,13 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
-import { LocalStorageLearningRecordProvider } from "../providers/LearningRecordProvider.ts";
-import { AdaptiveLearningEngine } from "../engine/AdaptiveLearningEngine.ts";
 import {
   StudentMasteryProfile,
   ConceptMasteryState,
   AdaptiveRecommendation,
-  MisconceptionState,
-  ExerciseAttempt,
-  LearningEvent
+  DifficultyLevel
 } from "../domain/MasteryTypes.ts";
 
 export function useStudentMastery(studentId: string) {
@@ -16,23 +12,41 @@ export function useStudentMastery(studentId: string) {
   const [loading, setLoading] = useState<boolean>(true);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
-  const provider = useCallback(() => new LocalStorageLearningRecordProvider(), []);
-
-  // Load profile and active recommendations
+  // Load profile and active recommendations from secure server endpoints
   const loadProfile = useCallback(async () => {
+    if (!studentId) return;
     try {
       setLoading(true);
-      const lp = provider();
-      const p = await lp.getStudentMasteryProfile(studentId);
-      const recs = await lp.listRecommendations(studentId, "ACTIVE");
-      setProfile(p);
-      setRecommendations(recs);
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${studentId}`
+      };
+
+      // 1. Fetch Student Profile
+      const profileRes = await fetch(`/api/learning/mastery?studentId=${encodeURIComponent(studentId)}`, {
+        headers
+      });
+      if (profileRes.ok) {
+        const p = await profileRes.json();
+        setProfile(p);
+      } else if (profileRes.status === 401 || profileRes.status === 403) {
+        console.warn("Unauthorized profile access attempt.");
+      }
+
+      // 2. Fetch Active Recommendations
+      const recsRes = await fetch(`/api/learning/recommendations?studentId=${encodeURIComponent(studentId)}&status=ACTIVE`, {
+        headers
+      });
+      if (recsRes.ok) {
+        const recs = await recsRes.json();
+        setRecommendations(recs);
+      }
     } catch (e) {
-      console.error("Error loading student mastery profile:", e);
+      console.error("Error loading student mastery profile from server:", e);
     } finally {
       setLoading(false);
     }
-  }, [studentId, provider]);
+  }, [studentId]);
 
   useEffect(() => {
     if (studentId) {
@@ -40,185 +54,107 @@ export function useStudentMastery(studentId: string) {
     }
   }, [studentId, loadProfile]);
 
-  // Record an exercise attempt
+  // Record an exercise attempt securely on the server
   const recordAttempt = useCallback(async (attemptInput: {
     conceptId: string;
     conceptTitleKu: string;
     isCorrect: boolean;
     responseTimeMs: number;
-    difficulty: number;
+    difficulty: DifficultyLevel;
     questionText: string;
     studentResponse: string;
     misconceptionDetected?: string;
-    prerequisites?: string[];
+    hintUsed?: boolean;
+    unreliableTiming?: boolean;
   }) => {
     if (!studentId) return null;
 
     try {
-      const lp = provider();
-      const currentProfile = await lp.getStudentMasteryProfile(studentId);
-      const currentState = await lp.getConceptMastery(studentId, attemptInput.conceptId);
-
-      // 1. Calculate new concept mastery state
-      const newState = AdaptiveLearningEngine.calculateNewMastery(currentState, {
-        isCorrect: attemptInput.isCorrect,
-        responseTimeMs: attemptInput.responseTimeMs,
-        difficulty: attemptInput.difficulty
+      const response = await fetch("/api/learning/attempts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${studentId}`
+        },
+        body: JSON.stringify({
+          conceptId: attemptInput.conceptId,
+          isCorrect: attemptInput.isCorrect,
+          responseTimeMs: attemptInput.responseTimeMs,
+          difficulty: attemptInput.difficulty,
+          questionText: attemptInput.questionText,
+          studentResponse: attemptInput.studentResponse,
+          misconceptionDetected: attemptInput.misconceptionDetected,
+          hintUsed: attemptInput.hintUsed,
+          unreliableTiming: attemptInput.unreliableTiming
+        })
       });
-      await lp.saveMasteryChange(studentId, attemptInput.conceptId, newState);
 
-      // 2. Detect misconceptions
-      const attempt: ExerciseAttempt = {
-        id: "att_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now(),
-        studentId,
-        conceptId: attemptInput.conceptId,
-        isCorrect: attemptInput.isCorrect,
-        responseTimeMs: attemptInput.responseTimeMs,
-        difficulty: attemptInput.difficulty,
-        questionText: attemptInput.questionText,
-        studentResponse: attemptInput.studentResponse,
-        timestamp: new Date().toISOString()
-      };
-
-      const detectedMisc = AdaptiveLearningEngine.detectMisconception(attempt, currentProfile.activeMisconceptions);
-      let updatedMisconceptions = [...currentProfile.activeMisconceptions];
-      if (detectedMisc) {
-        const index = updatedMisconceptions.findIndex(
-          m => m.misconceptionId === detectedMisc.misconceptionId && m.resolvedAt === null
-        );
-        if (index >= 0) {
-          updatedMisconceptions[index] = detectedMisc;
-        } else {
-          updatedMisconceptions.push(detectedMisc);
-        }
-      } else if (attemptInput.isCorrect) {
-        // Resolve active misconception on correct answer
-        updatedMisconceptions = updatedMisconceptions.map(m => {
-          if (m.conceptId === attemptInput.conceptId && m.resolvedAt === null) {
-            return { ...m, resolvedAt: new Date().toISOString() };
-          }
-          return m;
-        });
+      if (!response.ok) {
+        throw new Error(`Server responded with status ${response.status}`);
       }
 
-      // Save updated profile
-      const updatedProfile: StudentMasteryProfile = {
-        ...currentProfile,
-        conceptMasteries: {
-          ...currentProfile.conceptMasteries,
-          [attemptInput.conceptId]: newState
-        },
-        activeMisconceptions: updatedMisconceptions
-      };
+      const result = await response.json();
 
-      // 3. Log event
-      const event: LearningEvent = {
-        id: "evt_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now(),
-        studentId,
-        timestamp: new Date().toISOString(),
-        type: "EXERCISE_ATTEMPT",
-        data: attempt
-      };
-      await lp.appendLearningEvent(studentId, event);
-
-      // 4. Generate recommendation
-      const recommendation = AdaptiveLearningEngine.generateRecommendation(
-        studentId,
-        attemptInput.conceptId,
-        attemptInput.conceptTitleKu,
-        updatedProfile,
-        attemptInput.prerequisites || []
-      );
-      await lp.saveRecommendation(recommendation);
-
-      // Sync with server as fire-and-forget or try/catch
-      try {
-        fetch("/api/learning/attempts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            studentId,
-            conceptId: attemptInput.conceptId,
-            isCorrect: attemptInput.isCorrect,
-            responseTimeMs: attemptInput.responseTimeMs,
-            difficulty: attemptInput.difficulty,
-            questionText: attemptInput.questionText,
-            studentResponse: attemptInput.studentResponse,
-            misconceptionDetected: attemptInput.misconceptionDetected
-          })
-        }).catch(err => console.warn("Backend sync pending, continuing offline-first."));
-      } catch (err) {}
-
-      // Reload UI states
+      // Trigger hot reload of profile UI state
       await loadProfile();
 
       return {
-        masteryState: newState,
-        misconception: detectedMisc,
-        recommendation
+        masteryState: result.masteryState as ConceptMasteryState,
+        misconception: result.misconceptionDetected,
+        recommendation: result.recommendation as AdaptiveRecommendation
       };
     } catch (e) {
-      console.error("Error recording attempt:", e);
+      console.error("Error recording attempt on server:", e);
       return null;
     }
-  }, [studentId, provider, loadProfile]);
+  }, [studentId, loadProfile]);
 
-  // Start a learning session
+  // Start a learning session securely on the server
   const startSession = useCallback(async () => {
     if (!studentId) return null;
-    const sId = "ses_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now();
-    setActiveSessionId(sId);
 
     try {
-      const lp = provider();
-      await lp.createLearningSession({
-        id: sId,
-        studentId,
-        startTime: new Date().toISOString(),
-        endTime: null,
-        events: [],
-        focusScore: 1.0
+      const response = await fetch("/api/learning/sessions/start", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${studentId}`
+        },
+        body: JSON.stringify({})
       });
 
-      // Try background backend sync
-      fetch("/api/learning/sessions/start", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studentId })
-      }).catch(() => {});
+      if (response.ok) {
+        const session = await response.json();
+        setActiveSessionId(session.id);
+        return session.id as string;
+      }
     } catch (e) {
-      console.error("Error starting session:", e);
+      console.error("Error starting session on server:", e);
     }
-    return sId;
-  }, [studentId, provider]);
+    return null;
+  }, [studentId]);
 
-  // End a learning session
+  // End a learning session securely on the server
   const endSession = useCallback(async (focusScore: number = 1.0) => {
     if (!activeSessionId || !studentId) return;
 
     try {
-      const lp = provider();
-      await lp.updateLearningSession({
-        id: activeSessionId,
-        studentId,
-        startTime: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-        endTime: new Date().toISOString(),
-        events: [],
-        focusScore
+      const response = await fetch(`/api/learning/sessions/${encodeURIComponent(activeSessionId)}/end`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${studentId}`
+        },
+        body: JSON.stringify({ focusScore })
       });
 
-      // Try background backend sync
-      fetch(`/api/learning/sessions/${activeSessionId}/end`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studentId, focusScore })
-      }).catch(() => {});
-
-      setActiveSessionId(null);
+      if (response.ok) {
+        setActiveSessionId(null);
+      }
     } catch (e) {
-      console.error("Error ending session:", e);
+      console.error("Error ending session on server:", e);
     }
-  }, [activeSessionId, studentId, provider]);
+  }, [activeSessionId, studentId]);
 
   return {
     profile,

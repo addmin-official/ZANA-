@@ -1,14 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert";
 import { AdaptiveLearningEngine } from "./AdaptiveLearningEngine.ts";
-import { MasteryStatus } from "../domain/MasteryTypes.ts";
+import { MasteryStatus, DifficultyLevel, MisconceptionStatus } from "../domain/MasteryTypes.ts";
 
 test("AdaptiveLearningEngine - Mastery Score Calculations", () => {
   // Test baseline mastery calculation
   const initMastery = AdaptiveLearningEngine.calculateNewMastery(null, {
     isCorrect: true,
     responseTimeMs: 3000,
-    difficulty: 2 // medium difficulty
+    difficulty: DifficultyLevel.STANDARD // medium difficulty
   });
 
   assert.strictEqual(initMastery.totalAttempts, 1);
@@ -20,7 +20,7 @@ test("AdaptiveLearningEngine - Mastery Score Calculations", () => {
   const wrongMastery = AdaptiveLearningEngine.calculateNewMastery(initMastery, {
     isCorrect: false,
     responseTimeMs: 12000,
-    difficulty: 2
+    difficulty: DifficultyLevel.STANDARD
   });
 
   assert.strictEqual(wrongMastery.totalAttempts, 2);
@@ -35,7 +35,7 @@ test("AdaptiveLearningEngine - Misconception Detection", () => {
     conceptId: "hawkisha",
     isCorrect: false,
     responseTimeMs: 5000,
-    difficulty: 1,
+    difficulty: DifficultyLevel.EASY,
     questionText: "شیکاری هاوکێشە بکە: x + 5 = 10",
     studentResponse: "x = -5",
     timestamp: new Date().toISOString()
@@ -50,11 +50,11 @@ test("AdaptiveLearningEngine - Misconception Detection", () => {
 test("AdaptiveLearningEngine - Difficulty Adaptation Logic", () => {
   const easyHistory = [{ isCorrect: false }, { isCorrect: false }];
   const easyDiff = AdaptiveLearningEngine.adaptDifficulty("concept_1", easyHistory);
-  assert.strictEqual(easyDiff, 1); // should suggest Easy
+  assert.strictEqual(easyDiff, DifficultyLevel.FOUNDATION); // should suggest FOUNDATION on complete failures
 
   const hardHistory = [{ isCorrect: true }, { isCorrect: true }, { isCorrect: true }];
   const hardDiff = AdaptiveLearningEngine.adaptDifficulty("concept_1", hardHistory);
-  assert.strictEqual(hardDiff, 3); // should suggest Hard
+  assert.strictEqual(hardDiff, DifficultyLevel.CHALLENGING); // should suggest CHALLENGING on consecutive successes
 });
 
 test("AdaptiveLearningEngine - Prerequisite Cycle Detection", () => {

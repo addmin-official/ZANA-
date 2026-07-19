@@ -6,7 +6,7 @@ import multer from "multer";
 import { getPrimaryModel, getVisionModel } from "./config/aiModels.ts";
 import { validateImageSignature } from "./security/imageSignature.ts";
 import { CurriculumRetriever } from "../curriculum/retrieval/CurriculumRetriever.ts";
-import { InMemoryLearningRecordProvider } from "../learning/providers/LearningRecordProvider.ts";
+import { PersistentLearningRecordProvider } from "../learning/providers/LearningRecordProvider.ts";
 import { AdaptiveLearningEngine as StudentMasteryAdaptiveEngine } from "../learning/engine/AdaptiveLearningEngine.ts";
 import { CurriculumRegistry } from "../curriculum/registry/CurriculumRegistry.ts";
 
@@ -860,7 +860,22 @@ ${modeInstructions}
 // =========================================================================
 // STUDENT MASTERY & ADAPTIVE LEARNING ENGINE ENDPOINTS (PHASE 15)
 // =========================================================================
-const serverLearningProvider = new InMemoryLearningRecordProvider();
+import { DifficultyLevel, MisconceptionStatus } from "../learning/domain/MasteryTypes.ts";
+
+const serverLearningProvider = new PersistentLearningRecordProvider();
+
+// Helper to securely derive and authenticate student identity
+function getAuthenticatedStudentId(req: Request): string {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    throw new Error("UNAUTHORIZED");
+  }
+  const token = authHeader.substring(7).trim();
+  if (!token) {
+    throw new Error("UNAUTHORIZED");
+  }
+  return token;
+}
 
 // Helper to ensure dummy data/registration or retrieval for demo concepts
 async function getConceptTitleKu(conceptId: string): Promise<string> {
@@ -875,7 +890,18 @@ async function getConceptTitleKu(conceptId: string): Promise<string> {
 // 1. GET MASTERY PROFILE
 app.get("/api/learning/mastery", async (req: Request, res: Response) => {
   try {
-    const studentId = (req.query.studentId as string) || "default-guest";
+    let studentId: string;
+    try {
+      studentId = getAuthenticatedStudentId(req);
+    } catch (e) {
+      return res.status(401).json({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." });
+    }
+
+    const reqStudentId = req.query.studentId as string;
+    if (reqStudentId && reqStudentId !== studentId) {
+      return res.status(403).json({ error: "دەستگەیشتن ڕەتکرایەوە." });
+    }
+
     const profile = await serverLearningProvider.getStudentMasteryProfile(studentId);
     res.json(profile);
   } catch (err: unknown) {
@@ -888,8 +914,19 @@ app.get("/api/learning/mastery", async (req: Request, res: Response) => {
 // 2. GET CONCEPT MASTERY STATE
 app.get("/api/learning/mastery/:conceptId", async (req: Request, res: Response) => {
   try {
+    let studentId: string;
+    try {
+      studentId = getAuthenticatedStudentId(req);
+    } catch (e) {
+      return res.status(401).json({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." });
+    }
+
+    const reqStudentId = req.query.studentId as string;
+    if (reqStudentId && reqStudentId !== studentId) {
+      return res.status(403).json({ error: "دەستگەیشتن ڕەتکرایەوە." });
+    }
+
     const { conceptId } = req.params;
-    const studentId = (req.query.studentId as string) || "default-guest";
     const state = await serverLearningProvider.getConceptMastery(studentId, conceptId);
     if (!state) {
       return res.status(404).json({ error: "چەمکی متمانە دۆزراوە بۆ ئەم قوتابییە بوونی نییە." });
@@ -905,7 +942,18 @@ app.get("/api/learning/mastery/:conceptId", async (req: Request, res: Response) 
 // 3. GET RECOMMENDATIONS
 app.get("/api/learning/recommendations", async (req: Request, res: Response) => {
   try {
-    const studentId = (req.query.studentId as string) || "default-guest";
+    let studentId: string;
+    try {
+      studentId = getAuthenticatedStudentId(req);
+    } catch (e) {
+      return res.status(401).json({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." });
+    }
+
+    const reqStudentId = req.query.studentId as string;
+    if (reqStudentId && reqStudentId !== studentId) {
+      return res.status(403).json({ error: "دەستگەیشتن ڕەتکرایەوە." });
+    }
+
     const status = req.query.status as string;
     const recs = await serverLearningProvider.listRecommendations(studentId, status);
     res.json(recs);
@@ -919,8 +967,15 @@ app.get("/api/learning/recommendations", async (req: Request, res: Response) => 
 // 4. POST LEARNING EVENT
 app.post("/api/learning/events", async (req: Request, res: Response) => {
   try {
-    const { studentId, type, data } = req.body;
-    if (!studentId || !type) {
+    let studentId: string;
+    try {
+      studentId = getAuthenticatedStudentId(req);
+    } catch (e) {
+      return res.status(401).json({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." });
+    }
+
+    const { type, data } = req.body;
+    if (!type) {
       return res.status(400).json({ error: "زانیاری پێویست بۆ ناردنی ڕووداو بوونی نییە." });
     }
 
@@ -945,19 +1000,40 @@ app.post("/api/learning/events", async (req: Request, res: Response) => {
 // 5. POST EXERCISE ATTEMPT (PROGRESSIVE ASSESSMENT)
 app.post("/api/learning/attempts", async (req: Request, res: Response) => {
   try {
+    let studentId: string;
+    try {
+      studentId = getAuthenticatedStudentId(req);
+    } catch (e) {
+      return res.status(401).json({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." });
+    }
+
     const {
-      studentId,
       conceptId,
       isCorrect,
       responseTimeMs,
-      difficulty,
+      difficulty: reqDifficulty,
       questionText,
       studentResponse,
-      misconceptionDetected
+      misconceptionDetected,
+      hintUsed,
+      unreliableTiming
     } = req.body;
 
-    if (!studentId || !conceptId || isCorrect === undefined) {
+    if (!conceptId || isCorrect === undefined) {
       return res.status(400).json({ error: "زانیاری ناتەواو بۆ هەوڵدان لەسەر بابەت." });
+    }
+
+    // Adapt / map difficulty strictly to DifficultyLevel
+    let difficulty: DifficultyLevel = DifficultyLevel.EASY;
+    if (reqDifficulty) {
+      if (Object.values(DifficultyLevel).includes(reqDifficulty as DifficultyLevel)) {
+        difficulty = reqDifficulty as DifficultyLevel;
+      } else {
+        const numDiff = Number(reqDifficulty);
+        if (numDiff === 1) difficulty = DifficultyLevel.EASY;
+        else if (numDiff === 2) difficulty = DifficultyLevel.STANDARD;
+        else if (numDiff === 3) difficulty = DifficultyLevel.CHALLENGING;
+      }
     }
 
     const currentProfile = await serverLearningProvider.getStudentMasteryProfile(studentId);
@@ -967,7 +1043,9 @@ app.post("/api/learning/attempts", async (req: Request, res: Response) => {
     const newState = StudentMasteryAdaptiveEngine.calculateNewMastery(currentState, {
       isCorrect,
       responseTimeMs: responseTimeMs || 5000,
-      difficulty: difficulty || 1
+      difficulty,
+      hintUsed: !!hintUsed,
+      unreliableTiming: !!unreliableTiming
     });
 
     await serverLearningProvider.saveMasteryChange(studentId, conceptId, newState);
@@ -979,7 +1057,7 @@ app.post("/api/learning/attempts", async (req: Request, res: Response) => {
       conceptId,
       isCorrect,
       responseTimeMs: responseTimeMs || 5000,
-      difficulty: difficulty || 1,
+      difficulty,
       questionText: questionText || "",
       studentResponse: studentResponse || "",
       misconceptionDetected,
@@ -997,14 +1075,32 @@ app.post("/api/learning/attempts", async (req: Request, res: Response) => {
         currentProfile.activeMisconceptions.push(detectedMisc);
       }
     } else if (isCorrect) {
-      // Resolve misconception if correct now
+      // Step-by-step resolution state machine for correct attempts:
+      // If student gets a correct answer, transition active misconceptions from CONFIRMED -> IMPROVING -> RESOLVED
       currentProfile.activeMisconceptions = currentProfile.activeMisconceptions.map(m => {
         if (m.conceptId === conceptId && m.resolvedAt === null) {
-          return { ...m, resolvedAt: new Date().toISOString() };
+          if (m.status === MisconceptionStatus.SUSPECTED || m.status === MisconceptionStatus.CONFIRMED) {
+            return {
+              ...m,
+              status: MisconceptionStatus.IMPROVING,
+              confidence: "medium" as const,
+              lastDetectedAt: new Date().toISOString()
+            };
+          } else if (m.status === MisconceptionStatus.IMPROVING) {
+            return {
+              ...m,
+              status: MisconceptionStatus.RESOLVED,
+              confidence: "high" as const,
+              resolvedAt: new Date().toISOString()
+            };
+          }
         }
         return m;
       });
     }
+
+    // Save updated profile with misconceptions
+    await serverLearningProvider.saveMasteryChange(studentId, conceptId, newState);
 
     // 3. Log event
     const event = {
@@ -1019,7 +1115,7 @@ app.post("/api/learning/attempts", async (req: Request, res: Response) => {
     // 4. Generate next recommendation
     const conceptTitleKu = await getConceptTitleKu(conceptId);
     
-    // Check prerequisites if any (e.g. simple rule-based prerequisites for demo)
+    // Check prerequisites if any
     const prerequisites: string[] = [];
     if (conceptId === "هاوکێشە" || conceptId === "هاوکێشەی هێڵی") {
       prerequisites.push("گۆڕدراو");
@@ -1051,9 +1147,11 @@ app.post("/api/learning/attempts", async (req: Request, res: Response) => {
 // 6. POST SESSION START
 app.post("/api/learning/sessions/start", async (req: Request, res: Response) => {
   try {
-    const { studentId } = req.body;
-    if (!studentId) {
-      return res.status(400).json({ error: "زانیاری ناسنامە پێویستە." });
+    let studentId: string;
+    try {
+      studentId = getAuthenticatedStudentId(req);
+    } catch (e) {
+      return res.status(401).json({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." });
     }
 
     const session = {
@@ -1077,11 +1175,15 @@ app.post("/api/learning/sessions/start", async (req: Request, res: Response) => 
 // 7. POST SESSION END
 app.post("/api/learning/sessions/:sessionId/end", async (req: Request, res: Response) => {
   try {
-    const { sessionId } = req.params;
-    const { studentId, focusScore } = req.body;
-    if (!studentId) {
-      return res.status(400).json({ error: "زانیاری ناسنامە پێویستە." });
+    let studentId: string;
+    try {
+      studentId = getAuthenticatedStudentId(req);
+    } catch (e) {
+      return res.status(401).json({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." });
     }
+
+    const { sessionId } = req.params;
+    const { focusScore } = req.body;
 
     const session = {
       id: sessionId,

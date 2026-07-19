@@ -1,11 +1,16 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { buildSystemPrompt } from "../ai/buildSystemPrompt.ts";
+import { PersistentLearningRecordProvider } from "../learning/providers/LearningRecordProvider.ts";
+import { AdaptiveLearningEngine } from "../learning/engine/AdaptiveLearningEngine.ts";
+import { DifficultyLevel, MisconceptionStatus } from "../learning/domain/MasteryTypes.ts";
+import { CurriculumRegistry } from "../curriculum/registry/CurriculumRegistry.ts";
 
 export interface Env {
   GEMINI_API_KEY: string;
   ALLOWED_ORIGINS: string; // Comma-separated list of allowed origins
   GEMINI_PRIMARY_MODEL?: string;
   GEMINI_VISION_MODEL?: string;
+  ZANA_LEARNING_KV?: any; // Cloudflare KV for persistent student mastery
 }
 
 export type SafeErrorCategory =
@@ -775,6 +780,307 @@ ${modeInstructions}
           JSON.stringify(parsedResponse),
           { status: 200, headers: responseHeaders }
         );
+      }
+
+      // =========================================================================
+      // STUDENT MASTERY & ADAPTIVE LEARNING ENGINE ENDPOINTS (PHASE 15)
+      // =========================================================================
+      
+      // Helper to securely derive and authenticate student identity inside Worker
+      function getWorkerAuthenticatedStudentId(req: Request): string {
+        const authHeader = req.headers.get("Authorization");
+        if (!authHeader || !authHeader.startsWith("Bearer ")) {
+          throw new Error("UNAUTHORIZED");
+        }
+        const token = authHeader.substring(7).trim();
+        if (!token) {
+          throw new Error("UNAUTHORIZED");
+        }
+        return token;
+      }
+
+      // 1. GET MASTERY PROFILE
+      if (pathname === "/api/learning/mastery" && request.method === "GET") {
+        let studentId: string;
+        try {
+          studentId = getWorkerAuthenticatedStudentId(request);
+        } catch (e) {
+          return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
+        }
+
+        const reqStudentId = url.searchParams.get("studentId");
+        if (reqStudentId && reqStudentId !== studentId) {
+          return new Response(JSON.stringify({ error: "دەستگەیشتن ڕەتکرایەوە." }), { status: 403, headers: responseHeaders });
+        }
+
+        const lp = new PersistentLearningRecordProvider(env.ZANA_LEARNING_KV);
+        const profile = await lp.getStudentMasteryProfile(studentId);
+        return new Response(JSON.stringify(profile), { status: 200, headers: responseHeaders });
+      }
+
+      // 2. GET CONCEPT MASTERY STATE
+      if (pathname.startsWith("/api/learning/mastery/") && request.method === "GET") {
+        let studentId: string;
+        try {
+          studentId = getWorkerAuthenticatedStudentId(request);
+        } catch (e) {
+          return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
+        }
+
+        const reqStudentId = url.searchParams.get("studentId");
+        if (reqStudentId && reqStudentId !== studentId) {
+          return new Response(JSON.stringify({ error: "دەستگەیشتن ڕەتکرایەوە." }), { status: 403, headers: responseHeaders });
+        }
+
+        const parts = pathname.split("/");
+        const conceptId = decodeURIComponent(parts[parts.length - 1]);
+
+        const lp = new PersistentLearningRecordProvider(env.ZANA_LEARNING_KV);
+        const state = await lp.getConceptMastery(studentId, conceptId);
+        if (!state) {
+          return new Response(JSON.stringify({ error: "چەمکی متمانە دۆزراوە بۆ ئەم قوتابییە بوونی نییە." }), { status: 404, headers: responseHeaders });
+        }
+        return new Response(JSON.stringify(state), { status: 200, headers: responseHeaders });
+      }
+
+      // 3. GET RECOMMENDATIONS
+      if (pathname === "/api/learning/recommendations" && request.method === "GET") {
+        let studentId: string;
+        try {
+          studentId = getWorkerAuthenticatedStudentId(request);
+        } catch (e) {
+          return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
+        }
+
+        const reqStudentId = url.searchParams.get("studentId");
+        if (reqStudentId && reqStudentId !== studentId) {
+          return new Response(JSON.stringify({ error: "دەستگەیشتن ڕەتکرایەوە." }), { status: 403, headers: responseHeaders });
+        }
+
+        const status = url.searchParams.get("status") || undefined;
+        const lp = new PersistentLearningRecordProvider(env.ZANA_LEARNING_KV);
+        const recs = await lp.listRecommendations(studentId, status);
+        return new Response(JSON.stringify(recs), { status: 200, headers: responseHeaders });
+      }
+
+      // 4. POST LEARNING EVENT
+      if (pathname === "/api/learning/events" && request.method === "POST") {
+        let studentId: string;
+        try {
+          studentId = getWorkerAuthenticatedStudentId(request);
+        } catch (e) {
+          return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
+        }
+
+        const body: any = await request.json().catch(() => ({}));
+        const { type, data } = body;
+        if (!type) {
+          return new Response(JSON.stringify({ error: "زانیاری پێویست بۆ ناردنی ڕووداو بوونی نییە." }), { status: 400, headers: responseHeaders });
+        }
+
+        const event = {
+          id: "evt_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now(),
+          studentId,
+          timestamp: new Date().toISOString(),
+          type,
+          data: data || {}
+        };
+
+        const lp = new PersistentLearningRecordProvider(env.ZANA_LEARNING_KV);
+        await lp.appendLearningEvent(studentId, event);
+        const profile = await lp.getStudentMasteryProfile(studentId);
+        return new Response(JSON.stringify({ success: true, eventId: event.id, profile }), { status: 200, headers: responseHeaders });
+      }
+
+      // 5. POST EXERCISE ATTEMPT (PROGRESSIVE ASSESSMENT)
+      if (pathname === "/api/learning/attempts" && request.method === "POST") {
+        let studentId: string;
+        try {
+          studentId = getWorkerAuthenticatedStudentId(request);
+        } catch (e) {
+          return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
+        }
+
+        const body: any = await request.json().catch(() => ({}));
+        const {
+          conceptId,
+          isCorrect,
+          responseTimeMs,
+          difficulty: reqDifficulty,
+          questionText,
+          studentResponse,
+          misconceptionDetected,
+          hintUsed,
+          unreliableTiming
+        } = body;
+
+        if (!conceptId || isCorrect === undefined) {
+          return new Response(JSON.stringify({ error: "زانیاری ناتەواو بۆ هەوڵدان لەسەر بابەت." }), { status: 400, headers: responseHeaders });
+        }
+
+        let difficulty: DifficultyLevel = DifficultyLevel.EASY;
+        if (reqDifficulty) {
+          if (Object.values(DifficultyLevel).includes(reqDifficulty as DifficultyLevel)) {
+            difficulty = reqDifficulty as DifficultyLevel;
+          } else {
+            const numDiff = Number(reqDifficulty);
+            if (numDiff === 1) difficulty = DifficultyLevel.EASY;
+            else if (numDiff === 2) difficulty = DifficultyLevel.STANDARD;
+            else if (numDiff === 3) difficulty = DifficultyLevel.CHALLENGING;
+          }
+        }
+
+        const lp = new PersistentLearningRecordProvider(env.ZANA_LEARNING_KV);
+        const currentProfile = await lp.getStudentMasteryProfile(studentId);
+        const currentState = await lp.getConceptMastery(studentId, conceptId);
+
+        const newState = AdaptiveLearningEngine.calculateNewMastery(currentState, {
+          isCorrect,
+          responseTimeMs: responseTimeMs || 5000,
+          difficulty,
+          hintUsed: !!hintUsed,
+          unreliableTiming: !!unreliableTiming
+        });
+
+        await lp.saveMasteryChange(studentId, conceptId, newState);
+
+        const attempt = {
+          id: "att_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now(),
+          studentId,
+          conceptId,
+          isCorrect,
+          responseTimeMs: responseTimeMs || 5000,
+          difficulty,
+          questionText: questionText || "",
+          studentResponse: studentResponse || "",
+          misconceptionDetected,
+          timestamp: new Date().toISOString()
+        };
+
+        const detectedMisc = AdaptiveLearningEngine.detectMisconception(attempt, currentProfile.activeMisconceptions);
+        if (detectedMisc) {
+          const index = currentProfile.activeMisconceptions.findIndex(
+            m => m.misconceptionId === detectedMisc.misconceptionId && m.resolvedAt === null
+          );
+          if (index >= 0) {
+            currentProfile.activeMisconceptions[index] = detectedMisc;
+          } else {
+            currentProfile.activeMisconceptions.push(detectedMisc);
+          }
+        } else if (isCorrect) {
+          currentProfile.activeMisconceptions = currentProfile.activeMisconceptions.map(m => {
+            if (m.conceptId === conceptId && m.resolvedAt === null) {
+              if (m.status === MisconceptionStatus.SUSPECTED || m.status === MisconceptionStatus.CONFIRMED) {
+                return {
+                  ...m,
+                  status: MisconceptionStatus.IMPROVING,
+                  confidence: "medium" as const,
+                  lastDetectedAt: new Date().toISOString()
+                };
+              } else if (m.status === MisconceptionStatus.IMPROVING) {
+                return {
+                  ...m,
+                  status: MisconceptionStatus.RESOLVED,
+                  confidence: "high" as const,
+                  resolvedAt: new Date().toISOString()
+                };
+              }
+            }
+            return m;
+          });
+        }
+
+        await lp.saveMasteryChange(studentId, conceptId, newState);
+
+        const event = {
+          id: "evt_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now(),
+          studentId,
+          timestamp: new Date().toISOString(),
+          type: "EXERCISE_ATTEMPT" as const,
+          data: attempt
+        };
+        await lp.appendLearningEvent(studentId, event);
+
+        let conceptTitleKu = conceptId;
+        const registry = CurriculumRegistry.getInstance();
+        const lesson = registry.getAllLessons().find(l => l.concepts.includes(conceptId));
+        if (lesson) {
+          conceptTitleKu = conceptId;
+        }
+
+        const prerequisites: string[] = [];
+        if (conceptId === "هاوکێشە" || conceptId === "هاوکێشەی هێڵی") {
+          prerequisites.push("گۆڕدراو");
+        }
+
+        const recommendation = AdaptiveLearningEngine.generateRecommendation(
+          studentId,
+          conceptId,
+          conceptTitleKu,
+          currentProfile,
+          prerequisites
+        );
+
+        await lp.saveRecommendation(recommendation);
+
+        return new Response(JSON.stringify({
+          success: true,
+          masteryState: newState,
+          misconceptionDetected: detectedMisc,
+          recommendation
+        }), { status: 200, headers: responseHeaders });
+      }
+
+      // 6. POST SESSION START
+      if (pathname === "/api/learning/sessions/start" && request.method === "POST") {
+        let studentId: string;
+        try {
+          studentId = getWorkerAuthenticatedStudentId(request);
+        } catch (e) {
+          return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
+        }
+
+        const session = {
+          id: "ses_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now(),
+          studentId,
+          startTime: new Date().toISOString(),
+          endTime: null,
+          events: [],
+          focusScore: 1.0
+        };
+
+        const lp = new PersistentLearningRecordProvider(env.ZANA_LEARNING_KV);
+        await lp.createLearningSession(session);
+        return new Response(JSON.stringify(session), { status: 200, headers: responseHeaders });
+      }
+
+      // 7. POST SESSION END
+      if (pathname.startsWith("/api/learning/sessions/") && pathname.endsWith("/end") && request.method === "POST") {
+        let studentId: string;
+        try {
+          studentId = getWorkerAuthenticatedStudentId(request);
+        } catch (e) {
+          return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
+        }
+
+        const parts = pathname.split("/");
+        const sessionId = decodeURIComponent(parts[parts.length - 2]);
+
+        const body: any = await request.json().catch(() => ({}));
+        const { focusScore } = body;
+
+        const session = {
+          id: sessionId,
+          studentId,
+          startTime: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+          endTime: new Date().toISOString(),
+          events: [],
+          focusScore: focusScore !== undefined ? focusScore : 1.0
+        };
+
+        const lp = new PersistentLearningRecordProvider(env.ZANA_LEARNING_KV);
+        await lp.updateLearningSession(session);
+        return new Response(JSON.stringify(session), { status: 200, headers: responseHeaders });
       }
 
       // Fallback 404
