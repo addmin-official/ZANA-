@@ -1,443 +1,190 @@
-name: Unified CI/CD Deployment Pipeline
+name: ZANA Production CI/CD
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
   pull_request:
-    branches: [ "main" ]
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy after successful verification
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
 
 concurrency:
-  group: production-deployment
+  group: zana-production-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  NODE_VERSION: "22"
+  PRODUCTION_URL: ${{ vars.ZANA_PRODUCTION_URL || 'https://zana-api-worker.zana-platform.workers.dev' }}
+  VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL || 'https://zana-api-worker.zana-platform.workers.dev' }}
+
 jobs:
-  validate:
-    name: Validate Codebase (Preflight & Quality)
+  verify:
+    name: Verify and build production release
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
+      - name: Checkout exact commit
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
-      # STAGE 1: Preflight Secrets Check (Run BEFORE npm ci, lint, typecheck, build for production pushes)
-      - name: Preflight Secrets Check
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          echo "Running Preflight checks for required deployment secrets..."
-          MISSING_SECRETS=0
-
-          if [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ]; then
-            echo "::error::Missing secret CLOUDFLARE_API_TOKEN"
-            MISSING_SECRETS=1
-          fi
-          if [ -z "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" ]; then
-            echo "::error::Missing secret CLOUDFLARE_ACCOUNT_ID"
-            MISSING_SECRETS=1
-          fi
-          if [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
-            echo "::error::Missing secret FIREBASE_SERVICE_ACCOUNT"
-            MISSING_SECRETS=1
-          fi
-          if [ -z "${{ secrets.VITE_API_BASE_URL }}" ]; then
-            echo "::error::Missing secret VITE_API_BASE_URL"
-            MISSING_SECRETS=1
-          fi
-
-          if [ $MISSING_SECRETS -ne 0 ]; then
-            echo "Preflight check failed. One or more required secrets are missing."
-            exit 1
-          fi
-          echo "All preflight checks passed successfully."
-
-      - name: Use Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: 'npm'
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
 
-      - name: Install Dependencies
+      - name: Install locked dependencies
         run: npm ci
 
-      # STAGE 2: Lint
-      - name: Run Linter
+      - name: Validate package metadata
         run: |
-          set -o pipefail
-          npm run lint 2>&1 | tee lint.log
+          npm pkg get name version scripts >/dev/null
+          npm run validate:production
 
-      # STAGE 3: Typecheck
-      - name: Run Typecheck
+      - name: Check patch whitespace
+        run: git diff --check
+
+      - name: Run lint
+        run: npm run lint
+
+      - name: Run TypeScript type-checking
+        run: npm run typecheck
+
+      - name: Run all tests
+        run: npm test
+
+      - name: Build production client and server
+        run: npm run build
+
+      - name: Validate Cloudflare Worker and static assets
+        run: npm run build:worker
+
+      - name: Validate production outputs
+        run: npm run validate:production -- --require-build
+
+      - name: Create artifact integrity manifest
         run: |
-          set -o pipefail
-          npm run typecheck 2>&1 | tee typecheck.log
+          find dist -type f -print0 | sort -z | xargs -0 sha256sum > deployment-manifest.sha256
+          sha256sum --check deployment-manifest.sha256
 
-      - name: Save Pipeline Start Time
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          mkdir -p deployment-started
-          cat <<EOF > deployment-started/metadata-started.json
-          {
-            "deployment_started_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-            "deployment_started_epoch": $(date +%s)
-          }
-          EOF
-
-      - name: Upload Validation and Start Logs
-        if: always()
+      - name: Upload verified production build
         uses: actions/upload-artifact@v4
         with:
-          name: validation-logs
-          path: |
-            lint.log
-            typecheck.log
-            deployment-started/
-
-  build:
-    name: Build Application (Client, Server & Worker)
-    needs: validate
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: 'npm'
-
-      - name: Install Dependencies
-        run: npm ci
-
-      # STAGE 4: Worker Validation
-      - name: Build Worker (Validation)
-        run: |
-          set -o pipefail
-          npm run build:worker 2>&1 | tee build-worker.log
-
-      # STAGE 5: Application Build
-      - name: Build Client and Server
-        env:
-          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
-        run: |
-          set -o pipefail
-          npm run build 2>&1 | tee build.log
-
-      - name: Upload Build Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-outputs
+          name: zana-production-build
+          retention-days: 7
+          if-no-files-found: error
           path: |
             dist/
-            build.log
-            build-worker.log
+            deployment-manifest.sha256
 
-  deploy-worker:
-    name: Deploy Cloudflare Worker
-    needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  deploy:
+    name: Deploy verified release to Cloudflare
+    needs: verify
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.deploy == true)
     runs-on: ubuntu-latest
-    environment: Production
+    environment:
+      name: production
+      url: ${{ env.PRODUCTION_URL }}
+    outputs:
+      deployment_id: ${{ steps.deployment.outputs.deployment_id }}
     steps:
-      - name: Checkout Code
+      - name: Checkout verified commit
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
-      - name: Use Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: 'npm'
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
 
-      - name: Install Dependencies
-        run: npm ci
+      - name: Install deployment dependencies
+        run: npm ci --ignore-scripts
 
-      # STAGE 6: Deploy Cloudflare Worker
-      - name: Deploy Cloudflare Worker
+      - name: Download verified production build
+        uses: actions/download-artifact@v4
+        with:
+          name: zana-production-build
+          path: .
+
+      - name: Verify artifact integrity and required paths
+        run: |
+          sha256sum --check deployment-manifest.sha256
+          npm run validate:production -- --require-build
+
+      - name: Deploy Worker and Static Assets
+        id: deployment
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -o pipefail
-          npx wrangler deploy 2>&1 | tee wrangler-deploy.log
+          DEPLOY_LOG="${RUNNER_TEMP}/wrangler-deploy.log"
+          npx wrangler deploy dist/worker/index.js 2>&1 | tee "$DEPLOY_LOG"
+          DEPLOYMENT_ID=$(sed -nE 's/.*(Version ID|Deployment ID):[[:space:]]*([a-fA-F0-9-]+).*/\2/p' "$DEPLOY_LOG" | tail -n 1)
+          if [ -z "$DEPLOYMENT_ID" ]; then
+            DEPLOYMENT_ID="not-reported-by-wrangler"
+          fi
+          echo "deployment_id=$DEPLOYMENT_ID" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Cloudflare deployment"
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Worker: \`zana-api-worker\`"
+            echo "- Deployment ID: \`${DEPLOYMENT_ID}\`"
+            echo "- URL: ${PRODUCTION_URL}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Parse Worker Deployment Metadata
-        if: always()
-        run: |
-          node -e "
-          const fs = require('fs');
-          let log = '';
-          try { log = fs.readFileSync('wrangler-deploy.log', 'utf8'); } catch(e) {}
-          const nameMatch = log.match(/Uploaded\s+([a-zA-Z0-9-]+)/i) || log.match(/Published\s+([a-zA-Z0-9-]+)/i);
-          const worker_name = nameMatch ? nameMatch[1] : 'zana-api-worker';
-          const idMatch = log.match(/Deployment ID:\s*([a-zA-Z0-9-]+)/i) || log.match(/Version:\s*([0-9]+)/i);
-          const worker_deployment_id = idMatch ? idMatch[1] : null;
-          fs.mkdirSync('metadata-worker', { recursive: true });
-          fs.writeFileSync('metadata-worker/metadata-worker.json', JSON.stringify({ worker_name, worker_deployment_id }));
-          "
-
-      - name: Upload Worker Metadata & Log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: wrangler-deploy-log
-          path: |
-            wrangler-deploy.log
-            metadata-worker/
-
-  verify-worker:
-    name: Verify Worker Live Health
-    needs: deploy-worker
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  smoke-test:
+    name: Verify production deployment
+    needs: deploy
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.deploy == true)
     runs-on: ubuntu-latest
-    environment: Production
+    environment:
+      name: production
+      url: ${{ env.PRODUCTION_URL }}
     steps:
-      - name: Verify Worker Health & CORS
-        run: |
-          echo "Verifying live Cloudflare Worker at: ${{ secrets.VITE_API_BASE_URL }}"
-          
-          RESPONSE_FILE=$(mktemp)
-          HEADER_FILE=$(mktemp)
-
-          HTTP_CODE=$(curl --fail-with-body --silent --show-error \
-            --connect-timeout 10 \
-            --max-time 30 \
-            -H "Origin: https://zana-app.web.app" \
-            -D "$HEADER_FILE" \
-            -o "$RESPONSE_FILE" \
-            -w "%{http_code}" \
-            "${{ secrets.VITE_API_BASE_URL }}/api/health")
-
-          echo "HTTP Response Code: $HTTP_CODE"
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "::error::Worker health check returned status $HTTP_CODE (expected exactly 200)."
-            cat "$RESPONSE_FILE"
-            exit 1
-          fi
-
-          STATUS=$(jq -r '.status' "$RESPONSE_FILE" 2>/dev/null || echo "")
-          SERVICE=$(jq -r '.service' "$RESPONSE_FILE" 2>/dev/null || echo "")
-
-          echo "Parsed status: $STATUS"
-          echo "Parsed service: $SERVICE"
-
-          if [ "$STATUS" != "ok" ]; then
-            echo "::error::Invalid health status: '$STATUS' (expected 'ok')"
-            exit 1
-          fi
-
-          if [ "$SERVICE" != "zana-api-worker" ]; then
-            echo "::error::Invalid service name: '$SERVICE' (expected 'zana-api-worker')"
-            exit 1
-          fi
-
-          # Get the access-control-allow-origin header from HEADER_FILE (case-insensitive search, trim CR/LF and spaces)
-          CORS_HEADER=$(grep -i 'access-control-allow-origin' "$HEADER_FILE" | head -n 1 | awk -F': ' '{print $2}' | tr -d '\r\n ' || echo "")
-
-          echo "Received CORS Allowed Origin: '$CORS_HEADER'"
-
-          if [ "$CORS_HEADER" != "https://zana-app.web.app" ]; then
-            echo "::error::CORS header verification failed. Expected 'https://zana-app.web.app', got '$CORS_HEADER'"
-            exit 1
-          fi
-
-          echo "Worker response verified successfully!"
-
-  deploy-hosting:
-    name: Deploy Firebase Hosting
-    needs: verify-worker
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    environment: Production
-    steps:
-      - name: Checkout Code
+      - name: Checkout smoke-test implementation
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
-      - name: Use Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
-          cache: 'npm'
+          node-version: ${{ env.NODE_VERSION }}
 
-      - name: Install Dependencies
-        run: npm ci
-
-      - name: Download Build Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: build-outputs
-          path: .
-
-      # STAGE 7: Deploy Firebase Hosting
-      - name: Authenticate Firebase
-        run: |
-          echo "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" > firebase-service-account.json
-          echo "GOOGLE_APPLICATION_CREDENTIALS=${{ github.workspace }}/firebase-service-account.json" >> $GITHUB_ENV
-
-      - name: Deploy Firebase Hosting
-        run: |
-          set -o pipefail
-          npx firebase deploy --only hosting 2>&1 | tee firebase-deploy.log
-
-      - name: Parse Firebase Hosting Metadata
-        if: always()
-        run: |
-          node -e "
-          const fs = require('fs');
-          let log = '';
-          try { log = fs.readFileSync('firebase-deploy.log', 'utf8'); } catch(e) {}
-          const projectMatch = log.match(/project\/([a-zA-Z0-9-]+)\/overview/i);
-          const firebase_project_id = projectMatch ? projectMatch[1] : null;
-          const urlMatch = log.match(/Hosting URL:\s*(https:\/\/[a-zA-Z0-9.-]+)/i);
-          const firebase_hosting_url = urlMatch ? urlMatch[1] : null;
-          fs.mkdirSync('metadata-hosting', { recursive: true });
-          fs.writeFileSync('metadata-hosting/metadata-hosting.json', JSON.stringify({ firebase_project_id, firebase_hosting_url }));
-          "
-
-      - name: Upload Firebase Hosting Metadata & Log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: firebase-deploy-log
-          path: |
-            firebase-deploy.log
-            metadata-hosting/
-
-      - name: Cleanup Service Account
-        if: always()
-        run: rm -f firebase-service-account.json
-
-  smoke-tests:
-    name: Run Production Smoke Tests
-    needs: deploy-hosting
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    environment: Production
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: 'npm'
-
-      - name: Install Dependencies
-        run: npm ci
-
-      # STAGE 8: Production Smoke Tests
-      - name: Run Production Smoke Tests
+      - name: Run non-destructive production smoke tests
         env:
-          API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
-        run: |
-          set -o pipefail
-          npm run test:smoke 2>&1 | tee smoke-test-report.log
+          API_BASE_URL: ${{ env.PRODUCTION_URL }}
+          CORS_TEST_ORIGIN: ${{ env.PRODUCTION_URL }}
+        run: npm run test:smoke
 
-      - name: Upload Smoke Test Report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: smoke-test-report
-          path: smoke-test-report.log
-
-  release:
-    name: Generate Release Tag & Metadata
-    needs: smoke-tests
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    environment: Production
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Download Pipeline Start Metadata
-        uses: actions/download-artifact@v4
-        with:
-          name: validation-logs
-
-      - name: Download Cloudflare Metadata
-        uses: actions/download-artifact@v4
-        with:
-          name: wrangler-deploy-log
-
-      - name: Download Firebase Metadata
-        uses: actions/download-artifact@v4
-        with:
-          name: firebase-deploy-log
-
-      - name: Generate Release Summary & Tag
-        run: |
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          RELEASE_TIME=$(date -u +"%Y%m%d-%H%M%S")
-          RELEASE_TAG="release-${RELEASE_TIME}-${{ github.run_number }}-${SHORT_SHA}"
-          
-          echo "Release Tag: $RELEASE_TAG"
-          echo "RELEASE_TAG=$RELEASE_TAG" >> $GITHUB_ENV
-          
-          node -e "
-          const fs = require('fs');
-
-          let started = { deployment_started_at: new Date().toISOString(), deployment_started_epoch: Math.floor(Date.now() / 1000) };
-          try {
-            started = JSON.parse(fs.readFileSync('deployment-started/metadata-started.json', 'utf8'));
-          } catch (e) {}
-
-          let worker = { worker_name: null, worker_deployment_id: null };
-          try {
-            worker = JSON.parse(fs.readFileSync('metadata-worker/metadata-worker.json', 'utf8'));
-          } catch (e) {}
-
-          let hosting = { firebase_project_id: null, firebase_hosting_url: null };
-          try {
-            hosting = JSON.parse(fs.readFileSync('metadata-hosting/metadata-hosting.json', 'utf8'));
-          } catch (e) {}
-
-          const completedAt = new Date().toISOString();
-          const completedEpoch = Math.floor(Date.now() / 1000);
-          const duration = Math.max(0, completedEpoch - started.deployment_started_epoch);
-
-          const summary = {
-            commit_sha: '${{ github.sha }}',
-            short_sha: '$SHORT_SHA',
-            github_run_id: '${{ github.run_id }}',
-            github_run_number: '${{ github.run_number }}',
-            deployment_started_at: started.deployment_started_at,
-            deployment_completed_at: completedAt,
-            deployment_duration_seconds: duration,
-            release_tag: '$RELEASE_TAG',
-            worker_name: worker.worker_name || null,
-            worker_deployment_id: worker.worker_deployment_id || null,
-            firebase_project_id: hosting.firebase_project_id || null,
-            firebase_hosting_url: hosting.firebase_hosting_url || null,
-            smoke_test_status: 'SUCCESS'
-          };
-
-          fs.writeFileSync('release-summary.json', JSON.stringify(summary, null, 2));
-          "
-          echo "Generated Real Release Metadata:"
-          cat release-summary.json
-
-      - name: Upload Release Summary Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-summary
-          path: release-summary.json
-
-      - name: Create Git Tag and GitHub Release
+      - name: Record verified release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEPLOYMENT_ID: ${{ needs.deploy.outputs.deployment_id }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          
-          # Create Git Tag
-          git tag -a "$RELEASE_TAG" -m "Automated production release $RELEASE_TAG"
-          git push origin "$RELEASE_TAG"
-          
-          # Create GitHub Release with release-summary attached
-          gh release create "$RELEASE_TAG" \
-            --title "Production Release $RELEASE_TAG" \
-            --notes "Automated release triggered by GitHub Action run ${{ github.run_id }}. Commit: ${{ github.sha }}." \
-            release-summary.json
+          {
+            echo "### ZANA production verified"
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Deployment ID: \`${DEPLOYMENT_ID}\`"
+            echo "- Smoke tests: passed"
+            echo "- Production URL: ${PRODUCTION_URL}"
+          } >> "$GITHUB_STEP_SUMMARY"
