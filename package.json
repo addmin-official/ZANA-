@@ -17,6 +17,7 @@
     "firebase:deploy": "firebase deploy --only hosting",
     "firebase:deploy:hosting": "firebase deploy --only hosting",
     "deploy:cloudflare": "wrangler deploy",
+    "deploy": "wrangler deploy",
     "test": "node --import tsx --test src/curriculum/curriculum.test.ts",
     "test:smoke": "node scripts/smoke-test.js"
   },
