@@ -12,7 +12,7 @@ import { SubjectKey } from "./features/student/studentTypes.ts";
 import { NavTab } from "./components/BottomNavigation.tsx";
 
 export default function App() {
-  const { profile, updateProfile, completeOnboarding, resetProfile } = useStudentProfile();
+  const { profile, updateProfile, completeOnboarding, resetProfile, isOfflineFallback, authError } = useStudentProfile();
   
   // Manage active tab, plus optional "assessment" mode
   const [activeTab, setActiveTab] = useState<NavTab>("daily");
@@ -103,6 +103,8 @@ export default function App() {
         setIsAssessmentMode(false);
         setActiveTab(tab);
       }}
+      isOfflineFallback={isOfflineFallback}
+      authError={authError}
     >
       {renderScreen()}
     </AppShell>

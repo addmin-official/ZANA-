@@ -8,6 +8,9 @@ import { doc, getDoc, setDoc } from "firebase/firestore";
 import { signInAnonymously, onAuthStateChanged } from "firebase/auth";
 
 export function useStudentProfile() {
+  const [isOfflineFallback, setIsOfflineFallback] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+
   const [profile, setProfileState] = useState<StudentProfile>(() => {
     const saved = getStudentProfile();
     if (saved) return saved;
@@ -30,6 +33,8 @@ export function useStudentProfile() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
+        setIsOfflineFallback(false);
+        setAuthError(null);
         // Authenticated! Check/Sync with Firestore
         const docRef = doc(db, "students", user.uid);
         try {
@@ -57,12 +62,15 @@ export function useStudentProfile() {
         }
       } else {
         signInAnonymously(auth).catch((err) => {
+          setIsOfflineFallback(true);
           // If anonymous authentication is disabled/restricted in the Firebase Console (auth/admin-restricted-operation),
           // the application will gracefully run in offline/localStorage mode. We log this as a warning instead of a fatal error.
           if (err && (err.code === "auth/admin-restricted-operation" || err.message?.includes("admin-restricted-operation"))) {
             console.warn("Firebase Anonymous Sign-In is restricted/disabled. Falling back to local guest session.");
+            setAuthError("Firebase Anonymous Sign-In is restricted or disabled. Running in limited offline guest session.");
           } else {
             console.error("Firebase Auth anonymous sign-in failed:", err);
+            setAuthError(`Firebase Auth anonymous sign-in failed: ${err.message || err}. Running in limited offline guest session.`);
           }
         });
       }
@@ -234,6 +242,8 @@ interface LegacyUpdateFields {
     setGrade,
     setStream,
     completeOnboarding,
-    resetProfile
+    resetProfile,
+    isOfflineFallback,
+    authError
   };
 }
