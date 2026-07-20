@@ -5,6 +5,13 @@ import { AdaptiveLearningEngine } from "../learning/engine/AdaptiveLearningEngin
 import { DifficultyLevel, MisconceptionStatus } from "../learning/domain/MasteryTypes.ts";
 import { CurriculumRegistry } from "../curriculum/registry/CurriculumRegistry.ts";
 import { AuthService } from "../services/authService.ts";
+import {
+  PersistentAssessmentRecordProvider,
+  AssessmentService,
+  AssessmentBlueprint,
+  AssessmentType,
+  QuestionType
+} from "../assessment/index.ts";
 
 export interface Env {
   GEMINI_API_KEY: string;
@@ -1144,6 +1151,176 @@ ${modeInstructions}
         const lp = new PersistentLearningRecordProvider(env.LEARNING_RECORDS_KV || env.ZANA_LEARNING_KV, "production");
         await lp.updateLearningSession(session);
         return new Response(JSON.stringify(session), { status: 200, headers: responseHeaders });
+      }
+
+      // =========================================================================
+      // ASSESSMENT & QUIZ INTELLIGENCE ROUTING ENDPOINTS (PHASE 16)
+      // =========================================================================
+
+      // 1. POST START ASSESSMENT
+      if (pathname === "/api/assessment/start" && request.method === "POST") {
+        let studentId: string;
+        try {
+          studentId = getWorkerAuthenticatedStudentId(request);
+        } catch (e) {
+          return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
+        }
+
+        const body: any = await request.json().catch(() => ({}));
+        const { unitId, subjectId, type, titleKu, instructionsKu } = body;
+
+        if (!unitId || !subjectId) {
+          return new Response(JSON.stringify({ error: "زانیاری پێویست بۆ دەستپێکردنی تاقیکردنەوە بوونی نییە." }), { status: 400, headers: responseHeaders });
+        }
+
+        const lp = new PersistentLearningRecordProvider(env.LEARNING_RECORDS_KV || env.ZANA_LEARNING_KV, "production");
+        const ap = new PersistentAssessmentRecordProvider(env.LEARNING_RECORDS_KV || env.ZANA_LEARNING_KV, "production");
+        const service = new AssessmentService(ap);
+
+        const profile = await lp.getStudentMasteryProfile(studentId);
+        
+        // Calculate average mastery score for this unit
+        const lessons = CurriculumRegistry.getInstance().getAllLessons().filter(l => l.unitId === unitId);
+        const conceptIds = lessons.reduce((acc, l) => acc.concat(l.concepts), [] as string[]);
+        let totalMastery = 0;
+        let count = 0;
+        for (const cid of conceptIds) {
+          const state = profile.conceptMasteries[cid];
+          if (state) {
+            totalMastery += state.masteryScore;
+            count++;
+          }
+        }
+        const avgMastery = count > 0 ? totalMastery / count : 0.0;
+
+        // Compose an elegant default blueprint matching requested parameters
+        const blueprint: AssessmentBlueprint = {
+          id: `bp_${unitId}_${type || "mastery_check"}_${Date.now()}`,
+          type: type === "MASTERY_CHECK" ? AssessmentType.MASTERY_CHECK : AssessmentType.DIAGNOSTIC,
+          curriculumId: "curriculum-zana-default",
+          grade: "9",
+          subjectId,
+          unitId,
+          conceptIds,
+          totalQuestions: type === "MASTERY_CHECK" ? 10 : 5,
+          targetDurationSeconds: type === "MASTERY_CHECK" ? 600 : 300,
+          difficultyDistribution: {
+            [DifficultyLevel.FOUNDATION]: 0.1,
+            [DifficultyLevel.EASY]: 0.2,
+            [DifficultyLevel.STANDARD]: 0.4,
+            [DifficultyLevel.CHALLENGING]: 0.2,
+            [DifficultyLevel.ADVANCED]: 0.1
+          },
+          questionTypeDistribution: {
+            [QuestionType.MULTIPLE_CHOICE_SINGLE]: 0.6,
+            [QuestionType.MULTIPLE_CHOICE_MULTIPLE]: 0.1,
+            [QuestionType.TRUE_FALSE]: 0.1,
+            [QuestionType.SHORT_ANSWER]: 0.1,
+            [QuestionType.NUMERIC]: 0.1,
+            [QuestionType.ORDERING]: 0.0,
+            [QuestionType.MATCHING]: 0.0
+          },
+          learningObjectives: [],
+          masteryObjectives: [],
+          passingThresholdPercentage: 70,
+          partialCreditPolicy: "strict",
+          retryPolicy: { maxRetries: 3, cooldownSeconds: 0 },
+          randomizationRules: { shuffleQuestions: true, shuffleOptions: true }
+        };
+
+        const { attempt, firstQuestion } = await service.startAssessment(
+          studentId,
+          blueprint,
+          titleKu || "تاقیکردنەوەی نوێ",
+          instructionsKu || "تکایە بە وریاییەوە پرسیارەکان بخوێنەرەوە.",
+          avgMastery
+        );
+
+        return new Response(JSON.stringify({ attempt, firstQuestion, blueprint }), { status: 200, headers: responseHeaders });
+      }
+
+      // 2. POST SUBMIT ANSWER
+      if (pathname === "/api/assessment/submit" && request.method === "POST") {
+        let studentId: string;
+        try {
+          studentId = getWorkerAuthenticatedStudentId(request);
+        } catch (e) {
+          return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
+        }
+
+        const body: any = await request.json().catch(() => ({}));
+        const { attemptId, questionId, submission, blueprint } = body;
+
+        if (!attemptId || !questionId || !submission || !blueprint) {
+          return new Response(JSON.stringify({ error: "ناردنی داواکارییەکە کەم و کوڕی تێدایە." }), { status: 400, headers: responseHeaders });
+        }
+
+        const lp = new PersistentLearningRecordProvider(env.LEARNING_RECORDS_KV || env.ZANA_LEARNING_KV, "production");
+        const ap = new PersistentAssessmentRecordProvider(env.LEARNING_RECORDS_KV || env.ZANA_LEARNING_KV, "production");
+        const service = new AssessmentService(ap);
+
+        const result = await service.submitAnswer(
+          attemptId,
+          questionId,
+          submission,
+          lp,
+          blueprint
+        );
+
+        return new Response(JSON.stringify(result), { status: 200, headers: responseHeaders });
+      }
+
+      // 3. POST FINISH ASSESSMENT
+      if (pathname === "/api/assessment/finish" && request.method === "POST") {
+        let studentId: string;
+        try {
+          studentId = getWorkerAuthenticatedStudentId(request);
+        } catch (e) {
+          return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
+        }
+
+        const body: any = await request.json().catch(() => ({}));
+        const { attemptId, blueprint } = body;
+
+        if (!attemptId || !blueprint) {
+          return new Response(JSON.stringify({ error: "ناردنی داواکارییەکە کەم و کوڕی تێدایە." }), { status: 400, headers: responseHeaders });
+        }
+
+        const lp = new PersistentLearningRecordProvider(env.LEARNING_RECORDS_KV || env.ZANA_LEARNING_KV, "production");
+        const ap = new PersistentAssessmentRecordProvider(env.LEARNING_RECORDS_KV || env.ZANA_LEARNING_KV, "production");
+        const service = new AssessmentService(ap);
+
+        const result = await service.finishAssessment(attemptId, lp, blueprint);
+
+        return new Response(JSON.stringify({ result }), { status: 200, headers: responseHeaders });
+      }
+
+      // 4. GET ATTEMPT DETAILS
+      if (pathname.startsWith("/api/assessment/attempts/") && request.method === "GET") {
+        let studentId: string;
+        try {
+          studentId = getWorkerAuthenticatedStudentId(request);
+        } catch (e) {
+          return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
+        }
+
+        const parts = pathname.split("/");
+        const attemptId = decodeURIComponent(parts[parts.length - 1]);
+
+        const ap = new PersistentAssessmentRecordProvider(env.LEARNING_RECORDS_KV || env.ZANA_LEARNING_KV, "production");
+        const attempt = await ap.getAttempt(attemptId);
+
+        if (!attempt) {
+          return new Response(JSON.stringify({ error: "هەوڵدانەکە نەدۆزرایەوە." }), { status: 404, headers: responseHeaders });
+        }
+
+        if (attempt.studentId !== studentId) {
+          return new Response(JSON.stringify({ error: "دەستگەیشتن بۆ ئەم هەوڵدانە تەنها بۆ خاوەنەکەیەتی." }), { status: 403, headers: responseHeaders });
+        }
+
+        const result = await ap.getResult(attemptId);
+
+        return new Response(JSON.stringify({ attempt, result }), { status: 200, headers: responseHeaders });
       }
 
       // Fallback 404
