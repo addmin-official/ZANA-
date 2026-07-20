@@ -160,6 +160,42 @@ jobs:
           name: build-outputs
           path: .
 
+      - name: Resolve Existing Cloudflare KV Binding
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CONFIGURED_KV_NAMESPACE_ID: ${{ vars.CLOUDFLARE_KV_NAMESPACE_ID }}
+        run: |
+          KV_NAMESPACE_ID="$CONFIGURED_KV_NAMESPACE_ID"
+
+          if [ -z "$KV_NAMESPACE_ID" ]; then
+            npx wrangler versions list --json > worker-versions.json
+            LATEST_VERSION_ID=$(jq -r '.[-1].id // empty' worker-versions.json)
+
+            if [ -z "$LATEST_VERSION_ID" ]; then
+              echo "::error::Unable to resolve the current Cloudflare Worker version."
+              exit 1
+            fi
+
+            npx wrangler versions view "$LATEST_VERSION_ID" --json > worker-version.json
+            KV_NAMESPACE_ID=$(jq -r '
+              .resources.bindings[]?
+              | select(.type == "kv_namespace" and .name == "LEARNING_RECORDS_KV")
+              | .namespace_id // empty
+            ' worker-version.json)
+          fi
+
+          if ! [[ "$KV_NAMESPACE_ID" =~ ^[a-fA-F0-9]{32}$ ]]; then
+            echo "::error::The existing LEARNING_RECORDS_KV namespace could not be resolved."
+            exit 1
+          fi
+
+          jq --arg namespace_id "$KV_NAMESPACE_ID" \
+            '.kv_namespaces = [{"binding": "LEARNING_RECORDS_KV", "id": $namespace_id}]' \
+            wrangler.jsonc > wrangler.production.json
+
+          echo "Resolved the existing LEARNING_RECORDS_KV namespace without provisioning a new resource."
+
       # STAGE 6: Deploy Cloudflare Worker
       - name: Deploy Cloudflare Worker
         env:
@@ -167,7 +203,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -o pipefail
-          npx wrangler deploy 2>&1 | tee wrangler-deploy.log
+          npx wrangler deploy --config wrangler.production.json 2>&1 | tee wrangler-deploy.log
 
       - name: Parse Worker Deployment Metadata
         if: always()
