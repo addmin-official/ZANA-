@@ -57,7 +57,13 @@ export function useStudentProfile() {
         }
       } else {
         signInAnonymously(auth).catch((err) => {
-          console.error("Firebase Auth anonymous sign-in failed:", err);
+          // If anonymous authentication is disabled/restricted in the Firebase Console (auth/admin-restricted-operation),
+          // the application will gracefully run in offline/localStorage mode. We log this as a warning instead of a fatal error.
+          if (err && (err.code === "auth/admin-restricted-operation" || err.message?.includes("admin-restricted-operation"))) {
+            console.warn("Firebase Anonymous Sign-In is restricted/disabled. Falling back to local guest session.");
+          } else {
+            console.error("Firebase Auth anonymous sign-in failed:", err);
+          }
         });
       }
     });

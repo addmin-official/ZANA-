@@ -7,7 +7,6 @@ coverage/
 .env*
 !.env.example
 .firebase/
-.wrangler/
 firebase-debug.log
 firebase-debug.*.log
 service-account*.json

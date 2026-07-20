@@ -1,3 +1,5 @@
+process.env.NODE_ENV = "test";
+process.env.ZANA_ENV = "test";
 import { test } from "node:test";
 import assert from "node:assert";
 import { AuthService } from "../../services/authService.ts";
