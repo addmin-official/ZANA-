@@ -7,13 +7,28 @@ export type AssessmentMode =
 export type AssessmentQuestionType =
   | "multiple_choice"
   | "short_answer"
-  | "step_by_step";
+  | "step_by_step"
+  | "MULTIPLE_CHOICE_SINGLE"
+  | "MULTIPLE_CHOICE_MULTIPLE"
+  | "TRUE_FALSE"
+  | "SHORT_ANSWER"
+  | "NUMERIC"
+  | "ORDERING"
+  | "MATCHING";
+
+export interface QuestionOption {
+  id: string;
+  textKu: string;
+  textAr?: string;
+  textEn?: string;
+}
 
 export interface AssessmentQuestion {
   id: string;
   type: AssessmentQuestionType;
   prompt: string;
-  choices?: string[];
+  choices?: string[]; // fallback for legacy multiple_choice
+  options?: QuestionOption[]; // for Phase 16 MCQs
   correctAnswer?: string;
   explanation: string;
   conceptId?: string;
@@ -23,8 +38,13 @@ export interface AssessmentQuestion {
     | "basic"
     | "intermediate"
     | "advanced"
-    | "exam_level";
-  source: "curriculum_generated" | "ai_generated_future";
+    | "exam_level"
+    | "foundation"
+    | "easy"
+    | "standard"
+    | "challenging"
+    | "expert";
+  source: "curriculum_generated" | "ai_generated_future" | "ZANA_ORIGINAL" | "GENERATED_APPROVED" | "ZANA_OWNED_2026";
 }
 
 export interface AssessmentAnswer {
@@ -33,6 +53,7 @@ export interface AssessmentAnswer {
   isCorrect: boolean;
   feedback: string;
   answeredAt: string;
+  score?: number;
 }
 
 export interface AssessmentSession {
@@ -57,6 +78,7 @@ export interface AssessmentSession {
     | "review_weakness"
     | "practice_more"
     | "advance_next_lesson";
+  blueprint?: any; // For Phase 16 real backend attempt
 }
 
 export interface AssessmentSnapshot {
@@ -73,3 +95,4 @@ export interface AssessmentSnapshot {
   };
   warnings: string[];
 }
+

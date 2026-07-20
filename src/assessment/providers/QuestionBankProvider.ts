@@ -106,6 +106,7 @@ export class QuestionBankProvider {
     const q1: AssessmentQuestion = {
       id: "q_alg_l1_01",
       source: QuestionSource.ZANA_ORIGINAL,
+      licenseId: "ZANA-OWNED-2026",
       curriculumId: "curriculum-zana-default",
       unitId: "foundations-of-algebra",
       lessonId: l1_id,
@@ -132,6 +133,7 @@ export class QuestionBankProvider {
     const q2: AssessmentQuestion = {
       id: "q_alg_l1_02",
       source: QuestionSource.ZANA_ORIGINAL,
+      licenseId: "ZANA-OWNED-2026",
       curriculumId: "curriculum-zana-default",
       unitId: "foundations-of-algebra",
       lessonId: l1_id,
@@ -158,6 +160,7 @@ export class QuestionBankProvider {
     const q3: AssessmentQuestion = {
       id: "q_alg_l2_01",
       source: QuestionSource.ZANA_ORIGINAL,
+      licenseId: "ZANA-OWNED-2026",
       curriculumId: "curriculum-zana-default",
       unitId: "foundations-of-algebra",
       lessonId: l2_id,
@@ -178,6 +181,7 @@ export class QuestionBankProvider {
     const q4: AssessmentQuestion = {
       id: "q_alg_l2_02",
       source: QuestionSource.ZANA_ORIGINAL,
+      licenseId: "ZANA-OWNED-2026",
       curriculumId: "curriculum-zana-default",
       unitId: "foundations-of-algebra",
       lessonId: l2_id,
@@ -198,6 +202,7 @@ export class QuestionBankProvider {
     const q5: AssessmentQuestion = {
       id: "q_alg_l2_03",
       source: QuestionSource.ZANA_ORIGINAL,
+      licenseId: "ZANA-OWNED-2026",
       curriculumId: "curriculum-zana-default",
       unitId: "foundations-of-algebra",
       lessonId: l2_id,
@@ -218,6 +223,7 @@ export class QuestionBankProvider {
     const q6: AssessmentQuestion = {
       id: "q_alg_l2_04",
       source: QuestionSource.ZANA_ORIGINAL,
+      licenseId: "ZANA-OWNED-2026",
       curriculumId: "curriculum-zana-default",
       unitId: "foundations-of-algebra",
       lessonId: l2_id,
@@ -243,5 +249,59 @@ export class QuestionBankProvider {
       updatedAt: new Date().toISOString()
     };
     this.addQuestion(q6, { singleOptionId: "opt_correct" });
+
+    // Q7: MCQ Single (Substitution - Standard)
+    const q7: AssessmentQuestion = {
+      id: "q_alg_l1_03",
+      source: QuestionSource.ZANA_ORIGINAL,
+      licenseId: "ZANA-OWNED-2026",
+      curriculumId: "curriculum-zana-default",
+      unitId: "foundations-of-algebra",
+      lessonId: l1_id,
+      conceptId: "جێگرتنەوە",
+      difficulty: DifficultyLevel.STANDARD,
+      type: QuestionType.MULTIPLE_CHOICE_SINGLE,
+      promptKu: "بەهای دەربڕینی جەبری 3x + 2y بدۆزەرەوە ئەگەر x = 4 و y = 3 بێت.",
+      promptEn: "Find the value of the algebraic expression 3x + 2y if x = 4 and y = 3.",
+      options: [
+        { id: "opt_a", textKu: "14" },
+        { id: "opt_b", textKu: "18" },
+        { id: "opt_c", textKu: "20" },
+        { id: "opt_d", textKu: "12" }
+      ],
+      explanationKu: "بۆ جێگرتنەوەی بەهاکان: 3(4) + 2(3) = 12 + 6 = 18.",
+      estimatedDurationSeconds: 60,
+      version: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    this.addQuestion(q7, { singleOptionId: "opt_b" });
+
+    // Q8: MCQ Single (Checking solutions - Standard)
+    const q8: AssessmentQuestion = {
+      id: "q_alg_l2_05",
+      source: QuestionSource.ZANA_ORIGINAL,
+      licenseId: "ZANA-OWNED-2026",
+      curriculumId: "curriculum-zana-default",
+      unitId: "foundations-of-algebra",
+      lessonId: l2_id,
+      conceptId: "پشکنین",
+      difficulty: DifficultyLevel.STANDARD,
+      type: QuestionType.MULTIPLE_CHOICE_SINGLE,
+      promptKu: "بۆ پشکنینی ڕاستی شیکاری هاوکێشەی 4x - 3 = 13، ئەگەر x = 4 بێت، ئایا ئەم شیکارە دروستە؟",
+      promptEn: "To check the correct solution of the equation 4x - 3 = 13, if x = 4, is this solution correct?",
+      options: [
+        { id: "opt_a", textKu: "بەڵێ، چونکە 4(4) - 3 = 16 - 3 = 13 کە یەکسانە بۆ هەردوو لایەن." },
+        { id: "opt_b", textKu: "نەخێر، چونکە لایەنی چەپ دەبێتە ١٢." },
+        { id: "opt_c", textKu: "بەڵێ، بەڵام x دەبێت بەهای تری هەبێت." },
+        { id: "opt_d", textKu: "نەخێر، چونکە شیکارەکە دروست نییە." }
+      ],
+      explanationKu: "بە جێگیرکردنی x = 4 لە لایەنی چەپ: 4(4) - 3 = 16 - 3 = 13، کە یەکسانە بە لایەنی ڕاست (13). بۆیە شیکارەکە دروستە.",
+      estimatedDurationSeconds: 60,
+      version: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    this.addQuestion(q8, { singleOptionId: "opt_a" });
   }
 }

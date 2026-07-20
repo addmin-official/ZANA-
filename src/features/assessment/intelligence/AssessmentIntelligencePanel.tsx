@@ -1,9 +1,10 @@
-import { useState, FormEvent, useMemo } from "react";
+import { useState, useEffect, FormEvent, useMemo } from "react";
 import { StudentProfile } from "../../student/studentTypes.ts";
 import { useAssessmentIntelligence } from "./useAssessmentIntelligence.ts";
 import { AssessmentMode } from "./assessmentTypes.ts";
 import { ZanaButton } from "../../../components/ZanaButton.tsx";
 import { ZanaCard } from "../../../components/ZanaCard.tsx";
+import { AnswerSubmission } from "../../../assessment/domain/AssessmentTypes.ts";
 import {
   Award,
   BookOpen,
@@ -27,7 +28,7 @@ interface AssessmentIntelligencePanelProps {
 
 /**
  * AssessmentIntelligencePanel: Modern, RTL, mobile-first dashboard
- * for conducting diagnostics and lesson-check assessments scientifically.
+ * supporting Heuristic Heuristic Adaptive Difficulty Engine assessments.
  */
 export function AssessmentIntelligencePanel({
   studentProfile,
@@ -43,12 +44,34 @@ export function AssessmentIntelligencePanel({
     reset,
     isCompleted,
     error,
+    isLoading,
   } = useAssessmentIntelligence(studentProfile, onProfileUpdate);
 
   const [typedAnswer, setTypedAnswer] = useState("");
   const [selectedChoice, setSelectedChoice] = useState<string | null>(null);
+  const [selectedChoices, setSelectedChoices] = useState<string[]>([]);
+  const [trueFalseValue, setTrueFalseValue] = useState<boolean | null>(null);
+  const [numericValue, setNumericValue] = useState<string>("");
+  const [orderedItems, setOrderedItems] = useState<any[]>([]);
+  const [matchingAnswers, setMatchingAnswers] = useState<Record<string, string>>({});
+
   const [feedback, setFeedback] = useState<{ isCorrect: boolean; text: string } | null>(null);
   const [isEvaluating, setIsEvaluating] = useState(false);
+
+  const currentQuestion = snapshot?.currentQuestion;
+
+  // Sync state on question transition
+  useEffect(() => {
+    if (currentQuestion) {
+      setTypedAnswer("");
+      setSelectedChoice(null);
+      setSelectedChoices([]);
+      setTrueFalseValue(null);
+      setNumericValue("");
+      setOrderedItems(currentQuestion.options || []);
+      setMatchingAnswers({});
+    }
+  }, [currentQuestion?.id]);
 
   const activeSubjectKu = useMemo(() => {
     switch (studentProfile.activeSubject) {
@@ -66,20 +89,63 @@ export function AssessmentIntelligencePanel({
   }, [studentProfile.activeSubject]);
 
   // Handle Answer Submission
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!snapshot || !snapshot.currentQuestion || feedback || isEvaluating) return;
+    if (!snapshot || !currentQuestion || feedback || isEvaluating) return;
 
-    const answerToSubmit =
-      snapshot.currentQuestion.type === "multiple_choice"
-        ? selectedChoice || ""
-        : typedAnswer.trim();
+    let submissionPayload: AnswerSubmission;
 
-    if (!answerToSubmit) return;
+    if (currentQuestion.type === "MULTIPLE_CHOICE_SINGLE") {
+      submissionPayload = {
+        questionId: currentQuestion.id,
+        selectedOptionIds: [selectedChoice || ""],
+        responseTimeMs: 8000
+      };
+    } else if (currentQuestion.type === "MULTIPLE_CHOICE_MULTIPLE") {
+      submissionPayload = {
+        questionId: currentQuestion.id,
+        selectedOptionIds: selectedChoices,
+        responseTimeMs: 8000
+      };
+    } else if (currentQuestion.type === "TRUE_FALSE") {
+      submissionPayload = {
+        questionId: currentQuestion.id,
+        trueFalseValue: trueFalseValue === true,
+        responseTimeMs: 8000
+      };
+    } else if (currentQuestion.type === "NUMERIC") {
+      submissionPayload = {
+        questionId: currentQuestion.id,
+        numericValue: Number(numericValue),
+        responseTimeMs: 8000
+      };
+    } else if (currentQuestion.type === "ORDERING") {
+      submissionPayload = {
+        questionId: currentQuestion.id,
+        orderedIds: orderedItems.map(item => item.id),
+        responseTimeMs: 8000
+      };
+    } else if (currentQuestion.type === "MATCHING") {
+      submissionPayload = {
+        questionId: currentQuestion.id,
+        matchingPairs: matchingAnswers,
+        responseTimeMs: 8000
+      };
+    } else {
+      const answerToSubmit =
+        currentQuestion.type === "multiple_choice"
+          ? selectedChoice || ""
+          : typedAnswer.trim();
+      submissionPayload = {
+        questionId: currentQuestion.id,
+        shortAnswerText: answerToSubmit,
+        responseTimeMs: 8000
+      };
+    }
 
     setIsEvaluating(true);
     try {
-      const result = submitAnswer(answerToSubmit);
+      const result = await submitAnswer(submissionPayload);
       setFeedback({
         isCorrect: result.isCorrect,
         text: result.feedback,
@@ -92,15 +158,13 @@ export function AssessmentIntelligencePanel({
   };
 
   // Clean-up on question transition
-  const handleNext = () => {
-    setTypedAnswer("");
-    setSelectedChoice(null);
+  const handleNext = async () => {
     setFeedback(null);
 
     if (snapshot && snapshot.session) {
       const isLast = snapshot.session.answers.length === snapshot.session.totalQuestions;
       if (isLast) {
-        finish();
+        await finish();
       } else {
         nextQuestion();
       }
@@ -122,9 +186,7 @@ export function AssessmentIntelligencePanel({
     }
   };
 
-  // -------------------------------------------------------------------------
   // 1. INTRO / SETUP STATE (No active session yet)
-  // -------------------------------------------------------------------------
   if (!snapshot) {
     return (
       <div className="space-y-6 flex-1 flex flex-col justify-start py-2 px-1 text-right" style={{ direction: "rtl" }}>
@@ -137,15 +199,16 @@ export function AssessmentIntelligencePanel({
             تاقیکردنەوەی ئاستی {activeSubjectKu}
           </h2>
           <p className="font-sans text-xs text-slate-500 mt-2 leading-relaxed max-w-sm mx-auto">
-            هەڵسەنگاندنێکی زانستی ڕێکخراو لە لایەن مامۆستا زانا بۆ دەستنیشانکردنی دروستی خاڵە بەهێزەکان و چەمکە لاوازەکانت بۆ پۆلی {studentProfile.grade}.
+            هەڵسەنگاندنێکی زانستی ڕێکخراو لە لایەن مامۆستا زانا بۆ دەستنیشانکردنی دروستی خاڵە بەهێزەکان و چەمکە لاوازەکانت بە پشتگیری بزوێنەری Heuristic Adaptive Difficulty Engine بۆ پۆلی {studentProfile.grade}.
           </p>
         </div>
 
         {/* Selection Cards */}
         <div className="grid grid-cols-1 gap-3 max-w-md mx-auto w-full">
           <button
+            disabled={isLoading}
             onClick={() => start("diagnostic")}
-            className="p-4 rounded-2xl border border-slate-150 bg-white hover:bg-slate-50/50 hover:border-blue-400 text-right font-sans transition-all cursor-pointer flex gap-3.5 items-center justify-between shadow-xs group"
+            className="p-4 rounded-2xl border border-slate-150 bg-white hover:bg-slate-50/50 hover:border-blue-400 text-right font-sans transition-all cursor-pointer flex gap-3.5 items-center justify-between shadow-xs group disabled:opacity-50"
           >
             <div className="space-y-1">
               <h4 className="text-sm font-bold text-slate-800 group-hover:text-blue-600 transition-colors">
@@ -159,8 +222,9 @@ export function AssessmentIntelligencePanel({
           </button>
 
           <button
+            disabled={isLoading}
             onClick={() => start("lesson_check")}
-            className="p-4 rounded-2xl border border-slate-150 bg-white hover:bg-slate-50/50 hover:border-emerald-400 text-right font-sans transition-all cursor-pointer flex gap-3.5 items-center justify-between shadow-xs group"
+            className="p-4 rounded-2xl border border-slate-150 bg-white hover:bg-slate-50/50 hover:border-emerald-400 text-right font-sans transition-all cursor-pointer flex gap-3.5 items-center justify-between shadow-xs group disabled:opacity-50"
           >
             <div className="space-y-1">
               <h4 className="text-sm font-bold text-slate-800 group-hover:text-emerald-600 transition-colors">
@@ -174,8 +238,9 @@ export function AssessmentIntelligencePanel({
           </button>
 
           <button
+            disabled={isLoading}
             onClick={() => start("exam_practice")}
-            className="p-4 rounded-2xl border border-slate-150 bg-white hover:bg-slate-50/50 hover:border-purple-400 text-right font-sans transition-all cursor-pointer flex gap-3.5 items-center justify-between shadow-xs group"
+            className="p-4 rounded-2xl border border-slate-150 bg-white hover:bg-slate-50/50 hover:border-purple-400 text-right font-sans transition-all cursor-pointer flex gap-3.5 items-center justify-between shadow-xs group disabled:opacity-50"
           >
             <div className="space-y-1">
               <h4 className="text-sm font-bold text-slate-800 group-hover:text-purple-600 transition-colors">
@@ -196,15 +261,15 @@ export function AssessmentIntelligencePanel({
             <div className="space-y-2.5 text-xs text-slate-500 leading-relaxed">
               <p className="flex gap-2 items-center">
                 <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"></span>
-                <span>تاقیکردنەوەکە بە تەواوی ڕێکخراوە و تەنها لە ٥ پرسیار پێکهاتووە.</span>
+                <span>تاقیکردنەوەکە بە تەواوی لێهاتووە و لە ٥ پرسیار پێکهاتووە.</span>
               </p>
               <p className="flex gap-2 items-center">
                 <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"></span>
-                <span>پێکهاتووە لە: بژاردەیی، وەڵامی کورت، و هەنگاو بە هەنگاو.</span>
+                <span>پشتگیری لە وەڵامی بژاردەیی، بەڵێ/نەخێر، ژمارەیی، و گونجاندن دەکات.</span>
               </p>
               <p className="flex gap-2 items-center">
                 <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"></span>
-                <span>ئەنجامەکان بە شێوەی زانستی خاڵە بەهێز و لاوازەکانت ڕوون دەکەنەوە.</span>
+                <span>بزوێنەری Heuristic Adaptive Difficulty Engine ئاستی پرسیارەکە بەپێی وەڵامەکانت دەگۆڕێت.</span>
               </p>
             </div>
           </div>
@@ -213,12 +278,9 @@ export function AssessmentIntelligencePanel({
     );
   }
 
-  // -------------------------------------------------------------------------
   // 2. COMPLETED / RESULTS STATE
-  // -------------------------------------------------------------------------
   if (isCompleted && snapshot.resultSummary) {
     const summary = snapshot.resultSummary;
-    const session = snapshot.session;
 
     return (
       <div className="space-y-6 flex-1 flex flex-col justify-start py-2 px-1 text-right" style={{ direction: "rtl" }}>
@@ -303,11 +365,8 @@ export function AssessmentIntelligencePanel({
     );
   }
 
-  // -------------------------------------------------------------------------
   // 3. ACTIVE ASSESSMENT STATE (Answering questions)
-  // -------------------------------------------------------------------------
   const session = snapshot.session;
-  const currentQuestion = snapshot.currentQuestion;
 
   if (!currentQuestion) return null;
 
@@ -362,24 +421,24 @@ export function AssessmentIntelligencePanel({
 
       {/* Submit/Answer Presentation Area */}
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* MULTIPLE CHOICE CHOICES */}
-        {currentQuestion.type === "multiple_choice" && currentQuestion.choices && (
+        {/* MCQ SINGLE SELECT VIEW */}
+        {(currentQuestion.type === "MULTIPLE_CHOICE_SINGLE" || currentQuestion.type === "multiple_choice") && currentQuestion.options && (
           <div className="space-y-2.5">
-            {currentQuestion.choices.map((choice, idx) => {
-              const isSelected = selectedChoice === choice;
+            {currentQuestion.options.map((opt) => {
+              const isSelected = selectedChoice === opt.id;
               return (
                 <button
-                  key={idx}
+                  key={opt.id}
                   type="button"
-                  disabled={!!feedback || isEvaluating}
-                  onClick={() => setSelectedChoice(choice)}
+                  disabled={!!feedback || isEvaluating || isLoading}
+                  onClick={() => setSelectedChoice(opt.id)}
                   className={`w-full p-4 rounded-xl border font-sans text-sm text-right transition-all cursor-pointer flex items-center justify-between min-h-[50px] ${
                     isSelected
-                      ? "border-blue-500 bg-blue-50/50 text-blue-900 font-bold"
+                      ? "border-blue-500 bg-blue-50/50 text-blue-900 font-bold shadow-xs"
                       : "border-slate-150 bg-white text-slate-700 hover:bg-slate-50"
                   }`}
                 >
-                  <span>{choice}</span>
+                  <span>{opt.textKu}</span>
                   <div
                     className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
                       isSelected ? "border-blue-500 bg-blue-500 text-white" : "border-slate-350 bg-white"
@@ -393,25 +452,197 @@ export function AssessmentIntelligencePanel({
           </div>
         )}
 
-        {/* SHORT ANSWER OR STEP BY STEP TEXTBOX */}
-        {currentQuestion.type !== "multiple_choice" && (
+        {/* MCQ MULTIPLE SELECT VIEW */}
+        {currentQuestion.type === "MULTIPLE_CHOICE_MULTIPLE" && currentQuestion.options && (
+          <div className="space-y-2.5">
+            <span className="block text-right font-sans text-xs text-slate-400 mb-1">ڕێنمایی: هەموو ئەو بژاردانە دیاریبکە کە بە دروست دەیانبینی.</span>
+            {currentQuestion.options.map((opt) => {
+              const isSelected = selectedChoices.includes(opt.id);
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  disabled={!!feedback || isEvaluating || isLoading}
+                  onClick={() => {
+                    if (isSelected) {
+                      setSelectedChoices(selectedChoices.filter(id => id !== opt.id));
+                    } else {
+                      setSelectedChoices([...selectedChoices, opt.id]);
+                    }
+                  }}
+                  className={`w-full p-4 rounded-xl border font-sans text-sm text-right transition-all cursor-pointer flex items-center justify-between min-h-[50px] ${
+                    isSelected
+                      ? "border-indigo-500 bg-indigo-50/50 text-indigo-900 font-bold shadow-xs"
+                      : "border-slate-150 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  <span>{opt.textKu}</span>
+                  <div
+                    className={`w-4 h-4 rounded-md border flex items-center justify-center shrink-0 ${
+                      isSelected ? "border-indigo-500 bg-indigo-500 text-white" : "border-slate-350 bg-white"
+                    }`}
+                  >
+                    {isSelected && <Check className="w-2.5 h-2.5" />}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* TRUE OR FALSE VIEW */}
+        {currentQuestion.type === "TRUE_FALSE" && (
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              disabled={!!feedback || isEvaluating || isLoading}
+              onClick={() => setTrueFalseValue(true)}
+              className={`p-5 rounded-2xl border font-sans text-sm text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-2 min-h-[100px] ${
+                trueFalseValue === true
+                  ? "border-emerald-500 bg-emerald-50/50 text-emerald-900 font-bold"
+                  : "border-slate-150 bg-white text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              <CheckCircle2 className={`w-6 h-6 ${trueFalseValue === true ? "text-emerald-600" : "text-slate-300"}`} />
+              <span>ڕاست (True)</span>
+            </button>
+            <button
+              type="button"
+              disabled={!!feedback || isEvaluating || isLoading}
+              onClick={() => setTrueFalseValue(false)}
+              className={`p-5 rounded-2xl border font-sans text-sm text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-2 min-h-[100px] ${
+                trueFalseValue === false
+                  ? "border-rose-500 bg-rose-50/50 text-rose-900 font-bold"
+                  : "border-slate-150 bg-white text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              <XCircle className={`w-6 h-6 ${trueFalseValue === false ? "text-rose-500" : "text-slate-300"}`} />
+              <span>هەڵە (False)</span>
+            </button>
+          </div>
+        )}
+
+        {/* NUMERIC FIELD VIEW */}
+        {currentQuestion.type === "NUMERIC" && (
           <div className="space-y-2">
             <label className="block text-right font-sans text-xs font-bold text-slate-600">
-              {currentQuestion.type === "step_by_step"
-                ? "هەنگاوەکانی شیکارکردنی پرسیارەکە بە ڕوونی لێرە بنووسە:"
-                : "وەڵامی کۆتایی خۆت لێرە بنووسە:"}
+              وەڵامی ژمارەیی خۆت لێرە بنووسە:
             </label>
-            <textarea
-              value={typedAnswer}
-              onChange={(e) => setTypedAnswer(e.target.value)}
-              disabled={!!feedback || isEvaluating}
-              rows={3}
-              placeholder="وەڵامەکە لێرە بنووسە..."
-              className="w-full font-sans text-sm p-4 rounded-xl border border-slate-200 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all text-right min-h-[80px]"
-              style={{ direction: "rtl" }}
+            <input
+              type="number"
+              step="any"
+              value={numericValue}
+              onChange={(e) => setNumericValue(e.target.value)}
+              disabled={!!feedback || isEvaluating || isLoading}
+              placeholder="نموونە: ٧ یان -٥.٥"
+              className="w-full font-sans text-sm p-4 rounded-xl border border-slate-200 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all text-right"
             />
           </div>
         )}
+
+        {/* ORDERING REORDERABLE VIEW */}
+        {currentQuestion.type === "ORDERING" && (
+          <div className="space-y-2">
+            <span className="block text-right font-sans text-xs font-bold text-slate-600 mb-2">
+              بڕگەکان ڕێکبخە بۆ دروستکردنی شیکاری ڕاست (بە بەکارهێنانی تیرەکان):
+            </span>
+            <div className="space-y-2">
+              {orderedItems.map((item, idx) => (
+                <div
+                  key={item.id}
+                  className="p-3.5 rounded-xl border border-slate-150 bg-white flex items-center justify-between font-sans text-xs shadow-xs"
+                >
+                  <span className="font-sans text-slate-800 text-right">{item.textKu}</span>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      disabled={idx === 0 || !!feedback || isEvaluating || isLoading}
+                      onClick={() => {
+                        const newItems = [...orderedItems];
+                        const temp = newItems[idx];
+                        newItems[idx] = newItems[idx - 1];
+                        newItems[idx - 1] = temp;
+                        setOrderedItems(newItems);
+                      }}
+                      className="p-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 disabled:opacity-40 transition-colors cursor-pointer text-[10px]"
+                    >
+                      ▲
+                    </button>
+                    <button
+                      type="button"
+                      disabled={idx === orderedItems.length - 1 || !!feedback || isEvaluating || isLoading}
+                      onClick={() => {
+                        const newItems = [...orderedItems];
+                        const temp = newItems[idx];
+                        newItems[idx] = newItems[idx + 1];
+                        newItems[idx + 1] = temp;
+                        setOrderedItems(newItems);
+                      }}
+                      className="p-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 disabled:opacity-40 transition-colors cursor-pointer text-[10px]"
+                    >
+                      ▼
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* MATCHING DROPDOWN VIEW */}
+        {currentQuestion.type === "MATCHING" && (
+          <div className="space-y-3">
+            <span className="block text-right font-sans text-xs font-bold text-slate-600 mb-2">
+              هەر لایەنێکی لای چەپ بە لایەنی ڕاستی گونجاو بگونجێنە:
+            </span>
+            <div className="space-y-3">
+              {currentQuestion.options?.map((opt) => (
+                <div key={opt.id} className="grid grid-cols-1 md:grid-cols-2 gap-2 p-3 bg-slate-50 border border-slate-150 rounded-xl items-center">
+                  <span className="font-sans text-xs font-bold text-slate-700 text-right">{opt.textKu}</span>
+                  <select
+                    disabled={!!feedback || isEvaluating || isLoading}
+                    value={matchingAnswers[opt.id] || ""}
+                    onChange={(e) => setMatchingAnswers({ ...matchingAnswers, [opt.id]: e.target.value })}
+                    className="w-full font-sans text-xs p-2.5 rounded-lg border border-slate-200 focus:outline-none focus:border-blue-500 bg-white"
+                  >
+                    <option value="">-- دیاری بکە --</option>
+                    {currentQuestion.options?.map((rOpt) => (
+                      <option key={rOpt.id} value={rOpt.id}>
+                        {rOpt.textKu}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* SHORT ANSWER / LEGACY / STEP BY STEP VIEWS */}
+        {currentQuestion.type !== "MULTIPLE_CHOICE_SINGLE" &&
+          currentQuestion.type !== "MULTIPLE_CHOICE_MULTIPLE" &&
+          currentQuestion.type !== "TRUE_FALSE" &&
+          currentQuestion.type !== "NUMERIC" &&
+          currentQuestion.type !== "ORDERING" &&
+          currentQuestion.type !== "MATCHING" &&
+          (currentQuestion.type === "short_answer" || currentQuestion.type === "step_by_step") && (
+            <div className="space-y-2">
+              <label className="block text-right font-sans text-xs font-bold text-slate-600">
+                {currentQuestion.type === "step_by_step"
+                  ? "هەنگاوەکانی شیکارکردنی پرسیارەکە بە ڕوونی لێرە بنووسە:"
+                  : "وەڵامی کۆتایی خۆت لێرە بنووسە:"}
+              </label>
+              <textarea
+                value={typedAnswer}
+                onChange={(e) => setTypedAnswer(e.target.value)}
+                disabled={!!feedback || isEvaluating || isLoading}
+                rows={3}
+                placeholder="وەڵامەکە لێرە بنووسە..."
+                className="w-full font-sans text-sm p-4 rounded-xl border border-slate-200 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all text-right min-h-[80px]"
+                style={{ direction: "rtl" }}
+              />
+            </div>
+          )}
 
         {/* General Error notifications */}
         {error && (
@@ -429,10 +660,20 @@ export function AssessmentIntelligencePanel({
             fullWidth
             disabled={
               isEvaluating ||
-              (currentQuestion.type === "multiple_choice" ? !selectedChoice : !typedAnswer.trim())
+              isLoading ||
+              (currentQuestion.type === "MULTIPLE_CHOICE_SINGLE" && !selectedChoice) ||
+              (currentQuestion.type === "MULTIPLE_CHOICE_MULTIPLE" && selectedChoices.length === 0) ||
+              (currentQuestion.type === "TRUE_FALSE" && trueFalseValue === null) ||
+              (currentQuestion.type === "NUMERIC" && !numericValue.trim()) ||
+              (currentQuestion.type === "ORDERING" && orderedItems.length === 0) ||
+              (currentQuestion.type === "MATCHING" && Object.keys(matchingAnswers).length === 0) ||
+              ((currentQuestion.type === "short_answer" || currentQuestion.type === "step_by_step") && !typedAnswer.trim())
             }
             className="flex items-center justify-center gap-2 min-h-[44px]"
           >
+            {isEvaluating || isLoading ? (
+              <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
+            ) : null}
             <span>وەڵام بنێرە</span>
           </ZanaButton>
         )}
@@ -456,7 +697,7 @@ export function AssessmentIntelligencePanel({
                 {feedback.isCorrect ? "شیکارەکەت تەواو و دروستە! زۆر نایابە." : "وەڵامەکەت پێویستی بە کەمێک چاککردن هەیە."}
               </span>
             </h5>
-            <p className="font-sans text-xs text-slate-600 leading-relaxed pr-5">
+            <p className="font-sans text-xs text-slate-600 leading-relaxed pr-5 whitespace-pre-wrap">
               {feedback.text}
             </p>
 

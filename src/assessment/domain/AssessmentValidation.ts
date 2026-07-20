@@ -85,7 +85,7 @@ export class AssessmentValidation {
       case "TRUE_FALSE":
         return submission.trueFalseValue !== undefined;
       case "NUMERIC":
-        return submission.numericValue !== undefined && !isNaN(submission.numericValue);
+        return submission.numericValue !== undefined && !isNaN(submission.numericValue) && isFinite(submission.numericValue);
       case "SHORT_ANSWER":
         return submission.shortAnswerText !== undefined;
       case "ORDERING":
