@@ -107,19 +107,21 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      # STAGE 4: Worker Validation
-      - name: Build Worker (Validation)
-        run: |
-          set -o pipefail
-          npm run build:worker 2>&1 | tee build-worker.log
-
-      # STAGE 5: Application Build
+      # STAGE 4: Application Build
+      # Wrangler validates and packages dist/client, so the application must
+      # be built first on a clean CI runner.
       - name: Build Client and Server
         env:
           VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
         run: |
           set -o pipefail
           npm run build 2>&1 | tee build.log
+
+      # STAGE 5: Worker Validation
+      - name: Build Worker (Validation)
+        run: |
+          set -o pipefail
+          npm run build:worker 2>&1 | tee build-worker.log
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
