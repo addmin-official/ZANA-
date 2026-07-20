@@ -14,6 +14,7 @@ export interface Env {
   ZANA_LEARNING_KV?: any; // Cloudflare KV for persistent student mastery
   LEARNING_RECORDS_KV?: any; // Hardened Cloudflare KV binding
   JWT_SECRET?: string; // Isomorphic secure token secret
+  ASSETS?: any; // Cloudflare Static Assets fetcher binding
 }
 
 export type SafeErrorCategory =
@@ -227,6 +228,27 @@ function getAiClient(env: Env): GoogleGenAI {
 // 6. MAIN WORKER ROUTER
 export default {
   async fetch(request: Request, env: Env, ctx?: any): Promise<Response> {
+    const url = new URL(request.url);
+    const pathname = url.pathname;
+
+    // Handle Static Assets and SPA Fallback via Cloudflare env.ASSETS binding
+    if (!pathname.startsWith("/api/")) {
+      if (env.ASSETS) {
+        try {
+          const assetResponse = await env.ASSETS.fetch(request.clone());
+          if (assetResponse.status === 404) {
+            // SPA fallback: fetch index.html instead
+            const indexUrl = new URL(request.url);
+            indexUrl.pathname = "/index.html";
+            return await env.ASSETS.fetch(new Request(indexUrl.toString(), request));
+          }
+          return assetResponse;
+        } catch (err) {
+          console.error("Static asset fetch failed:", err);
+        }
+      }
+    }
+
     // Propagate JWT secret and environment to AuthService context
     if (env.JWT_SECRET) {
       if (typeof process === "undefined") {
@@ -258,8 +280,6 @@ export default {
       );
     }
 
-    const url = new URL(request.url);
-    const pathname = url.pathname;
     const clientIp = request.headers.get("CF-Connecting-IP") || "unknown";
 
     // FUTURE EXTENSION POINT: Firebase App Check token verification.

@@ -239,74 +239,10 @@ jobs:
           fi
 
           echo "Worker response verified successfully!"
-
-  deploy-hosting:
-    name: Deploy Firebase Hosting
-    needs: verify-worker
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    environment: Production
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: 'npm'
-
-      - name: Install Dependencies
-        run: npm ci
-
-      - name: Download Build Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: build-outputs
-          path: .
-
-      # STAGE 7: Deploy Firebase Hosting
-      - name: Authenticate Firebase
-        run: |
-          echo "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" > firebase-service-account.json
-          echo "GOOGLE_APPLICATION_CREDENTIALS=${{ github.workspace }}/firebase-service-account.json" >> $GITHUB_ENV
-
-      - name: Deploy Firebase Hosting
-        run: |
-          set -o pipefail
-          npx firebase deploy --only hosting 2>&1 | tee firebase-deploy.log
-
-      - name: Parse Firebase Hosting Metadata
-        if: always()
-        run: |
-          node -e "
-          const fs = require('fs');
-          let log = '';
-          try { log = fs.readFileSync('firebase-deploy.log', 'utf8'); } catch(e) {}
-          const projectMatch = log.match(/project\/([a-zA-Z0-9-]+)\/overview/i);
-          const firebase_project_id = projectMatch ? projectMatch[1] : null;
-          const urlMatch = log.match(/Hosting URL:\s*(https:\/\/[a-zA-Z0-9.-]+)/i);
-          const firebase_hosting_url = urlMatch ? urlMatch[1] : null;
-          fs.mkdirSync('metadata-hosting', { recursive: true });
-          fs.writeFileSync('metadata-hosting/metadata-hosting.json', JSON.stringify({ firebase_project_id, firebase_hosting_url }));
-          "
-
-      - name: Upload Firebase Hosting Metadata & Log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: firebase-deploy-log
-          path: |
-            firebase-deploy.log
-            metadata-hosting/
-
-      - name: Cleanup Service Account
-        if: always()
-        run: rm -f firebase-service-account.json
-
+          
   smoke-tests:
     name: Run Production Smoke Tests
-    needs: deploy-hosting
+    needs: verify-worker
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: Production
@@ -362,11 +298,6 @@ jobs:
         with:
           name: wrangler-deploy-log
 
-      - name: Download Firebase Metadata
-        uses: actions/download-artifact@v4
-        with:
-          name: firebase-deploy-log
-
       - name: Generate Release Summary & Tag
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
@@ -389,11 +320,6 @@ jobs:
             worker = JSON.parse(fs.readFileSync('metadata-worker/metadata-worker.json', 'utf8'));
           } catch (e) {}
 
-          let hosting = { firebase_project_id: null, firebase_hosting_url: null };
-          try {
-            hosting = JSON.parse(fs.readFileSync('metadata-hosting/metadata-hosting.json', 'utf8'));
-          } catch (e) {}
-
           const completedAt = new Date().toISOString();
           const completedEpoch = Math.floor(Date.now() / 1000);
           const duration = Math.max(0, completedEpoch - started.deployment_started_epoch);
@@ -409,8 +335,6 @@ jobs:
             release_tag: '$RELEASE_TAG',
             worker_name: worker.worker_name || null,
             worker_deployment_id: worker.worker_deployment_id || null,
-            firebase_project_id: hosting.firebase_project_id || null,
-            firebase_hosting_url: hosting.firebase_hosting_url || null,
             smoke_test_status: 'SUCCESS'
           };
 

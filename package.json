@@ -14,8 +14,6 @@
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
-    "firebase:deploy": "firebase deploy --only hosting",
-    "firebase:deploy:hosting": "firebase deploy --only hosting",
     "deploy:cloudflare": "wrangler deploy",
     "deploy": "wrangler deploy",
     "test": "node --import tsx --test src/curriculum/curriculum.test.ts src/learning/engine/AdaptiveLearningEngine.test.ts src/learning/providers/LearningSecurity.test.ts",

@@ -7,7 +7,11 @@
     "nodejs_compat"
   ],
   "vars": {
-    "ALLOWED_ORIGINS": "https://zana-app.web.app,https://zana-app.firebaseapp.com"
+    "ALLOWED_ORIGINS": "https://zana-app.web.app,https://zana-app.firebaseapp.com,https://zana-api-worker.zana-platform.workers.dev"
+  },
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS"
   },
   "kv_namespaces": [
     {
