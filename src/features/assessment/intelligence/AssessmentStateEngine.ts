@@ -65,6 +65,7 @@ export const AssessmentStateEngine = {
       weakConceptIds: [],
       strongConceptIds: [],
       recommendedNextAction: "continue_learning",
+      authoritative: false,
     };
 
     // Emit event

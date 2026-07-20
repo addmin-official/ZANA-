@@ -79,6 +79,7 @@ export interface AssessmentSession {
     | "practice_more"
     | "advance_next_lesson";
   blueprint?: any; // For Phase 16 real backend attempt
+  authoritative?: boolean;
 }
 
 export interface AssessmentSnapshot {

@@ -132,7 +132,8 @@ export function useAssessmentIntelligence(
                 weakConceptIds: [],
                 strongConceptIds: [],
                 recommendedNextAction: "continue_learning",
-                blueprint
+                blueprint,
+                authoritative: true
               };
 
               setSession(newSession);
@@ -141,9 +142,15 @@ export function useAssessmentIntelligence(
             } else {
               const errBody = await response.json().catch(() => ({}));
               console.warn("Backend start endpoint failed:", errBody.error || response.statusText);
+              setError(errBody.error || "پەیوەندی بە پێشکەشکارەوە سەرکەوتوو نەبوو.");
+              setIsLoading(false);
+              return;
             }
           } catch (apiErr) {
-            console.warn("Server connection error during start, falling back to local quiz generator:", apiErr);
+            console.warn("Server connection error during start:", apiErr);
+            setError("هێڵ تێکچووە یان پێشکەشکار بەردەست نییە. تاقیکردنەوەی فەرمی لە باری دەرەوەی هێڵ (offline) بەردەست نییە.");
+            setIsLoading(false);
+            return;
           }
         }
 
@@ -163,6 +170,8 @@ export function useAssessmentIntelligence(
           activeLessonId: activeLesson?.id,
           activeLessonTitle: activeLesson?.title,
         });
+
+        newSession.authoritative = false;
 
         setSession(newSession);
       } catch (err: unknown) {
@@ -294,13 +303,19 @@ export function useAssessmentIntelligence(
               setSession(updatedSession);
               setIsLoading(false);
               return { isCorrect, feedback };
+            } else {
+              const errBody = await response.json().catch(() => ({}));
+              throw new Error(errBody.error || "کێشەیەک لە تۆمارکردنی وەڵامەکەدا ڕوویدا لەسەر پێشکەشکار.");
             }
-          } catch (apiErr) {
-            console.warn("Server connection failed during submit, switching to local state engine:", apiErr);
+          } catch (apiErr: any) {
+            console.error("Server connection failed during submit:", apiErr);
+            setError(apiErr.message || "کێشەی پەیوەندی بە پێشکەشکارەوە هەیە.");
+            setIsLoading(false);
+            return { isCorrect: false, feedback: "کێشەی پەیوەندی هەیە لەگەڵ پێشکەشکار. تکایە هێڵەکەت بپشکنە و دووبارە هەوڵبدەرەوە." };
           }
         }
 
-        // Fallback Local Evaluation
+        // Fallback Local Evaluation for guests/demos
         const legacyAnswerText = typeof submissionInput === "string"
           ? submissionInput
           : submission.shortAnswerText || submission.selectedOptionIds?.[0] || "";
@@ -311,8 +326,8 @@ export function useAssessmentIntelligence(
           legacyAnswerText
         );
 
-        // Record locally synced attempts for Student Mastery Engine
-        if (currentQuestion.conceptId) {
+        // Record locally synced attempts for Student Mastery Engine ONLY if session is authoritative
+        if (currentQuestion.conceptId && studentId && studentId !== "default-guest" && session.authoritative !== false) {
           fetch("/api/learning/attempts", {
             method: "POST",
             headers: {
@@ -400,8 +415,8 @@ export function useAssessmentIntelligence(
               ZanaStorage.incrementQuestions(completedSession.questions.length);
               ZanaStorage.incrementSessions();
 
-              // Update student profile level if diagnostic recommended it
-              if (completedSession.mode === "diagnostic") {
+              // Update student profile level if diagnostic recommended it and it's authoritative
+              if (completedSession.mode === "diagnostic" && completedSession.authoritative !== false && studentId !== "default-guest") {
                 let newLevel: "beginner" | "intermediate" | "advanced" = "intermediate";
                 if (scorePercent >= 80) {
                   newLevel = "advanced";
@@ -415,61 +430,69 @@ export function useAssessmentIntelligence(
 
               setIsLoading(false);
               return;
+            } else {
+              const errBody = await response.json().catch(() => ({}));
+              throw new Error(errBody.error || "تۆمارکردنی ئەنجامەکە لەسەر پێشکەشکار سەرکەوتوو نەبوو.");
             }
-          } catch (apiErr) {
-            console.warn("Server connection failed during finish, using local grading fallback:", apiErr);
+          } catch (apiErr: any) {
+            console.error("Server connection failed during finish:", apiErr);
+            setError(apiErr.message || "کێشەی پەیوەندی بە پێشکەشکارەوە هەیە.");
+            setIsLoading(false);
+            return;
           }
         }
 
-        // Local Evaluation Fallback
+        // Local Evaluation Fallback for guests/demos
         const completed = AssessmentStateEngine.finishAssessment(session);
         setSession(completed);
 
         ZanaStorage.incrementQuestions(completed.totalQuestions);
         ZanaStorage.incrementSessions();
 
-        // Trigger Adaptive Learning Loop propagation
-        try {
-          const sipEngine = StudentIntelligenceEngine.getInstance(profile);
-          const sipSnapshot = sipEngine.getSnapshot();
+        // Trigger Adaptive Learning Loop propagation ONLY if authoritative and not guest
+        if (completed.authoritative !== false && studentId !== "default-guest") {
+          try {
+            const sipEngine = StudentIntelligenceEngine.getInstance(profile);
+            const sipSnapshot = sipEngine.getSnapshot();
 
-          const cipEngine = new CurriculumIntelligenceEngine();
-          const cipSnapshot = cipEngine.buildCurriculumIntelligenceSnapshot({
-            grade: profile.grade,
-            stream: profile.stream,
-            subject: profile.activeSubject,
-            completedNodeIds: Array.from(sipSnapshot.graph.completedNodeIds || []),
-          });
+            const cipEngine = new CurriculumIntelligenceEngine();
+            const cipSnapshot = cipEngine.buildCurriculumIntelligenceSnapshot({
+              grade: profile.grade,
+              stream: profile.stream,
+              subject: profile.activeSubject,
+              completedNodeIds: Array.from(sipSnapshot.graph.completedNodeIds || []),
+            });
 
-          const lseSnapshot = learningSessionEngineInstance.initializeOrResume(
-            profile,
-            sipSnapshot,
-            cipSnapshot
-          );
+            const lseSnapshot = learningSessionEngineInstance.initializeOrResume(
+              profile,
+              sipSnapshot,
+              cipSnapshot
+            );
 
-          const adaptiveSnapshot = AdaptiveLearningEngine.buildAdaptiveSnapshot({
-            studentProfile: profile,
-            assessmentSession: completed,
-            sipSnapshot,
-            cipSnapshot,
-            lseSnapshot
-          });
+            const adaptiveSnapshot = AdaptiveLearningEngine.buildAdaptiveSnapshot({
+              studentProfile: profile,
+              assessmentSession: completed,
+              sipSnapshot,
+              cipSnapshot,
+              lseSnapshot
+            });
 
-          const conceptLabels: Record<string, string> = {};
-          cipSnapshot.resolution.availableNodes.forEach(node => {
-            conceptLabels[node.id] = node.title;
-          });
+            const conceptLabels: Record<string, string> = {};
+            cipSnapshot.resolution.availableNodes.forEach(node => {
+              conceptLabels[node.id] = node.title;
+            });
 
-          AdaptiveEventBridge.propagateResults(profile, adaptiveSnapshot, conceptLabels);
+            AdaptiveEventBridge.propagateResults(profile, adaptiveSnapshot, conceptLabels);
 
-          const storageKey = `zana:adaptive-snapshot:${profile.id}`;
-          safeSet(storageKey, adaptiveSnapshot);
-        } catch (adaptErr) {
-          console.warn("Could not process adaptive feedback in finish:", adaptErr);
+            const storageKey = `zana:adaptive-snapshot:${profile.id}`;
+            safeSet(storageKey, adaptiveSnapshot);
+          } catch (adaptErr) {
+            console.warn("Could not process adaptive feedback in finish:", adaptErr);
+          }
         }
 
         const rec = generateAssessmentRecommendation(completed.scorePercentage);
-        if (completed.mode === "diagnostic") {
+        if (completed.mode === "diagnostic" && completed.authoritative !== false && studentId !== "default-guest") {
           let newLevel: "beginner" | "intermediate" | "advanced" = "intermediate";
           if (completed.scorePercentage >= 80) {
             newLevel = "advanced";
