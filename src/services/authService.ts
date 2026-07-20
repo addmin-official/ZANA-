@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import firebaseConfig from "../../firebase-applet-config.json";
+import firebaseConfig from "../config/firebaseConfig";
 
 export interface TokenPayload {
   uid: string;
