@@ -1,0 +1,52 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Safety Net (Pillar 4 - Global Safety Net)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+    
+    // Standard primitive ID format check (Pillar 3 - Path Variable Hardening)
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+    
+    // Simple sign-in validation check
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    // Owner authorization boundary validation check (Pillar 8 - Secure List Queries)
+    function isOwner(studentId) {
+      return isSignedIn() && request.auth.uid == studentId;
+    }
+    
+    // Student profiles access control definitions
+    match /students/{studentId} {
+      allow read: if isOwner(studentId);
+      allow write: if isOwner(studentId) && isValidId(studentId);
+      
+      // Mastery subcollection
+      match /mastery/profile {
+        allow read: if isOwner(studentId);
+        allow write: if isOwner(studentId);
+      }
+      
+      // Chat messages subcollection
+      match /chatMessages/{messageId} {
+        allow read, write: if isOwner(studentId) && isValidId(messageId);
+      }
+      
+      // Attempts subcollection
+      match /attempts/{attemptId} {
+        allow read, write: if isOwner(studentId) && isValidId(attemptId);
+      }
+      
+      // Sessions subcollection
+      match /sessions/{sessionId} {
+        allow read, write: if isOwner(studentId) && isValidId(sessionId);
+      }
+    }
+  }
+}

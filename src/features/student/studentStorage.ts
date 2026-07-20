@@ -1,5 +1,7 @@
 import { StudentProfile, StudentProfileDraft } from "./studentTypes.ts";
 import { getValidatedGrade, getValidatedStream, getValidatedSubject, getValidatedLevel } from "./studentDefaults.ts";
+import { db, auth } from "../../services/firebase.ts";
+import { doc, setDoc } from "firebase/firestore";
 
 const PROFILE_KEY = "zana:student-profile";
 
@@ -108,6 +110,14 @@ export function saveStudentProfile(profile: StudentProfile): void {
       updatedAt: new Date().toISOString()
     };
     window.localStorage.setItem(PROFILE_KEY, JSON.stringify(profileToSave));
+
+    // Async sync with Firestore if authenticated
+    const user = auth.currentUser;
+    if (user && profile.id === user.uid) {
+      setDoc(doc(db, "students", profile.id), profileToSave).catch((e) => {
+        console.error("Error backing up student profile to Firestore:", e);
+      });
+    }
   } catch (error) {
     console.error("Error saving student profile to localStorage:", error);
   }
@@ -122,11 +132,11 @@ export function deleteStudentProfile(): void {
   }
 }
 
-export function createStudentProfile(draft: StudentProfileDraft): StudentProfile {
+export function createStudentProfile(draft: StudentProfileDraft, customId?: string): StudentProfile {
   const now = new Date().toISOString();
   
-  // Stable random ID generation
-  const uniqueId = "stud_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now();
+  // Stable random ID generation or custom Firebase Auth user ID
+  const uniqueId = customId || "stud_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now();
   
   const grade = draft.grade;
   let stream = draft.stream;

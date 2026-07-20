@@ -1,0 +1,102 @@
+{
+  "entities": {
+    "StudentProfile": {
+      "title": "StudentProfile",
+      "description": "Represents the student's primary profile and onboarding state.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "grade": { "type": "string" },
+        "stream": { "type": "string" },
+        "activeSubject": { "type": "string" },
+        "level": { "type": "string" },
+        "onboardingCompleted": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "grade"]
+    },
+    "StudentMasteryProfile": {
+      "title": "StudentMasteryProfile",
+      "description": "The student's visual mastery score and concepts tracking.",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "overallMasteryScore": { "type": "number" },
+        "conceptMasteries": { "type": "object" },
+        "activeMisconceptions": { "type": "array" },
+        "recentRecommendedActions": { "type": "array" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "schemaVersion": { "type": "number" }
+      },
+      "required": ["studentId", "overallMasteryScore"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "A single educational tutor or chat message.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "sender": { "type": "string", "enum": ["user", "zana"] },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "isEducational": { "type": "boolean" }
+      },
+      "required": ["id", "sender", "text", "timestamp"]
+    },
+    "ExerciseAttempt": {
+      "title": "ExerciseAttempt",
+      "description": "An exercise attempt logged by the student.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "conceptId": { "type": "string" },
+        "isCorrect": { "type": "boolean" },
+        "level": { "type": "string" },
+        "selectedAnswer": { "type": "string" },
+        "timeSpentMs": { "type": "number" },
+        "hintUsed": { "type": "boolean" },
+        "unreliableTiming": { "type": "boolean" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "conceptId", "isCorrect", "timestamp"]
+    },
+    "LearningSession": {
+      "title": "LearningSession",
+      "description": "A trackable study/learning session.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "startTime": { "type": "string", "format": "date-time" },
+        "endTime": { "type": "string", "format": "date-time" },
+        "durationSeconds": { "type": "number" },
+        "focusScore": { "type": "number" }
+      },
+      "required": ["id", "studentId", "startTime"]
+    }
+  },
+  "firestore": {
+    "/students/{studentId}": {
+      "schema": { "$ref": "#/entities/StudentProfile" },
+      "description": "Core profile for a given student."
+    },
+    "/students/{studentId}/mastery/profile": {
+      "schema": { "$ref": "#/entities/StudentMasteryProfile" },
+      "description": "The student's visual concept mastery profile."
+    },
+    "/students/{studentId}/chatMessages/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Chat log history messages per student."
+    },
+    "/students/{studentId}/attempts/{attemptId}": {
+      "schema": { "$ref": "#/entities/ExerciseAttempt" },
+      "description": "Student exercise and assessment evaluation attempts."
+    },
+    "/students/{studentId}/sessions/{sessionId}": {
+      "schema": { "$ref": "#/entities/LearningSession" },
+      "description": "The history log of student's completed study sessions."
+    }
+  }
+}

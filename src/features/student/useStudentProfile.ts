@@ -1,8 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { StudentProfile, StudentProfileDraft, StudentGrade, AcademicStream, SubjectKey, StudentLevel } from "./studentTypes.ts";
-import { getStudentProfile, deleteStudentProfile, createStudentProfile, updateStudentProfile } from "./studentStorage.ts";
+import { getStudentProfile, deleteStudentProfile, createStudentProfile, updateStudentProfile, saveStudentProfile } from "./studentStorage.ts";
 import { getValidatedGrade, getValidatedStream, getValidatedSubject, getValidatedLevel, sanitizeStudentName } from "./studentDefaults.ts";
 import { ZanaStorage } from "../../services/storage.ts";
+import { db, auth } from "../../services/firebase.ts";
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import { signInAnonymously, onAuthStateChanged } from "firebase/auth";
 
 export function useStudentProfile() {
   const [profile, setProfileState] = useState<StudentProfile>(() => {
@@ -22,6 +25,44 @@ export function useStudentProfile() {
       updatedAt: new Date().toISOString()
     };
   });
+
+  // Synced state on Firebase Auth change
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        // Authenticated! Check/Sync with Firestore
+        const docRef = doc(db, "students", user.uid);
+        try {
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) {
+            const cloudProfile = docSnap.data() as StudentProfile;
+            setProfileState(cloudProfile);
+            saveStudentProfile(cloudProfile);
+          } else {
+            // Document doesn't exist in Firestore. Let's see if we have a legacy profile to migrate
+            const saved = getStudentProfile();
+            if (saved && saved.onboardingCompleted) {
+              const migratedProfile: StudentProfile = {
+                ...saved,
+                id: user.uid,
+                updatedAt: new Date().toISOString()
+              };
+              setProfileState(migratedProfile);
+              saveStudentProfile(migratedProfile);
+              await setDoc(docRef, migratedProfile);
+            }
+          }
+        } catch (e) {
+          console.error("Error syncing student profile with Firestore:", e);
+        }
+      } else {
+        signInAnonymously(auth).catch((err) => {
+          console.error("Firebase Auth anonymous sign-in failed:", err);
+        });
+      }
+    });
+    return () => unsubscribe();
+  }, []);
 
   const isOnboarded = profile.onboardingCompleted;
 
@@ -45,7 +86,8 @@ export function useStudentProfile() {
       level: getValidatedLevel(draft.level)
     };
     
-    const newProfile = createStudentProfile(validatedDraft);
+    const firebaseUid = auth.currentUser?.uid;
+    const newProfile = createStudentProfile(validatedDraft, firebaseUid || undefined);
     setProfileState(newProfile);
     return newProfile;
   };

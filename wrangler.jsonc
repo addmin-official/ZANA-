@@ -8,5 +8,10 @@
   ],
   "vars": {
     "ALLOWED_ORIGINS": "https://zana-app.web.app,https://zana-app.firebaseapp.com"
-  }
+  },
+  "kv_namespaces": [
+    {
+      "binding": "LEARNING_RECORDS_KV"
+    }
+  ]
 }

@@ -5,27 +5,66 @@ import {
   AdaptiveRecommendation,
   DifficultyLevel
 } from "../domain/MasteryTypes.ts";
+import { AuthService } from "../../services/authService.ts";
 
-export function useStudentMastery(studentId: string) {
+export function useStudentMastery(studentId: string, onAuthFailure?: () => void) {
   const [profile, setProfile] = useState<StudentMasteryProfile | null>(null);
   const [recommendations, setRecommendations] = useState<AdaptiveRecommendation[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
+  // Isomorphic, robust fetch client with automatic token refresh, 401-retry, and persistent failure handler
+  const fetchWithAuth = useCallback(async (url: string, options: RequestInit = {}): Promise<Response> => {
+    if (!studentId || studentId === "default-guest") {
+      throw new Error("No authenticated student identity available");
+    }
+
+    // Retrieve cached or new identity token
+    let token = await AuthService.getClientToken(studentId);
+
+    let headers: Record<string, string> = {
+      ...(options.headers as Record<string, string>),
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`
+    };
+
+    let response = await fetch(url, { ...options, headers });
+
+    // Handle token expiration or token validation failure gracefully (401 response)
+    if (response.status === 401) {
+      console.warn("ZANA Auth token invalid/expired, attempting silent credential verification...");
+      AuthService.clearClientToken(studentId);
+      
+      try {
+        // Enforce token refresh and retry request
+        token = await AuthService.getClientToken(studentId, true);
+        headers = {
+          ...(options.headers as Record<string, string>),
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        };
+        response = await fetch(url, { ...options, headers });
+      } catch (refreshErr) {
+        console.error("Cryptographic credential verification failed permanently:", refreshErr);
+        AuthService.clearClientToken(studentId);
+        if (onAuthFailure) {
+          onAuthFailure();
+        }
+        throw new Error("ZANA_SESSION_EXPIRED");
+      }
+    }
+
+    return response;
+  }, [studentId, onAuthFailure]);
+
   // Load profile and active recommendations from secure server endpoints
   const loadProfile = useCallback(async () => {
-    if (!studentId) return;
+    if (!studentId || studentId === "default-guest") return;
     try {
       setLoading(true);
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${studentId}`
-      };
 
-      // 1. Fetch Student Profile
-      const profileRes = await fetch(`/api/learning/mastery?studentId=${encodeURIComponent(studentId)}`, {
-        headers
-      });
+      // 1. Fetch Student Profile via authenticated tunnel
+      const profileRes = await fetchWithAuth(`/api/learning/mastery?studentId=${encodeURIComponent(studentId)}`);
       if (profileRes.ok) {
         const p = await profileRes.json();
         setProfile(p);
@@ -33,10 +72,8 @@ export function useStudentMastery(studentId: string) {
         console.warn("Unauthorized profile access attempt.");
       }
 
-      // 2. Fetch Active Recommendations
-      const recsRes = await fetch(`/api/learning/recommendations?studentId=${encodeURIComponent(studentId)}&status=ACTIVE`, {
-        headers
-      });
+      // 2. Fetch Active Recommendations via authenticated tunnel
+      const recsRes = await fetchWithAuth(`/api/learning/recommendations?studentId=${encodeURIComponent(studentId)}&status=ACTIVE`);
       if (recsRes.ok) {
         const recs = await recsRes.json();
         setRecommendations(recs);
@@ -46,10 +83,10 @@ export function useStudentMastery(studentId: string) {
     } finally {
       setLoading(false);
     }
-  }, [studentId]);
+  }, [studentId, fetchWithAuth]);
 
   useEffect(() => {
-    if (studentId) {
+    if (studentId && studentId !== "default-guest") {
       loadProfile();
     }
   }, [studentId, loadProfile]);
@@ -67,15 +104,11 @@ export function useStudentMastery(studentId: string) {
     hintUsed?: boolean;
     unreliableTiming?: boolean;
   }) => {
-    if (!studentId) return null;
+    if (!studentId || studentId === "default-guest") return null;
 
     try {
-      const response = await fetch("/api/learning/attempts", {
+      const response = await fetchWithAuth("/api/learning/attempts", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${studentId}`
-        },
         body: JSON.stringify({
           conceptId: attemptInput.conceptId,
           isCorrect: attemptInput.isCorrect,
@@ -107,19 +140,15 @@ export function useStudentMastery(studentId: string) {
       console.error("Error recording attempt on server:", e);
       return null;
     }
-  }, [studentId, loadProfile]);
+  }, [studentId, loadProfile, fetchWithAuth]);
 
   // Start a learning session securely on the server
   const startSession = useCallback(async () => {
-    if (!studentId) return null;
+    if (!studentId || studentId === "default-guest") return null;
 
     try {
-      const response = await fetch("/api/learning/sessions/start", {
+      const response = await fetchWithAuth("/api/learning/sessions/start", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${studentId}`
-        },
         body: JSON.stringify({})
       });
 
@@ -132,19 +161,15 @@ export function useStudentMastery(studentId: string) {
       console.error("Error starting session on server:", e);
     }
     return null;
-  }, [studentId]);
+  }, [studentId, fetchWithAuth]);
 
   // End a learning session securely on the server
   const endSession = useCallback(async (focusScore: number = 1.0) => {
-    if (!activeSessionId || !studentId) return;
+    if (!activeSessionId || !studentId || studentId === "default-guest") return;
 
     try {
-      const response = await fetch(`/api/learning/sessions/${encodeURIComponent(activeSessionId)}/end`, {
+      const response = await fetchWithAuth(`/api/learning/sessions/${encodeURIComponent(activeSessionId)}/end`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${studentId}`
-        },
         body: JSON.stringify({ focusScore })
       });
 
@@ -154,7 +179,8 @@ export function useStudentMastery(studentId: string) {
     } catch (e) {
       console.error("Error ending session on server:", e);
     }
-  }, [activeSessionId, studentId]);
+  }, [activeSessionId, studentId, fetchWithAuth]);
+
 
   return {
     profile,

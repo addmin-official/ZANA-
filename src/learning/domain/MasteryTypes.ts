@@ -55,6 +55,8 @@ export interface StudentMasteryProfile {
   conceptMasteries: Record<string, ConceptMasteryState>;
   activeMisconceptions: MisconceptionState[];
   recentRecommendedActions: string[];
+  updatedAt?: string;
+  schemaVersion?: number;
 }
 
 export type LearningEventType =

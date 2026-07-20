@@ -9,6 +9,7 @@ import { CurriculumRetriever } from "../curriculum/retrieval/CurriculumRetriever
 import { PersistentLearningRecordProvider } from "../learning/providers/LearningRecordProvider.ts";
 import { AdaptiveLearningEngine as StudentMasteryAdaptiveEngine } from "../learning/engine/AdaptiveLearningEngine.ts";
 import { CurriculumRegistry } from "../curriculum/registry/CurriculumRegistry.ts";
+import { AuthService } from "../services/authService.ts";
 
 dotenv.config();
 
@@ -868,14 +869,52 @@ const serverLearningProvider = new PersistentLearningRecordProvider();
 function getAuthenticatedStudentId(req: Request): string {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    throw new Error("UNAUTHORIZED");
+    throw new Error("Missing or invalid authorization header prefix");
   }
   const token = authHeader.substring(7).trim();
   if (!token) {
-    throw new Error("UNAUTHORIZED");
+    throw new Error("Authorization bearer token is empty");
   }
-  return token;
+  
+  // CRYPTOGRAPHIC VERIFICATION OF THE STUDENT IDENTITY TOKEN
+  const payload = AuthService.verifyToken(token);
+  return payload.uid;
 }
+
+// Token exchange endpoint for student onboarding and identity assurance
+app.post("/api/auth/token", async (req: Request, res: Response) => {
+  try {
+    const { studentId, idToken } = req.body;
+    if (!studentId || typeof studentId !== "string" || studentId.trim() === "") {
+      return res.status(400).json({ error: "Nasنامەی قوتابی (studentId) پێویستە." });
+    }
+    
+    const isProd = process.env.NODE_ENV === "production" || process.env.ZANA_ENV === "production";
+    if (isProd && !idToken) {
+      return res.status(401).json({ error: "Firebase Identity Token پێویستە لە ژینگەی بەرهەمهێناندا." });
+    }
+
+    const verifiedUid = await AuthService.verifyFirebaseIdToken(idToken || null);
+    if (!isProd && (!idToken || verifiedUid === "dev-guest")) {
+      // In development/test with no ID token, let it pass as guest
+    } else {
+      if (verifiedUid !== studentId) {
+        return res.status(403).json({ error: "ناونیشانی قوتابی یەکناکاتەوە لەگەڵ ناسنامەی ڕەسەن." });
+      }
+    }
+    
+    // Sign a cryptographically verified token for this student profile
+    const token = AuthService.signToken(studentId);
+    res.json({ token });
+  } catch (err: unknown) {
+    const isProd = process.env.NODE_ENV === "production" || process.env.ZANA_ENV === "production";
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    res.status(500).json({ 
+      error: "شکست هێنا لە دروستکردنی نیشانەی پاراستنی قوتابی.",
+      details: isProd ? undefined : errorMessage
+    });
+  }
+});
 
 // Helper to ensure dummy data/registration or retrieval for demo concepts
 async function getConceptTitleKu(conceptId: string): Promise<string> {

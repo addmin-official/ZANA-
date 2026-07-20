@@ -4,6 +4,7 @@ import { PersistentLearningRecordProvider } from "../learning/providers/Learning
 import { AdaptiveLearningEngine } from "../learning/engine/AdaptiveLearningEngine.ts";
 import { DifficultyLevel, MisconceptionStatus } from "../learning/domain/MasteryTypes.ts";
 import { CurriculumRegistry } from "../curriculum/registry/CurriculumRegistry.ts";
+import { AuthService } from "../services/authService.ts";
 
 export interface Env {
   GEMINI_API_KEY: string;
@@ -11,6 +12,8 @@ export interface Env {
   GEMINI_PRIMARY_MODEL?: string;
   GEMINI_VISION_MODEL?: string;
   ZANA_LEARNING_KV?: any; // Cloudflare KV for persistent student mastery
+  LEARNING_RECORDS_KV?: any; // Hardened Cloudflare KV binding
+  JWT_SECRET?: string; // Isomorphic secure token secret
 }
 
 export type SafeErrorCategory =
@@ -224,6 +227,16 @@ function getAiClient(env: Env): GoogleGenAI {
 // 6. MAIN WORKER ROUTER
 export default {
   async fetch(request: Request, env: Env, ctx?: any): Promise<Response> {
+    // Propagate JWT secret and environment to AuthService context
+    if (env.JWT_SECRET) {
+      if (typeof process === "undefined") {
+        (globalThis as any).process = { env: {} };
+      }
+      process.env = process.env || {};
+      process.env.JWT_SECRET = env.JWT_SECRET;
+      process.env.ZANA_ENV = "production";
+    }
+
     const origin = request.headers.get("Origin");
 
     // Handle CORS preflight
@@ -790,13 +803,43 @@ ${modeInstructions}
       function getWorkerAuthenticatedStudentId(req: Request): string {
         const authHeader = req.headers.get("Authorization");
         if (!authHeader || !authHeader.startsWith("Bearer ")) {
-          throw new Error("UNAUTHORIZED");
+          throw new Error("Missing or invalid authorization header prefix");
         }
         const token = authHeader.substring(7).trim();
         if (!token) {
-          throw new Error("UNAUTHORIZED");
+          throw new Error("Authorization bearer token is empty");
         }
-        return token;
+        
+        // Cryptographically verify identity token
+        const payload = AuthService.verifyToken(token);
+        return payload.uid;
+      }
+
+      // Token exchange endpoint inside Cloudflare Worker
+      if (pathname === "/api/auth/token" && request.method === "POST") {
+        const body: any = await request.json().catch(() => ({}));
+        const { studentId, idToken } = body;
+        if (!studentId || typeof studentId !== "string" || studentId.trim() === "") {
+          return new Response(JSON.stringify({ error: "Nasنامەی قوتابی (studentId) پێویستە." }), { status: 400, headers: responseHeaders });
+        }
+        
+        // Cryptographically verify Firebase Identity Token
+        try {
+          // Worker is always running in production environment
+          if (!idToken) {
+            return new Response(JSON.stringify({ error: "Firebase Identity Token پێویستە لە ژینگەی بەرهەمهێناندا." }), { status: 401, headers: responseHeaders });
+          }
+          const verifiedUid = await AuthService.verifyFirebaseIdToken(idToken);
+          if (verifiedUid !== studentId) {
+            return new Response(JSON.stringify({ error: "ناونیشانی قوتابی یەکناکاتەوە لەگەڵ ناسنامەی ڕەسەن." }), { status: 403, headers: responseHeaders });
+          }
+        } catch (authErr: any) {
+          return new Response(JSON.stringify({ error: "ناسنامەی ڕەسەن پشتڕاست نەکراوەتەوە: " + authErr.message }), { status: 401, headers: responseHeaders });
+        }
+        
+        // Sign and return a cryptographically verified token
+        const token = AuthService.signToken(studentId);
+        return new Response(JSON.stringify({ token }), { status: 200, headers: responseHeaders });
       }
 
       // 1. GET MASTERY PROFILE
@@ -813,7 +856,7 @@ ${modeInstructions}
           return new Response(JSON.stringify({ error: "دەستگەیشتن ڕەتکرایەوە." }), { status: 403, headers: responseHeaders });
         }
 
-        const lp = new PersistentLearningRecordProvider(env.ZANA_LEARNING_KV);
+        const lp = new PersistentLearningRecordProvider(env.LEARNING_RECORDS_KV || env.ZANA_LEARNING_KV, "production");
         const profile = await lp.getStudentMasteryProfile(studentId);
         return new Response(JSON.stringify(profile), { status: 200, headers: responseHeaders });
       }
@@ -835,7 +878,7 @@ ${modeInstructions}
         const parts = pathname.split("/");
         const conceptId = decodeURIComponent(parts[parts.length - 1]);
 
-        const lp = new PersistentLearningRecordProvider(env.ZANA_LEARNING_KV);
+        const lp = new PersistentLearningRecordProvider(env.LEARNING_RECORDS_KV || env.ZANA_LEARNING_KV, "production");
         const state = await lp.getConceptMastery(studentId, conceptId);
         if (!state) {
           return new Response(JSON.stringify({ error: "چەمکی متمانە دۆزراوە بۆ ئەم قوتابییە بوونی نییە." }), { status: 404, headers: responseHeaders });
@@ -858,7 +901,7 @@ ${modeInstructions}
         }
 
         const status = url.searchParams.get("status") || undefined;
-        const lp = new PersistentLearningRecordProvider(env.ZANA_LEARNING_KV);
+        const lp = new PersistentLearningRecordProvider(env.LEARNING_RECORDS_KV || env.ZANA_LEARNING_KV, "production");
         const recs = await lp.listRecommendations(studentId, status);
         return new Response(JSON.stringify(recs), { status: 200, headers: responseHeaders });
       }
@@ -886,7 +929,7 @@ ${modeInstructions}
           data: data || {}
         };
 
-        const lp = new PersistentLearningRecordProvider(env.ZANA_LEARNING_KV);
+        const lp = new PersistentLearningRecordProvider(env.LEARNING_RECORDS_KV || env.ZANA_LEARNING_KV, "production");
         await lp.appendLearningEvent(studentId, event);
         const profile = await lp.getStudentMasteryProfile(studentId);
         return new Response(JSON.stringify({ success: true, eventId: event.id, profile }), { status: 200, headers: responseHeaders });
@@ -930,7 +973,7 @@ ${modeInstructions}
           }
         }
 
-        const lp = new PersistentLearningRecordProvider(env.ZANA_LEARNING_KV);
+        const lp = new PersistentLearningRecordProvider(env.LEARNING_RECORDS_KV || env.ZANA_LEARNING_KV, "production");
         const currentProfile = await lp.getStudentMasteryProfile(studentId);
         const currentState = await lp.getConceptMastery(studentId, conceptId);
 
@@ -1049,7 +1092,7 @@ ${modeInstructions}
           focusScore: 1.0
         };
 
-        const lp = new PersistentLearningRecordProvider(env.ZANA_LEARNING_KV);
+        const lp = new PersistentLearningRecordProvider(env.LEARNING_RECORDS_KV || env.ZANA_LEARNING_KV, "production");
         await lp.createLearningSession(session);
         return new Response(JSON.stringify(session), { status: 200, headers: responseHeaders });
       }
@@ -1078,7 +1121,7 @@ ${modeInstructions}
           focusScore: focusScore !== undefined ? focusScore : 1.0
         };
 
-        const lp = new PersistentLearningRecordProvider(env.ZANA_LEARNING_KV);
+        const lp = new PersistentLearningRecordProvider(env.LEARNING_RECORDS_KV || env.ZANA_LEARNING_KV, "production");
         await lp.updateLearningSession(session);
         return new Response(JSON.stringify(session), { status: 200, headers: responseHeaders });
       }

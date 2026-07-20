@@ -18,7 +18,7 @@
     "firebase:deploy:hosting": "firebase deploy --only hosting",
     "deploy:cloudflare": "wrangler deploy",
     "deploy": "wrangler deploy",
-    "test": "node --import tsx --test src/curriculum/curriculum.test.ts src/learning/engine/AdaptiveLearningEngine.test.ts",
+    "test": "node --import tsx --test src/curriculum/curriculum.test.ts src/learning/engine/AdaptiveLearningEngine.test.ts src/learning/providers/LearningSecurity.test.ts",
     "test:smoke": "node scripts/smoke-test.js"
   },
   "dependencies": {
@@ -27,6 +27,7 @@
     "@vitejs/plugin-react": "^5.0.4",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
+    "firebase": "^12.16.0",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "multer": "^2.2.0",
