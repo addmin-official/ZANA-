@@ -185,16 +185,20 @@ jobs:
             ' worker-version.json)
           fi
 
-          if ! [[ "$KV_NAMESPACE_ID" =~ ^[a-fA-F0-9]{32}$ ]]; then
-            echo "::error::The existing LEARNING_RECORDS_KV namespace could not be resolved."
+          if [ -n "$CONFIGURED_KV_NAMESPACE_ID" ] && ! [[ "$CONFIGURED_KV_NAMESPACE_ID" =~ ^[a-fA-F0-9]{32}$ ]]; then
+            echo "::error::CLOUDFLARE_KV_NAMESPACE_ID is not a valid Cloudflare namespace ID."
             exit 1
           fi
 
-          jq --arg namespace_id "$KV_NAMESPACE_ID" \
-            '.kv_namespaces = [{"binding": "LEARNING_RECORDS_KV", "id": $namespace_id}]' \
-            wrangler.jsonc > wrangler.production.json
-
-          echo "Resolved the existing LEARNING_RECORDS_KV namespace without provisioning a new resource."
+          if [[ "$KV_NAMESPACE_ID" =~ ^[a-fA-F0-9]{32}$ ]]; then
+            jq --arg namespace_id "$KV_NAMESPACE_ID" \
+              '.kv_namespaces = [{"binding": "LEARNING_RECORDS_KV", "id": $namespace_id}]' \
+              wrangler.jsonc > wrangler.production.json
+            echo "Resolved the existing LEARNING_RECORDS_KV namespace without provisioning a new resource."
+          else
+            cp wrangler.jsonc wrangler.production.json
+            echo "No existing LEARNING_RECORDS_KV namespace was found; Wrangler will provision it once."
+          fi
 
       # STAGE 6: Deploy Cloudflare Worker
       - name: Deploy Cloudflare Worker
