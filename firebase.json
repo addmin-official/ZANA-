@@ -1,25 +1,5 @@
 {
   "firestore": {
     "rules": "firestore.rules"
-  },
-  "hosting": {
-    "public": "dist/client",
-    "ignore": [
-      "firebase.json",
-      "**/.*",
-      "**/node_modules/**"
-    ],
-    "rewrites": [
-      {
-        "source": "**/!(*.cjs|*.map|package.json|.env|*.ts)",
-        "destination": "/index.html"
-      }
-    ]
-  },
-  "emulators": {
-    "hosting": {
-      "port": 5000,
-      "host": "127.0.0.1"
-    }
   }
 }
