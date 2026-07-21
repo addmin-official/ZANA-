@@ -72,6 +72,11 @@ jobs:
           set -o pipefail
           npm run typecheck 2>&1 | tee typecheck.log
 
+      - name: Run Test Suite
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee test.log
+
       - name: Save Pipeline Start Time
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
@@ -91,6 +96,7 @@ jobs:
           path: |
             lint.log
             typecheck.log
+            test.log
             deployment-started/
 
   build:
