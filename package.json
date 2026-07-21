@@ -16,7 +16,7 @@
     "typecheck": "tsc --noEmit",
     "deploy:cloudflare": "wrangler deploy",
     "deploy": "wrangler deploy",
-    "test": "node --import tsx --import ./src/test/setupEnv.ts --test src/curriculum/curriculum.test.ts src/learning/engine/AdaptiveLearningEngine.test.ts src/learning/providers/LearningSecurity.test.ts src/assessment/AssessmentIntelligence.test.ts src/worker/worker.test.ts",
+    "test": "node --import tsx --import ./src/test/setupEnv.ts --test src/curriculum/curriculum.test.ts src/learning/engine/AdaptiveLearningEngine.test.ts src/learning/providers/LearningSecurity.test.ts src/assessment/AssessmentIntelligence.test.ts src/worker/worker.test.ts src/test/resolve-kv.test.ts",
     "test:smoke": "node scripts/smoke-test.js"
   },
   "dependencies": {

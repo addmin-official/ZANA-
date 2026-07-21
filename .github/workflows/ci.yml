@@ -282,9 +282,11 @@ jobs:
           
           # Verify production config validity
           jq empty wrangler.production.json
+          echo "Generated config validation: PASS"
           
           # Dry run with wrangler deployment config
           npx wrangler deploy --config wrangler.production.json --dry-run
+          echo "Dry-run result: PASS"
 
       # STAGE 6: Deploy Cloudflare Worker
       - name: Deploy Cloudflare Worker
