@@ -10,6 +10,10 @@ concurrency:
   group: production-deployment
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  statuses: write
+
 jobs:
   validate:
     name: Validate Codebase (Preflight & Quality)
@@ -22,6 +26,7 @@ jobs:
       - name: Preflight Secrets Check
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
+          set -euo pipefail
           echo "Running Preflight checks for required deployment secrets..."
           MISSING_SECRETS=0
 
@@ -60,18 +65,25 @@ jobs:
       # STAGE 2: Lint
       - name: Run Linter
         run: |
-          set -o pipefail
+          set -euo pipefail
           npm run lint 2>&1 | tee lint.log
 
       # STAGE 3: Typecheck
       - name: Run Typecheck
         run: |
-          set -o pipefail
+          set -euo pipefail
           npm run typecheck 2>&1 | tee typecheck.log
+
+      # STAGE 3.5: Run Full Test Suite (Mandatory Gate)
+      - name: Run Full Test Suite
+        run: |
+          set -euo pipefail
+          npm test 2>&1 | tee test.log
 
       - name: Save Pipeline Start Time
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
+          set -euo pipefail
           mkdir -p deployment-started
           cat <<EOF > deployment-started/metadata-started.json
           {
@@ -88,6 +100,7 @@ jobs:
           path: |
             lint.log
             typecheck.log
+            test.log
             deployment-started/
 
   build:
@@ -110,7 +123,7 @@ jobs:
       # STAGE 4: Worker Validation
       - name: Build Worker (Validation)
         run: |
-          set -o pipefail
+          set -euo pipefail
           npm run build:worker 2>&1 | tee build-worker.log
 
       # STAGE 5: Application Build
@@ -118,8 +131,12 @@ jobs:
         env:
           VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
         run: |
-          set -o pipefail
+          set -euo pipefail
           npm run build 2>&1 | tee build.log
+          # Generate checksums for build verification
+          find dist/ -type f | sort | xargs sha256sum > dist/checksums.txt
+          echo "Generated checksums for build outputs:"
+          cat dist/checksums.txt
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
@@ -149,18 +166,61 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
+      - name: Download Build Outputs
+        uses: actions/download-artifact@v4
+        with:
+          name: build-outputs
+          path: .
+
+      - name: Verify Artifact Integrity
+        run: |
+          set -euo pipefail
+          echo "Verifying artifact checksums..."
+          sha256sum -c dist/checksums.txt
+          
+          echo "Verifying dist/client directory..."
+          if [ ! -d "dist/client" ]; then
+            echo "::error::dist/client directory is missing!"
+            exit 1
+          fi
+          
+          echo "Verifying Worker entrypoint..."
+          if [ ! -f "src/worker/index.ts" ]; then
+            echo "::error::Worker entrypoint src/worker/index.ts is missing!"
+            exit 1
+          fi
+          
+          echo "Verification successful!"
+
+      # Resolve deterministic KV namespace binding
+      - name: Resolve deterministic KV namespace binding
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_KV_NAMESPACE_ID: ${{ secrets.CLOUDFLARE_KV_NAMESPACE_ID }}
+        run: |
+          set -euo pipefail
+          node scripts/resolve-kv.js
+          
+          # Verify production config validity
+          jq empty wrangler.production.json
+          
+          # Dry run with wrangler deployment config
+          npx wrangler deploy --config wrangler.production.json --dry-run
+
       # STAGE 6: Deploy Cloudflare Worker
       - name: Deploy Cloudflare Worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          set -o pipefail
-          npx wrangler deploy 2>&1 | tee wrangler-deploy.log
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.production.json 2>&1 | tee wrangler-deploy.log
 
       - name: Parse Worker Deployment Metadata
         if: always()
         run: |
+          set -euo pipefail
           node -e "
           const fs = require('fs');
           let log = '';
@@ -190,14 +250,14 @@ jobs:
     environment: Production
     steps:
       - name: Verify Worker Health & CORS
+        env:
+          CLEANED_URL: ${{ secrets.VITE_API_BASE_URL }}
         run: |
           set -euo pipefail
           
-          BASE_URL="${{ secrets.VITE_API_BASE_URL }}"
-          
           # Clean and remove trailing slash from base URL
-          CLEANED_URL=$(echo "$BASE_URL" | sed 's/\/$//')
-          
+          CLEANED_URL=$(echo "$CLEANED_URL" | sed 's/\/$//')
+          export CLEANED_URL
           echo "Verifying live Cloudflare Worker at: $CLEANED_URL"
           
           # Validation Checks: Reject empty, HTTP, malformed, or non-canonical URLs
@@ -206,20 +266,22 @@ jobs:
             exit 1
           fi
           
-          if [[ ! "$CLEANED_URL" =~ ^https:// ]]; then
-            echo "::error::API Base URL is not HTTPS: '$CLEANED_URL'"
-            exit 1
-          fi
-          
-          if [[ "$CLEANED_URL" =~ /$ ]]; then
-            echo "::error::API Base URL has a trailing slash after cleaning: '$CLEANED_URL'"
-            exit 1
-          fi
-          
-          if [[ "$CLEANED_URL" =~ /api ]]; then
-            echo "::error::API Base URL contains /api: '$CLEANED_URL'. Base URL must be the domain origin."
-            exit 1
-          fi
+          # Use Node URL parsing to structurally validate (Objective 6)
+          node -e "
+          try {
+            const u = new URL(process.env.CLEANED_URL);
+            if (u.protocol !== 'https:') throw new Error('API Base URL must use HTTPS');
+            if (!u.hostname) throw new Error('API Base URL hostname is missing');
+            if (u.username || u.password) throw new Error('API Base URL must not contain credentials');
+            if (u.search) throw new Error('API Base URL must not contain query parameters');
+            if (u.hash) throw new Error('API Base URL must not contain a fragment');
+            if (u.pathname !== '/' && u.pathname !== '') throw new Error('API Base URL must be the domain origin (pathname must be empty or /)');
+            console.log('API Base URL structure is perfectly valid.');
+          } catch (err) {
+            console.error('::error::Invalid API Base URL: ' + err.message);
+            process.exit(1);
+          }
+          "
 
           # 1. Diagnose redirect temporarily
           # We perform a diagnostic curl without following redirects first to log details.
@@ -248,14 +310,29 @@ jobs:
           echo "Content-Type: $CONTENT_TYPE_HEADER"
           
           # Run diagnostic to find redirect count and effective destination
-          REDIRECT_INFO=$(curl --silent --show-error --location --max-redirs 5 \
+          DIAG_CURL_OUT=$(curl --silent --show-error --location --max-redirs 5 \
             --connect-timeout 10 \
             --max-time 20 \
             -H "Origin: https://zana-app.web.app" \
             -o /dev/null \
-            -w "Redirect Count: %{num_redirects}\nFinal Effective URL: %{url_effective}\nFinal Hostname: %{http_conn_id}\n" \
-            "$CLEANED_URL/api/health" || echo "Redirect count diagnosis failed")
-          echo "$REDIRECT_INFO"
+            -w "%{url_effective}|%{num_redirects}|%{http_code}|%{content_type}" \
+            "$CLEANED_URL/api/health" || echo "failed")
+          
+          if [ "$DIAG_CURL_OUT" != "failed" ]; then
+            export DIAG_CURL_OUT
+            node -e "
+            const [urlEffective, numRedirects, httpCode, contentType] = process.env.DIAG_CURL_OUT.split('|');
+            let hostname = 'unknown';
+            try { hostname = new URL(urlEffective).hostname; } catch(e) {}
+            console.log('Redirect Count: ' + numRedirects);
+            console.log('Final Effective URL: ' + urlEffective);
+            console.log('Final Hostname: ' + hostname);
+            console.log('Final HTTP Code: ' + httpCode);
+            console.log('Final Content Type: ' + contentType);
+            "
+          else
+            echo "Redirect count diagnosis failed"
+          fi
           echo "----------------------"
 
           # 2. Permanent Strict Verification (Must be 200, zero redirects, valid JSON)
@@ -313,7 +390,7 @@ jobs:
           fi
 
           echo "Worker response verified successfully!"
-          
+
   smoke-tests:
     name: Run Production Smoke Tests
     needs: verify-worker
@@ -338,7 +415,7 @@ jobs:
         env:
           API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
         run: |
-          set -o pipefail
+          set -euo pipefail
           npm run test:smoke 2>&1 | tee smoke-test-report.log
 
       - name: Upload Smoke Test Report
@@ -348,9 +425,40 @@ jobs:
           name: smoke-test-report
           path: smoke-test-report.log
 
+  security-checks:
+    name: Run Security Exposure Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Verify No Secrets or Environment Files Exposed
+        run: |
+          set -euo pipefail
+          echo "Scanning codebase for security exposures..."
+          
+          # Check for forbidden files
+          FORBIDDEN_FILES=(".env" ".env.production" "wrangler.toml" "wrangler.production.json" "firebase-service-account.json")
+          for file in "${FORBIDDEN_FILES[@]}"; do
+            if [ -f "$file" ]; then
+              echo "::error::Security Exposure Check Failed: Forbidden file '$file' exists in the codebase!"
+              exit 1
+            fi
+          done
+
+          # Check for typical API Key patterns or private keys accidentally committed
+          # Excluding package.json, package-lock.json, and workflows/ci.yml to avoid false positives
+          echo "Scanning for private keys..."
+          if grep -r -l "BEGIN PRIVATE KEY" --exclude-dir=node_modules --exclude=package.json --exclude=package-lock.json --exclude-dir=.github .; then
+            echo "::error::Security Exposure Check Failed: Found possible private key committed in the codebase!"
+            exit 1
+          fi
+
+          echo "Security checks passed successfully!"
+
   release:
     name: Generate Release Tag & Metadata
-    needs: smoke-tests
+    needs: [validate, build, deploy-worker, verify-worker, smoke-tests, security-checks]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: Production
@@ -374,6 +482,7 @@ jobs:
 
       - name: Generate Release Summary & Tag
         run: |
+          set -euo pipefail
           SHORT_SHA=$(git rev-parse --short HEAD)
           RELEASE_TIME=$(date -u +"%Y%m%d-%H%M%S")
           RELEASE_TAG="release-${RELEASE_TIME}-${{ github.run_number }}-${SHORT_SHA}"
@@ -427,6 +536,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           
@@ -439,3 +549,91 @@ jobs:
             --title "Production Release $RELEASE_TAG" \
             --notes "Automated release triggered by GitHub Action run ${{ github.run_id }}. Commit: ${{ github.sha }}." \
             release-summary.json
+
+  report-status:
+    name: Report Pipeline Status
+    needs: [validate, build, deploy-worker, verify-worker, smoke-tests, security-checks, release]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+    steps:
+      - name: Report Statuses to GitHub
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VALIDATE_STATUS: ${{ needs.validate.result }}
+          BUILD_STATUS: ${{ needs.build.result }}
+          DEPLOY_STATUS: ${{ needs.deploy-worker.result }}
+          VERIFY_STATUS: ${{ needs.verify-worker.result }}
+          SMOKE_STATUS: ${{ needs.smoke-tests.result }}
+          SECURITY_STATUS: ${{ needs.security-checks.result }}
+          RELEASE_STATUS: ${{ needs.release.result }}
+        run: |
+          set -euo pipefail
+          
+          # Map function to convert GitHub Action job status to GitHub commit status state
+          map_status() {
+            local status="$1"
+            case "$status" in
+              success)
+                echo "success"
+                ;;
+              failure)
+                echo "failure"
+                ;;
+              *)
+                echo "error"
+                ;;
+            esac
+          }
+          
+          map_description() {
+            local status="$1"
+            local job_name="$2"
+            case "$status" in
+              success)
+                echo "$job_name passed successfully"
+                ;;
+              failure)
+                echo "$job_name failed"
+                ;;
+              skipped)
+                echo "$job_name was skipped"
+                ;;
+              cancelled)
+                echo "$job_name was cancelled"
+                ;;
+              *)
+                echo "$job_name status: $status"
+                ;;
+            esac
+          }
+
+          SHA="${{ github.sha }}"
+          REPO="${{ github.repository }}"
+          RUN_ID="${{ github.run_id }}"
+          TARGET_URL="https://github.com/${REPO}/actions/runs/${RUN_ID}"
+
+          post_status() {
+            local context="$1"
+            local raw_status="$2"
+            local state=$(map_status "$raw_status")
+            local desc=$(map_description "$raw_status" "$context")
+            
+            echo "Publishing status to $context: state=$state, desc='$desc'"
+            
+            gh api --method POST \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${REPO}/statuses/${SHA}" \
+              -f state="$state" \
+              -f context="$context" \
+              -f description="$desc" \
+              -f target_url="$TARGET_URL" > /dev/null
+          }
+
+          post_status "ZANA/validate" "$VALIDATE_STATUS"
+          post_status "ZANA/build" "$BUILD_STATUS"
+          post_status "ZANA/deploy" "$DEPLOY_STATUS"
+          post_status "ZANA/verify" "$VERIFY_STATUS"
+          post_status "ZANA/smoke" "$SMOKE_STATUS"
+          post_status "ZANA/release" "$RELEASE_STATUS"
