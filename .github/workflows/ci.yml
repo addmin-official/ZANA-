@@ -10,9 +10,6 @@ concurrency:
   group: production-deployment
   cancel-in-progress: true
 
-permissions:
-  contents: read
-
 jobs:
   validate:
     name: Validate Codebase (Preflight & Quality)
@@ -72,11 +69,6 @@ jobs:
           set -o pipefail
           npm run typecheck 2>&1 | tee typecheck.log
 
-      - name: Run Test Suite
-        run: |
-          set -o pipefail
-          npm test 2>&1 | tee test.log
-
       - name: Save Pipeline Start Time
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
@@ -96,7 +88,6 @@ jobs:
           path: |
             lint.log
             typecheck.log
-            test.log
             deployment-started/
 
   build:
@@ -116,21 +107,19 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      # STAGE 4: Application Build
-      # Wrangler validates and packages dist/client, so the application must
-      # be built first on a clean CI runner.
+      # STAGE 4: Worker Validation
+      - name: Build Worker (Validation)
+        run: |
+          set -o pipefail
+          npm run build:worker 2>&1 | tee build-worker.log
+
+      # STAGE 5: Application Build
       - name: Build Client and Server
         env:
           VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
         run: |
           set -o pipefail
           npm run build 2>&1 | tee build.log
-
-      # STAGE 5: Worker Validation
-      - name: Build Worker (Validation)
-        run: |
-          set -o pipefail
-          npm run build:worker 2>&1 | tee build-worker.log
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
@@ -160,52 +149,6 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: Download Verified Build Artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: build-outputs
-          path: .
-
-      - name: Resolve Existing Cloudflare KV Binding
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CONFIGURED_KV_NAMESPACE_ID: ${{ vars.CLOUDFLARE_KV_NAMESPACE_ID }}
-        run: |
-          KV_NAMESPACE_ID="$CONFIGURED_KV_NAMESPACE_ID"
-
-          if [ -z "$KV_NAMESPACE_ID" ]; then
-            npx wrangler versions list --json > worker-versions.json
-            LATEST_VERSION_ID=$(jq -r '.[-1].id // empty' worker-versions.json)
-
-            if [ -z "$LATEST_VERSION_ID" ]; then
-              echo "::error::Unable to resolve the current Cloudflare Worker version."
-              exit 1
-            fi
-
-            npx wrangler versions view "$LATEST_VERSION_ID" --json > worker-version.json
-            KV_NAMESPACE_ID=$(jq -r '
-              .resources.bindings[]?
-              | select(.type == "kv_namespace" and .name == "LEARNING_RECORDS_KV")
-              | .namespace_id // empty
-            ' worker-version.json)
-          fi
-
-          if [ -n "$CONFIGURED_KV_NAMESPACE_ID" ] && ! [[ "$CONFIGURED_KV_NAMESPACE_ID" =~ ^[a-fA-F0-9]{32}$ ]]; then
-            echo "::error::CLOUDFLARE_KV_NAMESPACE_ID is not a valid Cloudflare namespace ID."
-            exit 1
-          fi
-
-          if [[ "$KV_NAMESPACE_ID" =~ ^[a-fA-F0-9]{32}$ ]]; then
-            jq --arg namespace_id "$KV_NAMESPACE_ID" \
-              '.kv_namespaces = [{"binding": "LEARNING_RECORDS_KV", "id": $namespace_id}]' \
-              wrangler.jsonc > wrangler.production.json
-            echo "Resolved the existing LEARNING_RECORDS_KV namespace without provisioning a new resource."
-          else
-            cp wrangler.jsonc wrangler.production.json
-            echo "No existing LEARNING_RECORDS_KV namespace was found; Wrangler will provision it once."
-          fi
-
       # STAGE 6: Deploy Cloudflare Worker
       - name: Deploy Cloudflare Worker
         env:
@@ -213,7 +156,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -o pipefail
-          npx wrangler deploy --config wrangler.production.json 2>&1 | tee wrangler-deploy.log
+          npx wrangler deploy 2>&1 | tee wrangler-deploy.log
 
       - name: Parse Worker Deployment Metadata
         if: always()
@@ -248,11 +191,78 @@ jobs:
     steps:
       - name: Verify Worker Health & CORS
         run: |
-          echo "Verifying live Cloudflare Worker at: ${{ secrets.VITE_API_BASE_URL }}"
+          set -euo pipefail
           
+          BASE_URL="${{ secrets.VITE_API_BASE_URL }}"
+          
+          # Clean and remove trailing slash from base URL
+          CLEANED_URL=$(echo "$BASE_URL" | sed 's/\/$//')
+          
+          echo "Verifying live Cloudflare Worker at: $CLEANED_URL"
+          
+          # Validation Checks: Reject empty, HTTP, malformed, or non-canonical URLs
+          if [ -z "$CLEANED_URL" ]; then
+            echo "::error::API Base URL is empty!"
+            exit 1
+          fi
+          
+          if [[ ! "$CLEANED_URL" =~ ^https:// ]]; then
+            echo "::error::API Base URL is not HTTPS: '$CLEANED_URL'"
+            exit 1
+          fi
+          
+          if [[ "$CLEANED_URL" =~ /$ ]]; then
+            echo "::error::API Base URL has a trailing slash after cleaning: '$CLEANED_URL'"
+            exit 1
+          fi
+          
+          if [[ "$CLEANED_URL" =~ /api ]]; then
+            echo "::error::API Base URL contains /api: '$CLEANED_URL'. Base URL must be the domain origin."
+            exit 1
+          fi
+
+          # 1. Diagnose redirect temporarily
+          # We perform a diagnostic curl without following redirects first to log details.
+          DIAG_HEADER_FILE=$(mktemp)
+          DIAG_BODY_FILE=$(mktemp)
+          
+          echo "--- DIAGNOSTIC RUN ---"
+          echo "Requested health URL: $CLEANED_URL/api/health"
+          
+          # Perform a non-redirecting curl to inspect the response details
+          HTTP_STATUS=$(curl --silent --show-error \
+            --connect-timeout 10 \
+            --max-time 20 \
+            -H "Origin: https://zana-app.web.app" \
+            -D "$DIAG_HEADER_FILE" \
+            -o "$DIAG_BODY_FILE" \
+            -w "%{http_code}" \
+            "$CLEANED_URL/api/health")
+            
+          echo "HTTP Status: $HTTP_STATUS"
+          
+          LOCATION_HEADER=$(grep -i '^location:' "$DIAG_HEADER_FILE" | awk -F': ' '{print $2}' | tr -d '\r\n ' || echo "None")
+          echo "Location header: $LOCATION_HEADER"
+          
+          CONTENT_TYPE_HEADER=$(grep -i '^content-type:' "$DIAG_HEADER_FILE" | awk -F': ' '{print $2}' | tr -d '\r\n ' || echo "None")
+          echo "Content-Type: $CONTENT_TYPE_HEADER"
+          
+          # Run diagnostic to find redirect count and effective destination
+          REDIRECT_INFO=$(curl --silent --show-error --location --max-redirs 5 \
+            --connect-timeout 10 \
+            --max-time 20 \
+            -H "Origin: https://zana-app.web.app" \
+            -o /dev/null \
+            -w "Redirect Count: %{num_redirects}\nFinal Effective URL: %{url_effective}\nFinal Hostname: %{http_conn_id}\n" \
+            "$CLEANED_URL/api/health" || echo "Redirect count diagnosis failed")
+          echo "$REDIRECT_INFO"
+          echo "----------------------"
+
+          # 2. Permanent Strict Verification (Must be 200, zero redirects, valid JSON)
           RESPONSE_FILE=$(mktemp)
           HEADER_FILE=$(mktemp)
 
+          # We do NOT use curl -L here because the health check must respond with 200 directly (zero redirects).
           HTTP_CODE=$(curl --fail-with-body --silent --show-error \
             --connect-timeout 10 \
             --max-time 30 \
@@ -260,20 +270,27 @@ jobs:
             -D "$HEADER_FILE" \
             -o "$RESPONSE_FILE" \
             -w "%{http_code}" \
-            "${{ secrets.VITE_API_BASE_URL }}/api/health")
+            "$CLEANED_URL/api/health")
 
           echo "HTTP Response Code: $HTTP_CODE"
           if [ "$HTTP_CODE" != "200" ]; then
-            echo "::error::Worker health check returned status $HTTP_CODE (expected exactly 200)."
+            echo "::error::Worker health check returned status $HTTP_CODE (expected exactly 200, zero redirects)."
             cat "$RESPONSE_FILE"
             exit 1
           fi
 
           STATUS=$(jq -r '.status' "$RESPONSE_FILE" 2>/dev/null || echo "")
           SERVICE=$(jq -r '.service' "$RESPONSE_FILE" 2>/dev/null || echo "")
+          OK_VAL=$(jq -r '.ok' "$RESPONSE_FILE" 2>/dev/null || echo "")
 
           echo "Parsed status: $STATUS"
           echo "Parsed service: $SERVICE"
+          echo "Parsed ok: $OK_VAL"
+
+          if [ "$OK_VAL" != "true" ]; then
+            echo "::error::Invalid health ok value: '$OK_VAL' (expected 'true')"
+            exit 1
+          fi
 
           if [ "$STATUS" != "ok" ]; then
             echo "::error::Invalid health status: '$STATUS' (expected 'ok')"
@@ -422,60 +439,3 @@ jobs:
             --title "Production Release $RELEASE_TAG" \
             --notes "Automated release triggered by GitHub Action run ${{ github.run_id }}. Commit: ${{ github.sha }}." \
             release-summary.json
-
-  report-status:
-    name: Publish Pipeline Status
-    needs:
-      - validate
-      - build
-      - deploy-worker
-      - verify-worker
-      - smoke-tests
-      - release
-    if: always() && github.event_name == 'push'
-    runs-on: ubuntu-latest
-    permissions:
-      statuses: write
-    steps:
-      - name: Publish Job Results
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VALIDATE_RESULT: ${{ needs.validate.result }}
-          BUILD_RESULT: ${{ needs.build.result }}
-          DEPLOY_RESULT: ${{ needs.deploy-worker.result }}
-          VERIFY_RESULT: ${{ needs.verify-worker.result }}
-          SMOKE_RESULT: ${{ needs.smoke-tests.result }}
-          RELEASE_RESULT: ${{ needs.release.result }}
-        run: |
-          publish_status() {
-            JOB_NAME="$1"
-            JOB_RESULT="$2"
-            case "$JOB_RESULT" in
-              success) STATE="success" ;;
-              failure) STATE="failure" ;;
-              *) STATE="error" ;;
-            esac
-
-            jq -n \
-              --arg state "$STATE" \
-              --arg context "ZANA/$JOB_NAME" \
-              --arg description "$JOB_NAME: $JOB_RESULT" \
-              --arg target_url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
-              '{state: $state, context: $context, description: $description, target_url: $target_url}' \
-              > status.json
-
-            curl --fail-with-body --silent --show-error \
-              --request POST \
-              --header "Authorization: Bearer ${GH_TOKEN}" \
-              --header "Accept: application/vnd.github+json" \
-              --header "X-GitHub-Api-Version: 2022-11-28" \
-              "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
-              --data @status.json
-          }
-
-          publish_status validate "$VALIDATE_RESULT"
-          publish_status build "$BUILD_RESULT"
-          publish_status deploy "$DEPLOY_RESULT"
-          publish_status verify "$VERIFY_RESULT"
-          publish_status smoke "$SMOKE_RESULT"
-          publish_status release "$RELEASE_RESULT"

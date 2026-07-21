@@ -236,14 +236,73 @@ function getAiClient(env: Env): GoogleGenAI {
 export default {
   async fetch(request: Request, env: Env, ctx?: any): Promise<Response> {
     const url = new URL(request.url);
-    const pathname = url.pathname;
+    // Path normalization: replace multiple slashes with a single slash
+    let pathname = url.pathname.replace(/\/+/g, "/");
 
-    // Handle Static Assets and SPA Fallback via Cloudflare env.ASSETS binding
+    // Standard trailing slash normalization for API endpoints (e.g. /api/health/ -> /api/health)
+    if (pathname.startsWith("/api/") && pathname.endsWith("/") && pathname.length > 5) {
+      pathname = pathname.slice(0, -1);
+    }
+
+    const origin = request.headers.get("Origin");
+    const responseHeaders = getCorsHeaders(origin, env);
+    responseHeaders.set("Content-Type", "application/json");
+
+    // Propagate JWT secret and environment to AuthService context
+    if (env.JWT_SECRET) {
+      if (typeof process === "undefined") {
+        (globalThis as any).process = { env: {} };
+      }
+      process.env = process.env || {};
+      process.env.JWT_SECRET = env.JWT_SECRET;
+      process.env.ZANA_ENV = "production";
+    }
+
+    // Handle OPTIONS preflight
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: getCorsHeaders(origin, env),
+      });
+    }
+
+    // Origin Enforcement
+    if (!isOriginAllowed(origin, env)) {
+      return new Response(
+        JSON.stringify({ error: "Disallowed Origin" }),
+        { status: 403, headers: responseHeaders }
+      );
+    }
+
+    // === ROUTE ORDER 1: /api/health ===
+    if (pathname === "/api/health") {
+      if (request.method === "GET") {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            status: "ok",
+            service: "zana-api-worker",
+          }),
+          { status: 200, headers: responseHeaders }
+        );
+      }
+    }
+
+    // === ROUTE ORDER 3 & 4: Static assets and SPA fallback ===
     if (!pathname.startsWith("/api/")) {
       if (env.ASSETS) {
         try {
           const assetResponse = await env.ASSETS.fetch(request.clone());
           if (assetResponse.status === 404) {
+            // Check if request is for a missing static asset vs SPA route
+            const lastSegment = pathname.substring(pathname.lastIndexOf("/") + 1);
+            const hasExtension = lastSegment.includes(".") && !lastSegment.endsWith(".");
+            if (hasExtension) {
+              return new Response(
+                JSON.stringify({ error: "فایلەکە نەدۆزرایەوە." }),
+                { status: 404, headers: responseHeaders }
+              );
+            }
             // SPA fallback: fetch index.html instead
             const indexUrl = new URL(request.url);
             indexUrl.pathname = "/index.html";
@@ -256,53 +315,12 @@ export default {
       }
     }
 
-    // Propagate JWT secret and environment to AuthService context
-    if (env.JWT_SECRET) {
-      if (typeof process === "undefined") {
-        (globalThis as any).process = { env: {} };
-      }
-      process.env = process.env || {};
-      process.env.JWT_SECRET = env.JWT_SECRET;
-      process.env.ZANA_ENV = "production";
-    }
-
-    const origin = request.headers.get("Origin");
-
-    // Handle CORS preflight
-    if (request.method === "OPTIONS") {
-      return new Response(null, {
-        status: 204,
-        headers: getCorsHeaders(origin, env),
-      });
-    }
-
-    const responseHeaders = getCorsHeaders(origin, env);
-    responseHeaders.set("Content-Type", "application/json");
-
-    // Origin Enforcement
-    if (!isOriginAllowed(origin, env)) {
-      return new Response(
-        JSON.stringify({ error: "Disallowed Origin" }),
-        { status: 403, headers: responseHeaders }
-      );
-    }
-
     const clientIp = request.headers.get("CF-Connecting-IP") || "unknown";
 
-    // FUTURE EXTENSION POINT: Firebase App Check token verification.
-    // To verify App Check tokens on the server, you would validate the 'x-appcheck-token' header 
-    // using Firebase App Check Admin SDK or by calling the Firebase App Check public verification API.
-    //
-    // const appCheckToken = request.headers.get("x-appcheck-token");
-    // if (appCheckToken) {
-    //   const isValid = await verifyAppCheckToken(appCheckToken, env);
-    //   if (!isValid) return new Response("Invalid App Check Token", { status: 401, headers: responseHeaders });
-    // }
-
-    // Rate limiting per-IP & per-endpoint
+    // Rate limiting per-IP & per-endpoint for other API routes
     const limit = pathname === "/api/study/vision" ? 10 : 60;
     const windowMs = 10 * 60 * 1000; // 10 minutes
-    if (pathname.startsWith("/api/") && pathname !== "/api/health") {
+    if (pathname.startsWith("/api/")) {
       if (isRateLimited(`${clientIp}:${pathname}`, limit, windowMs)) {
         return new Response(
           JSON.stringify({
@@ -314,16 +332,6 @@ export default {
     }
 
     try {
-      // Endpoint: GET /api/health
-      if (pathname === "/api/health" && request.method === "GET") {
-        return new Response(
-          JSON.stringify({
-            status: "ok",
-            service: "zana-api-worker",
-          }),
-          { status: 200, headers: responseHeaders }
-        );
-      }
 
       // Endpoint: POST /api/chat
       if (pathname === "/api/chat" && request.method === "POST") {
