@@ -22,7 +22,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # STAGE 1: Preflight Secrets Check (Run BEFORE npm ci, lint, typecheck, build for production pushes)
+      # STAGE 1: Preflight Secrets Check
       - name: Preflight Secrets Check
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
@@ -120,23 +120,83 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      # STAGE 4: Worker Validation
-      - name: Build Worker (Validation)
-        run: |
-          set -euo pipefail
-          npm run build:worker 2>&1 | tee build-worker.log
-
-      # STAGE 5: Application Build
+      # STAGE 4.1: Client and Server Application Build
       - name: Build Client and Server
         env:
           VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
         run: |
           set -euo pipefail
           npm run build 2>&1 | tee build.log
-          # Generate checksums for build verification
-          find dist/ -type f | sort | xargs sha256sum > dist/checksums.txt
-          echo "Generated checksums for build outputs:"
-          cat dist/checksums.txt
+
+      # STAGE 4.2: Explicit Client Output Verification
+      - name: Verify Client Output Explicitly
+        run: |
+          set -euo pipefail
+          echo "Verifying dist/client build artifacts..."
+          if [ ! -d "dist/client" ]; then
+            echo "::error::dist/client directory does not exist!"
+            exit 1
+          fi
+          if [ ! -f "dist/client/index.html" ]; then
+            echo "::error::dist/client/index.html does not exist!"
+            exit 1
+          fi
+
+          JS_COUNT=$(find dist/client -type f -name "*.js" | wc -l)
+          if [ "$JS_COUNT" -eq 0 ]; then
+            echo "::error::No JavaScript assets found in dist/client!"
+            exit 1
+          fi
+
+          HTML_SIZE=$(stat -c%s "dist/client/index.html" 2>/dev/null || stat -f%z "dist/client/index.html")
+          if [ "$HTML_SIZE" -lt 50 ]; then
+            echo "::error::dist/client/index.html appears to be a placeholder (size $HTML_SIZE bytes)!"
+            exit 1
+          fi
+
+          MAP_COUNT=$(find dist/client -type f -name "*.map" | wc -l)
+          if [ "$MAP_COUNT" -ne 0 ]; then
+            echo "::error::Source map files (.map) were found in dist/client!"
+            find dist/client -type f -name "*.map"
+            exit 1
+          fi
+
+          echo "Explicit client output verification succeeded."
+
+      # STAGE 4.3: Worker Validation (Only runs after dist/client exists)
+      - name: Build Worker (Validation)
+        run: |
+          set -euo pipefail
+          npm run build:worker 2>&1 | tee build-worker.log
+
+      # STAGE 4.4: Checksum Generation and Self-Verification
+      - name: Generate and Verify Build Checksums
+        run: |
+          set -euo pipefail
+          CHECKSUM_FILE="${RUNNER_TEMP:-/tmp}/build-checksums.txt"
+          
+          echo "Generating build checksum manifest outside dist..."
+          find dist -type f \
+            ! -name 'checksums.txt' \
+            -print0 \
+            | sort -z \
+            | xargs -0 sha256sum \
+            > "$CHECKSUM_FILE"
+
+          if [ ! -s "$CHECKSUM_FILE" ]; then
+            echo "::error::Generated checksum manifest is empty!"
+            exit 1
+          fi
+
+          cp "$CHECKSUM_FILE" dist/checksums.txt
+
+          if grep -q "checksums.txt" dist/checksums.txt; then
+            echo "::error::dist/checksums.txt contains a self-referential entry!"
+            exit 1
+          fi
+
+          echo "Verifying build checksums before artifact upload:"
+          sha256sum -c dist/checksums.txt
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
@@ -176,6 +236,16 @@ jobs:
         run: |
           set -euo pipefail
           echo "Verifying artifact checksums..."
+          if [ ! -f "dist/checksums.txt" ]; then
+            echo "::error::dist/checksums.txt is missing from build artifact!"
+            exit 1
+          fi
+
+          if grep -q "checksums.txt" dist/checksums.txt; then
+            echo "::error::dist/checksums.txt contains self-referential entries!"
+            exit 1
+          fi
+
           sha256sum -c dist/checksums.txt
           
           echo "Verifying dist/client directory..."
@@ -183,14 +253,22 @@ jobs:
             echo "::error::dist/client directory is missing!"
             exit 1
           fi
+          if [ ! -f "dist/client/index.html" ]; then
+            echo "::error::dist/client/index.html is missing!"
+            exit 1
+          fi
           
-          echo "Verifying Worker entrypoint..."
+          echo "Verifying Worker entrypoint and configuration..."
           if [ ! -f "src/worker/index.ts" ]; then
             echo "::error::Worker entrypoint src/worker/index.ts is missing!"
             exit 1
           fi
+          if [ ! -f "wrangler.jsonc" ]; then
+            echo "::error::Worker configuration wrangler.jsonc is missing!"
+            exit 1
+          fi
           
-          echo "Verification successful!"
+          echo "Artifact integrity verification successful!"
 
       # Resolve deterministic KV namespace binding
       - name: Resolve deterministic KV namespace binding
@@ -243,7 +321,7 @@ jobs:
             metadata-worker/
 
   verify-worker:
-    name: Verify Worker Live Health
+    name: Verify Worker Live Health & Exposure
     needs: deploy-worker
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -255,18 +333,15 @@ jobs:
         run: |
           set -euo pipefail
           
-          # Clean and remove trailing slash from base URL
           CLEANED_URL=$(echo "$CLEANED_URL" | sed 's/\/$//')
           export CLEANED_URL
           echo "Verifying live Cloudflare Worker at: $CLEANED_URL"
           
-          # Validation Checks: Reject empty, HTTP, malformed, or non-canonical URLs
           if [ -z "$CLEANED_URL" ]; then
             echo "::error::API Base URL is empty!"
             exit 1
           fi
           
-          # Use Node URL parsing to structurally validate (Objective 6)
           node -e "
           try {
             const u = new URL(process.env.CLEANED_URL);
@@ -283,15 +358,13 @@ jobs:
           }
           "
 
-          # 1. Diagnose redirect temporarily
-          # We perform a diagnostic curl without following redirects first to log details.
+          # Diagnostic run
           DIAG_HEADER_FILE=$(mktemp)
           DIAG_BODY_FILE=$(mktemp)
           
           echo "--- DIAGNOSTIC RUN ---"
           echo "Requested health URL: $CLEANED_URL/api/health"
           
-          # Perform a non-redirecting curl to inspect the response details
           HTTP_STATUS=$(curl --silent --show-error \
             --connect-timeout 10 \
             --max-time 20 \
@@ -309,7 +382,6 @@ jobs:
           CONTENT_TYPE_HEADER=$(grep -i '^content-type:' "$DIAG_HEADER_FILE" | awk -F': ' '{print $2}' | tr -d '\r\n ' || echo "None")
           echo "Content-Type: $CONTENT_TYPE_HEADER"
           
-          # Run diagnostic to find redirect count and effective destination
           DIAG_CURL_OUT=$(curl --silent --show-error --location --max-redirs 5 \
             --connect-timeout 10 \
             --max-time 20 \
@@ -335,11 +407,9 @@ jobs:
           fi
           echo "----------------------"
 
-          # 2. Permanent Strict Verification (Must be 200, zero redirects, valid JSON)
           RESPONSE_FILE=$(mktemp)
           HEADER_FILE=$(mktemp)
 
-          # We do NOT use curl -L here because the health check must respond with 200 directly (zero redirects).
           HTTP_CODE=$(curl --fail-with-body --silent --show-error \
             --connect-timeout 10 \
             --max-time 30 \
@@ -379,7 +449,6 @@ jobs:
             exit 1
           fi
 
-          # Get the access-control-allow-origin header from HEADER_FILE (case-insensitive search, trim CR/LF and spaces)
           CORS_HEADER=$(grep -i 'access-control-allow-origin' "$HEADER_FILE" | head -n 1 | awk -F': ' '{print $2}' | tr -d '\r\n ' || echo "")
 
           echo "Received CORS Allowed Origin: '$CORS_HEADER'"
@@ -390,6 +459,63 @@ jobs:
           fi
 
           echo "Worker response verified successfully!"
+
+      - name: Verify Production Exposure Security
+        env:
+          CLEANED_URL: ${{ secrets.VITE_API_BASE_URL }}
+        run: |
+          set -euo pipefail
+          CLEANED_URL=$(echo "$CLEANED_URL" | sed 's/\/$//')
+          echo "Verifying production exposure security at $CLEANED_URL..."
+          
+          PATHS_TO_CHECK=(
+            "/.env"
+            "/.env.local"
+            "/.env.production"
+            "/.dev.vars"
+            "/package.json"
+            "/wrangler.jsonc"
+            "/wrangler.production.json"
+            "/src/worker/index.ts"
+            "/src/test/setupEnv.ts"
+            "/scripts/resolve-kv.js"
+            "/assets/index.js.map"
+          )
+
+          FORBIDDEN_EXPOSED=0
+
+          for p in "${PATHS_TO_CHECK[@]}"; do
+            echo "Checking sensitive path exposure: ${CLEANED_URL}${p}"
+            RESP_FILE=$(mktemp)
+            
+            HTTP_STATUS=$(curl --silent --show-error \
+              --connect-timeout 10 \
+              --max-time 15 \
+              -o "$RESP_FILE" \
+              -w "%{http_code}" \
+              "${CLEANED_URL}${p}")
+
+            echo "Path ${p} -> Status: ${HTTP_STATUS}"
+
+            if [ "$HTTP_STATUS" -eq 200 ]; then
+              echo "::error::Security exposure failure: Path '${p}' returned HTTP 200!"
+              FORBIDDEN_EXPOSED=1
+            fi
+
+            if grep -iq "<!DOCTYPE html>" "$RESP_FILE" || grep -iq "<html" "$RESP_FILE"; then
+              echo "::error::Security exposure failure: Path '${p}' returned HTML (SPA fallback) instead of a real 404!"
+              FORBIDDEN_EXPOSED=1
+            fi
+
+            rm -f "$RESP_FILE"
+          done
+
+          if [ "$FORBIDDEN_EXPOSED" -ne 0 ]; then
+            echo "Production exposure security checks failed!"
+            exit 1
+          fi
+
+          echo "Production exposure security checks passed successfully!"
 
   smoke-tests:
     name: Run Production Smoke Tests
@@ -437,7 +563,6 @@ jobs:
           set -euo pipefail
           echo "Scanning codebase for security exposures..."
           
-          # Check for forbidden files
           FORBIDDEN_FILES=(".env" ".env.production" "wrangler.toml" "wrangler.production.json" "firebase-service-account.json")
           for file in "${FORBIDDEN_FILES[@]}"; do
             if [ -f "$file" ]; then
@@ -446,8 +571,6 @@ jobs:
             fi
           done
 
-          # Check for typical API Key patterns or private keys accidentally committed
-          # Excluding package.json, package-lock.json, and workflows/ci.yml to avoid false positives
           echo "Scanning for private keys..."
           if grep -r -l "BEGIN PRIVATE KEY" --exclude-dir=node_modules --exclude=package.json --exclude=package-lock.json --exclude-dir=.github .; then
             echo "::error::Security Exposure Check Failed: Found possible private key committed in the codebase!"
@@ -540,11 +663,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           
-          # Create Git Tag
           git tag -a "$RELEASE_TAG" -m "Automated production release $RELEASE_TAG"
           git push origin "$RELEASE_TAG"
           
-          # Create GitHub Release with release-summary attached
           gh release create "$RELEASE_TAG" \
             --title "Production Release $RELEASE_TAG" \
             --notes "Automated release triggered by GitHub Action run ${{ github.run_id }}. Commit: ${{ github.sha }}." \
@@ -571,7 +692,6 @@ jobs:
         run: |
           set -euo pipefail
           
-          # Map function to convert GitHub Action job status to GitHub commit status state
           map_status() {
             local status="$1"
             case "$status" in
@@ -636,4 +756,5 @@ jobs:
           post_status "ZANA/deploy" "$DEPLOY_STATUS"
           post_status "ZANA/verify" "$VERIFY_STATUS"
           post_status "ZANA/smoke" "$SMOKE_STATUS"
+          post_status "ZANA/security" "$SECURITY_STATUS"
           post_status "ZANA/release" "$RELEASE_STATUS"
