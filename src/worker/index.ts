@@ -5,6 +5,7 @@ import { AdaptiveLearningEngine } from "../learning/engine/AdaptiveLearningEngin
 import { DifficultyLevel, MisconceptionStatus } from "../learning/domain/MasteryTypes.ts";
 import { CurriculumRegistry } from "../curriculum/registry/CurriculumRegistry.ts";
 import { AuthService } from "../services/authService.ts";
+import { getPrimaryModel as getCentralPrimaryModel, getVisionModel as getCentralVisionModel } from "../server/config/aiModels.ts";
 import {
   PersistentAssessmentRecordProvider,
   AssessmentService,
@@ -29,7 +30,15 @@ export type SafeErrorCategory =
   | "timeout"
   | "upload_too_large"
   | "unsupported_file"
+  | "missing_credentials"
+  | "invalid_credentials"
+  | "permission_denied"
+  | "model_not_found"
+  | "invalid_provider_request"
+  | "quota_exceeded"
+  | "rate_limited"
   | "provider_unavailable"
+  | "invalid_provider_response"
   | "internal";
 
 // 1. LIGHTWEIGHT IN-MEMORY RATE LIMITING FOR WORKER ISOLATES
@@ -74,26 +83,44 @@ export function classifyError(error: unknown): SafeErrorCategory {
     return "timeout";
   }
 
+  if (lowerMsg.includes("gemini_api_key") || lowerMsg.includes("missing key") || lowerMsg.includes("api key missing") || lowerMsg.includes("key is required")) {
+    return "missing_credentials";
+  }
+
+  if (lowerMsg.includes("401") || lowerMsg.includes("unauthorized") || lowerMsg.includes("invalid key") || lowerMsg.includes("invalid_api_key")) {
+    return "invalid_credentials";
+  }
+
+  if (lowerMsg.includes("403") || lowerMsg.includes("forbidden") || lowerMsg.includes("permission_denied")) {
+    return "permission_denied";
+  }
+
+  if (lowerMsg.includes("404") || lowerMsg.includes("model not found") || lowerMsg.includes("not_found") || lowerMsg.includes("model_not_found")) {
+    return "model_not_found";
+  }
+
+  if (lowerMsg.includes("429") || lowerMsg.includes("quota") || lowerMsg.includes("rate limit") || lowerMsg.includes("resource_exhausted")) {
+    return lowerMsg.includes("rate") ? "rate_limited" : "quota_exceeded";
+  }
+
+  if (lowerMsg.includes("400") || lowerMsg.includes("invalid request") || lowerMsg.includes("invalid_argument")) {
+    return "invalid_provider_request";
+  }
+
+  if (lowerMsg.includes("invalid json") || lowerMsg.includes("parse error") || lowerMsg.includes("response validation")) {
+    return "invalid_provider_response";
+  }
+
   if (
-    lowerMsg.includes("api_key") ||
-    lowerMsg.includes("api key") ||
-    lowerMsg.includes("googlegenai") ||
-    lowerMsg.includes("quota") ||
-    lowerMsg.includes("provider") ||
-    lowerMsg.includes("model") ||
-    lowerMsg.includes("unavailable") ||
-    lowerMsg.includes("fetcherror") ||
-    lowerMsg.includes("connect") ||
-    lowerMsg.includes("401") ||
-    lowerMsg.includes("403") ||
-    lowerMsg.includes("404") ||
-    lowerMsg.includes("429") ||
     lowerMsg.includes("500") ||
     lowerMsg.includes("502") ||
     lowerMsg.includes("503") ||
-    lowerMsg.includes("unauthorized") ||
-    lowerMsg.includes("forbidden") ||
-    lowerMsg.includes("not found")
+    lowerMsg.includes("504") ||
+    lowerMsg.includes("googlegenai") ||
+    lowerMsg.includes("provider") ||
+    lowerMsg.includes("unavailable") ||
+    lowerMsg.includes("fetcherror") ||
+    lowerMsg.includes("connect")
   ) {
     return "provider_unavailable";
   }
@@ -122,7 +149,15 @@ export function getClientSafeErrorMessage(category: SafeErrorCategory): string {
       return "قەبارەی وێنەکە زۆر گەورەیە؛ تکایە وێنەیەک کەمتر لە ٥ مێگابایت هەڵبژێرە.";
     case "unsupported_file":
       return "جۆری ئەم فایلە پشتگیری ناکرێت. تەنها JPG، PNG و WebP بەکاربهێنە.";
+    case "missing_credentials":
+    case "invalid_credentials":
+    case "permission_denied":
+    case "model_not_found":
+    case "invalid_provider_request":
+    case "quota_exceeded":
+    case "rate_limited":
     case "provider_unavailable":
+    case "invalid_provider_response":
       return "خزمەتگوزارییەکە لە ئێستادا بەردەست نییە. تکایە دواتر هەوڵ بدەرەوە.";
     case "internal":
     default:
@@ -181,11 +216,11 @@ export function validateImageSignature(buffer: Uint8Array, declaredMimeType: str
 
 // 4. MODEL HELPERS
 function getPrimaryModel(env: Env): string {
-  return env.GEMINI_PRIMARY_MODEL || "gemini-3.6-flash";
+  return getCentralPrimaryModel({ GEMINI_PRIMARY_MODEL: env.GEMINI_PRIMARY_MODEL });
 }
 
 function getVisionModel(env: Env): string {
-  return env.GEMINI_VISION_MODEL || "gemini-3.6-flash";
+  return getCentralVisionModel({ GEMINI_VISION_MODEL: env.GEMINI_VISION_MODEL });
 }
 
 // 5. CORS AND SECURITY POLICIES

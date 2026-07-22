@@ -316,16 +316,46 @@ test("Worker - missing payload on /api/study/ask returns 400 with correct Kurdis
 });
 
 test("Worker - error classification mapping for 401, 403, 404, 429, 500, timeout", () => {
-  assert.strictEqual(classifyError(new Error("HTTP 401 Unauthorized")), "provider_unavailable");
-  assert.strictEqual(classifyError(new Error("HTTP 403 Forbidden")), "provider_unavailable");
-  assert.strictEqual(classifyError(new Error("HTTP 404 Model Not Found")), "provider_unavailable");
-  assert.strictEqual(classifyError(new Error("HTTP 429 Quota Exceeded")), "provider_unavailable");
+  assert.strictEqual(classifyError(new Error("GEMINI_API_KEY missing")), "missing_credentials");
+  assert.strictEqual(classifyError(new Error("HTTP 401 Unauthorized")), "invalid_credentials");
+  assert.strictEqual(classifyError(new Error("HTTP 403 Forbidden")), "permission_denied");
+  assert.strictEqual(classifyError(new Error("HTTP 404 Model Not Found")), "model_not_found");
+  assert.strictEqual(classifyError(new Error("HTTP 429 Quota Exceeded")), "quota_exceeded");
+  assert.strictEqual(classifyError(new Error("HTTP 429 Rate Limit")), "rate_limited");
+  assert.strictEqual(classifyError(new Error("HTTP 400 Invalid Request")), "invalid_provider_request");
+  assert.strictEqual(classifyError(new Error("Invalid JSON response")), "invalid_provider_response");
   assert.strictEqual(classifyError(new Error("HTTP 500 Internal Server Error")), "provider_unavailable");
   assert.strictEqual(classifyError(new Error("Connection timeout ETIMEDOUT")), "timeout");
 
+  assert.strictEqual(getClientSafeErrorMessage("missing_credentials"), "خزمەتگوزارییەکە لە ئێستادا بەردەست نییە. تکایە دواتر هەوڵ بدەرەوە.");
+  assert.strictEqual(getClientSafeErrorMessage("invalid_credentials"), "خزمەتگوزارییەکە لە ئێستادا بەردەست نییە. تکایە دواتر هەوڵ بدەرەوە.");
+  assert.strictEqual(getClientSafeErrorMessage("permission_denied"), "خزمەتگوزارییەکە لە ئێستادا بەردەست نییە. تکایە دواتر هەوڵ بدەرەوە.");
+  assert.strictEqual(getClientSafeErrorMessage("model_not_found"), "خزمەتگوزارییەکە لە ئێستادا بەردەست نییە. تکایە دواتر هەوڵ بدەرەوە.");
+  assert.strictEqual(getClientSafeErrorMessage("quota_exceeded"), "خزمەتگوزارییەکە لە ئێستادا بەردەست نییە. تکایە دواتر هەوڵ بدەرەوە.");
   assert.strictEqual(getClientSafeErrorMessage("provider_unavailable"), "خزمەتگوزارییەکە لە ئێستادا بەردەست نییە. تکایە دواتر هەوڵ بدەرەوە.");
   assert.strictEqual(getClientSafeErrorMessage("timeout"), "کاتەکە تەواو بوو. تکایە دووبارە هەوڵبدەرەوە.");
   assert.strictEqual(getClientSafeErrorMessage("upload_too_large"), "قەبارەی وێنەکە زۆر گەورەیە؛ تکایە وێنەیەک کەمتر لە ٥ مێگابایت هەڵبژێرە.");
   assert.strictEqual(getClientSafeErrorMessage("unsupported_file"), "جۆری ئەم فایلە پشتگیری ناکرێت. تەنها JPG، PNG و WebP بەکاربهێنە.");
+});
+
+test("Centralized model resolution - Worker Env and Node process.env override default model", async () => {
+  const { getPrimaryModel, getVisionModel } = await import("../server/config/aiModels.ts");
+
+  // Default fallback
+  assert.strictEqual(getPrimaryModel(), "gemini-3.6-flash");
+  assert.strictEqual(getVisionModel(), "gemini-3.6-flash");
+
+  // Worker Env override
+  assert.strictEqual(getPrimaryModel({ GEMINI_PRIMARY_MODEL: "custom-worker-primary" }), "custom-worker-primary");
+  assert.strictEqual(getVisionModel({ GEMINI_VISION_MODEL: "custom-worker-vision" }), "custom-worker-vision");
+
+  // Node process.env override
+  process.env.GEMINI_PRIMARY_MODEL = "custom-node-primary";
+  process.env.GEMINI_VISION_MODEL = "custom-node-vision";
+  assert.strictEqual(getPrimaryModel(), "custom-node-primary");
+  assert.strictEqual(getVisionModel(), "custom-node-vision");
+
+  delete process.env.GEMINI_PRIMARY_MODEL;
+  delete process.env.GEMINI_VISION_MODEL;
 });
 
