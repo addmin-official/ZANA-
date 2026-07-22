@@ -4,6 +4,7 @@ import { DifficultyLevel } from "../../learning/domain/MasteryTypes.ts";
 import { QuestionBankProvider } from "../providers/QuestionBankProvider.ts";
 import { CurriculumRegistry } from "../../curriculum/registry/CurriculumRegistry.ts";
 import { ContentUsageGuard } from "../../curriculum/licensing/ContentUsageGuard.ts";
+import { getPrimaryModel } from "../../server/config/aiModels.ts";
 
 export class QuestionGenerator {
   /**
@@ -35,7 +36,7 @@ export class QuestionGenerator {
 
     // Initialize client
     const ai = new GoogleGenAI({ apiKey: key });
-    const model = "gemini-2.5-flash";
+    const model = getPrimaryModel();
 
     const prompt = `
 Generate an original assessment question for Grade 9 Math in Kurdistan.

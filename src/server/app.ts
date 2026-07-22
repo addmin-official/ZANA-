@@ -246,7 +246,7 @@ app.post("/api/chat", rateLimitMiddleware(60, 10 * 60 * 1000), async (req: Reque
     const { message, history, profile } = req.body;
 
     if (!message || !profile) {
-      return res.status(400).json({ error: "داواکارییەکە کەم و کوڕی تێدایە." });
+      return res.status(400).json({ error: "داواکارییەکە کەموکوڕی تێدایە." });
     }
 
     // Curriculum Retrieval and Licensing Guard
@@ -492,7 +492,7 @@ app.post("/api/study/ask", rateLimitMiddleware(60, 10 * 60 * 1000), async (req: 
     const { message, history, context } = req.body;
 
     if (!message || !context) {
-      return res.status(400).json({ error: "داواکارییەکە کەم و کوڕی تێدایە." });
+      return res.status(400).json({ error: "داواکارییەکە کەموکوڕی تێدایە." });
     }
 
     // Curriculum Retrieval and Licensing Guard

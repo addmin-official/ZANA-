@@ -83,7 +83,17 @@ export function classifyError(error: unknown): SafeErrorCategory {
     lowerMsg.includes("model") ||
     lowerMsg.includes("unavailable") ||
     lowerMsg.includes("fetcherror") ||
-    lowerMsg.includes("connect")
+    lowerMsg.includes("connect") ||
+    lowerMsg.includes("401") ||
+    lowerMsg.includes("403") ||
+    lowerMsg.includes("404") ||
+    lowerMsg.includes("429") ||
+    lowerMsg.includes("500") ||
+    lowerMsg.includes("502") ||
+    lowerMsg.includes("503") ||
+    lowerMsg.includes("unauthorized") ||
+    lowerMsg.includes("forbidden") ||
+    lowerMsg.includes("not found")
   ) {
     return "provider_unavailable";
   }
@@ -171,11 +181,11 @@ export function validateImageSignature(buffer: Uint8Array, declaredMimeType: str
 
 // 4. MODEL HELPERS
 function getPrimaryModel(env: Env): string {
-  return env.GEMINI_PRIMARY_MODEL || "gemini-2.5-flash";
+  return env.GEMINI_PRIMARY_MODEL || "gemini-3.6-flash";
 }
 
 function getVisionModel(env: Env): string {
-  return env.GEMINI_VISION_MODEL || "gemini-2.5-flash";
+  return env.GEMINI_VISION_MODEL || "gemini-3.6-flash";
 }
 
 // 5. CORS AND SECURITY POLICIES
@@ -344,7 +354,7 @@ export default {
 
         if (!message || !profile) {
           return new Response(
-            JSON.stringify({ error: "داواکارییەکە کەم و کوڕی تێدایە." }),
+            JSON.stringify({ error: "داواکارییەکە کەموکوڕی تێدایە." }),
             { status: 400, headers: responseHeaders }
           );
         }
@@ -557,7 +567,7 @@ Scale: وەڵامەکەت تەنها بە فۆرماتی خواستراوی JSON
 
         if (!message || !context) {
           return new Response(
-            JSON.stringify({ error: "داواکارییەکە کەم و کوڕی تێدایە." }),
+            JSON.stringify({ error: "داواکارییەکە کەموکوڕی تێدایە." }),
             { status: 400, headers: responseHeaders }
           );
         }
@@ -1264,7 +1274,7 @@ ${modeInstructions}
         const { attemptId, questionId, submission, blueprint } = body;
 
         if (!attemptId || !questionId || !submission || !blueprint) {
-          return new Response(JSON.stringify({ error: "ناردنی داواکارییەکە کەم و کوڕی تێدایە." }), { status: 400, headers: responseHeaders });
+          return new Response(JSON.stringify({ error: "ناردنی داواکارییەکە کەموکوڕی تێدایە." }), { status: 400, headers: responseHeaders });
         }
 
         const lp = new PersistentLearningRecordProvider(env.LEARNING_RECORDS_KV || env.ZANA_LEARNING_KV, "production");
@@ -1295,7 +1305,7 @@ ${modeInstructions}
         const { attemptId, blueprint } = body;
 
         if (!attemptId || !blueprint) {
-          return new Response(JSON.stringify({ error: "ناردنی داواکارییەکە کەم و کوڕی تێدایە." }), { status: 400, headers: responseHeaders });
+          return new Response(JSON.stringify({ error: "ناردنی داواکارییەکە کەموکوڕی تێدایە." }), { status: 400, headers: responseHeaders });
         }
 
         const lp = new PersistentLearningRecordProvider(env.LEARNING_RECORDS_KV || env.ZANA_LEARNING_KV, "production");
@@ -1341,6 +1351,13 @@ ${modeInstructions}
         { status: 404, headers: responseHeaders }
       );
     } catch (err: unknown) {
+      console.error("[AI Worker Diagnostic]", {
+        pathname,
+        hasApiKey: Boolean(env.GEMINI_API_KEY),
+        modelPrimary: getPrimaryModel(env),
+        modelVision: getVisionModel(env),
+        error: err instanceof Error ? err.message.replace(/key=[^&]+/gi, "key=REDACTED") : String(err),
+      });
       const category = classifyError(err);
       return new Response(
         JSON.stringify({ error: getClientSafeErrorMessage(category) }),

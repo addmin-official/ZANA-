@@ -2,7 +2,7 @@ process.env.NODE_ENV = "test";
 process.env.ZANA_ENV = "test";
 import { test } from "node:test";
 import assert from "node:assert";
-import worker from "./index.ts";
+import worker, { classifyError, getClientSafeErrorMessage } from "./index.ts";
 
 // Helper to create a mock Env
 const createMockEnv = (assetsMock?: any) => ({
@@ -251,3 +251,81 @@ test("CI Utility - HTTP production URL is rejected", () => {
   assert.throws(() => validateUrl("https://zana-api-worker.zana-platform.workers.dev/api/health"), /must be the domain origin/);
   assert.throws(() => validateUrl(""), /URL is empty/);
 });
+
+test("Worker - missing GEMINI_API_KEY on AI endpoint returns safe Kurdish error and 500", async () => {
+  const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/chat", {
+    method: "POST",
+    headers: {
+      Origin: "https://zana-app.web.app",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      message: "پرسیارم هەیە",
+      profile: { name: "Amed", grade: "9", activeSubject: "math", level: "سەرەتا" }
+    })
+  });
+
+  const envWithoutKey: any = {
+    ALLOWED_ORIGINS: "https://zana-app.web.app",
+    GEMINI_API_KEY: ""
+  };
+
+  const res = await worker.fetch(req, envWithoutKey);
+  assert.strictEqual(res.status, 500);
+  const body = await res.json() as any;
+  assert.strictEqual(body.error, "خزمەتگوزارییەکە لە ئێستادا بەردەست نییە. تکایە دواتر هەوڵ بدەرەوە.");
+  // Ensure no secret text or stack trace is exposed
+  assert.strictEqual(body.stack, undefined);
+  assert.strictEqual(body.apiKey, undefined);
+});
+
+test("Worker - missing payload on /api/chat returns 400 with correct Kurdish spelling (کەموکوڕی)", async () => {
+  const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/chat", {
+    method: "POST",
+    headers: {
+      Origin: "https://zana-app.web.app",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ message: "Hello" }) // Missing profile
+  });
+
+  const env = createMockEnv();
+  const res = await worker.fetch(req, env);
+
+  assert.strictEqual(res.status, 400);
+  const body = await res.json() as any;
+  assert.strictEqual(body.error, "داواکارییەکە کەموکوڕی تێدایە.");
+});
+
+test("Worker - missing payload on /api/study/ask returns 400 with correct Kurdish spelling (کەموکوڕی)", async () => {
+  const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/study/ask", {
+    method: "POST",
+    headers: {
+      Origin: "https://zana-app.web.app",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ message: "Hello" }) // Missing context
+  });
+
+  const env = createMockEnv();
+  const res = await worker.fetch(req, env);
+
+  assert.strictEqual(res.status, 400);
+  const body = await res.json() as any;
+  assert.strictEqual(body.error, "داواکارییەکە کەموکوڕی تێدایە.");
+});
+
+test("Worker - error classification mapping for 401, 403, 404, 429, 500, timeout", () => {
+  assert.strictEqual(classifyError(new Error("HTTP 401 Unauthorized")), "provider_unavailable");
+  assert.strictEqual(classifyError(new Error("HTTP 403 Forbidden")), "provider_unavailable");
+  assert.strictEqual(classifyError(new Error("HTTP 404 Model Not Found")), "provider_unavailable");
+  assert.strictEqual(classifyError(new Error("HTTP 429 Quota Exceeded")), "provider_unavailable");
+  assert.strictEqual(classifyError(new Error("HTTP 500 Internal Server Error")), "provider_unavailable");
+  assert.strictEqual(classifyError(new Error("Connection timeout ETIMEDOUT")), "timeout");
+
+  assert.strictEqual(getClientSafeErrorMessage("provider_unavailable"), "خزمەتگوزارییەکە لە ئێستادا بەردەست نییە. تکایە دواتر هەوڵ بدەرەوە.");
+  assert.strictEqual(getClientSafeErrorMessage("timeout"), "کاتەکە تەواو بوو. تکایە دووبارە هەوڵبدەرەوە.");
+  assert.strictEqual(getClientSafeErrorMessage("upload_too_large"), "قەبارەی وێنەکە زۆر گەورەیە؛ تکایە وێنەیەک کەمتر لە ٥ مێگابایت هەڵبژێرە.");
+  assert.strictEqual(getClientSafeErrorMessage("unsupported_file"), "جۆری ئەم فایلە پشتگیری ناکرێت. تەنها JPG، PNG و WebP بەکاربهێنە.");
+});
+
