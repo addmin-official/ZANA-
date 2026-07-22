@@ -1,0 +1,1 @@
+{"ok":true,"status":"ok","service":"zana-api-worker"}

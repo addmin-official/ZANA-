@@ -11,7 +11,7 @@ const createMockEnv = (assetsMock?: any) => ({
   ASSETS: assetsMock,
 });
 
-test("Worker - GET /api/health returns 200 JSON and zero redirect headers", async () => {
+test("Worker - GET /api/health with approved Origin returns 200 and exact CORS origin", async () => {
   const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/health", {
     method: "GET",
     headers: {
@@ -25,6 +25,7 @@ test("Worker - GET /api/health returns 200 JSON and zero redirect headers", asyn
   assert.strictEqual(res.status, 200);
   assert.strictEqual(res.headers.get("content-type"), "application/json");
   assert.strictEqual(res.headers.get("location"), null); // zero redirects
+  assert.strictEqual(res.headers.get("access-control-allow-origin"), "https://zana-app.web.app");
 
   const body = await res.json() as any;
   assert.strictEqual(body.ok, true);
@@ -32,8 +33,56 @@ test("Worker - GET /api/health returns 200 JSON and zero redirect headers", asyn
   assert.strictEqual(body.service, "zana-api-worker");
 });
 
-test("Worker - GET /api/health requires no authentication", async () => {
+test("Worker - GET /api/health without Origin header returns 200 without CORS header", async () => {
   const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/health", {
+    method: "GET"
+  });
+
+  const env = createMockEnv();
+  const res = await worker.fetch(req, env);
+
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.headers.get("access-control-allow-origin"), null);
+  const body = await res.json() as any;
+  assert.strictEqual(body.ok, true);
+});
+
+test("Worker - GET /api/health with unapproved Origin returns 200 health without CORS header", async () => {
+  const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/health", {
+    method: "GET",
+    headers: {
+      Origin: "https://unauthorized.example"
+    }
+  });
+
+  const env = createMockEnv();
+  const res = await worker.fetch(req, env);
+
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.headers.get("access-control-allow-origin"), null);
+  const body = await res.json() as any;
+  assert.strictEqual(body.ok, true);
+});
+
+test("Worker - GET /api/health is unaffected by missing GEMINI_API_KEY, JWT_SECRET, or KV", async () => {
+  const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/health", {
+    method: "GET"
+  });
+
+  // Empty env without GEMINI_API_KEY, JWT_SECRET, or KV bindings
+  const emptyEnv: any = {
+    ALLOWED_ORIGINS: "https://zana-app.web.app"
+  };
+
+  const res = await worker.fetch(req, emptyEnv);
+
+  assert.strictEqual(res.status, 200);
+  const body = await res.json() as any;
+  assert.strictEqual(body.ok, true);
+});
+
+test("Worker - GET /api/health/ with trailing slash normalizes to /api/health and returns 200", async () => {
+  const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/health/", {
     method: "GET",
     headers: {
       Origin: "https://zana-app.web.app"
@@ -44,8 +93,44 @@ test("Worker - GET /api/health requires no authentication", async () => {
   const res = await worker.fetch(req, env);
 
   assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.headers.get("location"), null);
   const body = await res.json() as any;
   assert.strictEqual(body.ok, true);
+});
+
+test("Worker - Protected API route rejects unapproved Origin with 403", async () => {
+  const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/chat", {
+    method: "POST",
+    headers: {
+      Origin: "https://unauthorized.example",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ message: "hello" })
+  });
+
+  const env = createMockEnv();
+  const res = await worker.fetch(req, env);
+
+  assert.strictEqual(res.status, 403);
+  const body = await res.json() as any;
+  assert.strictEqual(body.error, "Disallowed Origin");
+});
+
+test("Worker - Protected API route allows approved Origin", async () => {
+  const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/chat", {
+    method: "POST",
+    headers: {
+      Origin: "https://zana-app.web.app",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({}) // Invalid payload triggers 400 validation error, confirming origin check passed
+  });
+
+  const env = createMockEnv();
+  const res = await worker.fetch(req, env);
+
+  assert.strictEqual(res.headers.get("access-control-allow-origin"), "https://zana-app.web.app");
+  assert.notStrictEqual(res.status, 403);
 });
 
 test("Worker - GET /api/health is not captured by SPA fallback", async () => {

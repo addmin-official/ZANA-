@@ -200,9 +200,6 @@ function getCorsHeaders(origin: string | null, env: Env): Headers {
   
   if (origin && isOriginAllowed(origin, env)) {
     headers.set("Access-Control-Allow-Origin", origin);
-  } else if (!origin) {
-    // Safe placeholder fallback
-    headers.set("Access-Control-Allow-Origin", "*");
   }
   
   headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -245,38 +242,13 @@ export default {
     }
 
     const origin = request.headers.get("Origin");
-    const responseHeaders = getCorsHeaders(origin, env);
-    responseHeaders.set("Content-Type", "application/json");
 
-    // Propagate JWT secret and environment to AuthService context
-    if (env.JWT_SECRET) {
-      if (typeof process === "undefined") {
-        (globalThis as any).process = { env: {} };
-      }
-      process.env = process.env || {};
-      process.env.JWT_SECRET = env.JWT_SECRET;
-      process.env.ZANA_ENV = "production";
-    }
-
-    // Handle OPTIONS preflight
-    if (request.method === "OPTIONS") {
-      return new Response(null, {
-        status: 204,
-        headers: getCorsHeaders(origin, env),
-      });
-    }
-
-    // Origin Enforcement
-    if (!isOriginAllowed(origin, env)) {
-      return new Response(
-        JSON.stringify({ error: "Disallowed Origin" }),
-        { status: 403, headers: responseHeaders }
-      );
-    }
-
-    // === ROUTE ORDER 1: /api/health ===
+    // === ROUTE ORDER 1: GET /api/health (True public liveness endpoint) ===
     if (pathname === "/api/health") {
       if (request.method === "GET") {
+        const responseHeaders = getCorsHeaders(origin, env);
+        responseHeaders.set("Content-Type", "application/json");
+
         return new Response(
           JSON.stringify({
             ok: true,
@@ -288,7 +260,39 @@ export default {
       }
     }
 
-    // === ROUTE ORDER 3 & 4: Static assets and SPA fallback ===
+    // === ROUTE ORDER 2: Handle OPTIONS preflight ===
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: getCorsHeaders(origin, env),
+      });
+    }
+
+    // Prepare default response headers for protected API & static fallback routes
+    const responseHeaders = getCorsHeaders(origin, env);
+    responseHeaders.set("Content-Type", "application/json");
+
+    // === ROUTE ORDER 3: Origin Enforcement for protected API routes ===
+    if (pathname.startsWith("/api/")) {
+      if (!isOriginAllowed(origin, env)) {
+        return new Response(
+          JSON.stringify({ error: "Disallowed Origin" }),
+          { status: 403, headers: responseHeaders }
+        );
+      }
+    }
+
+    // Propagate JWT secret and environment to AuthService context
+    if (env.JWT_SECRET) {
+      if (typeof process === "undefined") {
+        (globalThis as any).process = { env: {} };
+      }
+      process.env = process.env || {};
+      process.env.JWT_SECRET = env.JWT_SECRET;
+      process.env.ZANA_ENV = "production";
+    }
+
+    // === ROUTE ORDER 4: Static assets and SPA fallback ===
     if (!pathname.startsWith("/api/")) {
       if (env.ASSETS) {
         try {

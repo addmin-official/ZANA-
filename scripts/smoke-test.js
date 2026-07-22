@@ -1,6 +1,7 @@
 import { readFileSync } from 'fs';
 
 const API_BASE_URL = process.env.API_BASE_URL || process.env.VITE_API_BASE_URL;
+const FRONTEND_ORIGIN = process.env.ZANA_FRONTEND_ORIGIN || process.env.FRONTEND_ORIGIN || 'https://zana-app.web.app';
 
 if (!API_BASE_URL) {
   console.error("::error::ERROR: API_BASE_URL or VITE_API_BASE_URL must be specified as an environment variable.");
@@ -8,6 +9,7 @@ if (!API_BASE_URL) {
 }
 
 console.log(`Running Production Smoke Tests against: ${API_BASE_URL}`);
+console.log(`Using canonical frontend origin for tests: ${FRONTEND_ORIGIN}`);
 
 async function runSmokeAndCorsTest(name, path, options = {}, expectedStatus) {
   const url = `${API_BASE_URL.replace(/\/$/, '')}${path}`;
@@ -18,7 +20,7 @@ async function runSmokeAndCorsTest(name, path, options = {}, expectedStatus) {
 
   // 1. Authorized Request
   const authHeaders = {
-    'Origin': 'https://zana-app.web.app',
+    'Origin': FRONTEND_ORIGIN,
     ...(options.headers || {})
   };
   if (!(bodyValue instanceof FormData) && !authHeaders['Content-Type'] && options.method === 'POST') {
@@ -54,8 +56,8 @@ async function runSmokeAndCorsTest(name, path, options = {}, expectedStatus) {
     } else if (allowOrigin === '*') {
       console.error(`::error::FAIL: ${name} (Authorized) returned wildcard CORS header.`);
       ok = false;
-    } else if (allowOrigin !== 'https://zana-app.web.app') {
-      console.error(`::error::FAIL: ${name} (Authorized) returned incorrect CORS header: ${allowOrigin}`);
+    } else if (allowOrigin !== FRONTEND_ORIGIN) {
+      console.error(`::error::FAIL: ${name} (Authorized) returned incorrect CORS header: ${allowOrigin} (expected ${FRONTEND_ORIGIN})`);
       ok = false;
     }
   } catch (err) {

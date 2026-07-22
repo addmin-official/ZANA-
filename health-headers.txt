@@ -1,0 +1,17 @@
+HTTP/2 200 
+date: Wed, 22 Jul 2026 08:03:35 GMT
+content-type: application/json
+content-length: 53
+access-control-allow-origin: https://zana-app.web.app
+access-control-allow-headers: Content-Type, Authorization, X-Requested-With, x-appcheck-token
+access-control-allow-methods: GET, POST, OPTIONS
+access-control-max-age: 86400
+x-content-type-options: nosniff
+x-frame-options: DENY
+x-xss-protection: 1; mode=block
+report-to: {"group":"cf-nel","max_age":604800,"endpoints":[{"url":"https://a.nel.cloudflare.com/report/v4?s=ZKFeZQ5Xa6SVAIQExw2k6xAoh6DmX40zQoBwqB9UyenwQccngAejwlyDUvGkefJu%2F3dqzmpgoCUisFiGn5BGlBTNgbr90Gu6gXEfnGomWgcFGKsAOdSLuURJ2T6xbQhWiWeJ1%2FQ3NNfB2zHVjve9x0hwb%2Blnmvp2yM3n8THHeC86ERia6olOFg%3D%3D"}]}
+nel: {"report_to":"cf-nel","success_fraction":0.0,"max_age":604800}
+server: cloudflare
+cf-ray: a1f0ee030ce4709b-CDG
+alt-svc: h3=":443"; ma=86400
+
