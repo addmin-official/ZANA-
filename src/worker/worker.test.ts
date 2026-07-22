@@ -315,7 +315,7 @@ test("Worker - missing payload on /api/study/ask returns 400 with correct Kurdis
   assert.strictEqual(body.error, "داواکارییەکە کەموکوڕی تێدایە.");
 });
 
-test("Worker - error classification mapping for 401, 403, 404, 429, 500, timeout", () => {
+test("Worker - error classification mapping for 401, 403, 404, 429, 500, timeout, unsupported parameter", () => {
   assert.strictEqual(classifyError(new Error("GEMINI_API_KEY missing")), "missing_credentials");
   assert.strictEqual(classifyError(new Error("HTTP 401 Unauthorized")), "invalid_credentials");
   assert.strictEqual(classifyError(new Error("HTTP 403 Forbidden")), "permission_denied");
@@ -323,6 +323,7 @@ test("Worker - error classification mapping for 401, 403, 404, 429, 500, timeout
   assert.strictEqual(classifyError(new Error("HTTP 429 Quota Exceeded")), "quota_exceeded");
   assert.strictEqual(classifyError(new Error("HTTP 429 Rate Limit")), "rate_limited");
   assert.strictEqual(classifyError(new Error("HTTP 400 Invalid Request")), "invalid_provider_request");
+  assert.strictEqual(classifyError(new Error("HTTP 400 Unsupported parameter temperature")), "invalid_provider_request");
   assert.strictEqual(classifyError(new Error("Invalid JSON response")), "invalid_provider_response");
   assert.strictEqual(classifyError(new Error("HTTP 500 Internal Server Error")), "provider_unavailable");
   assert.strictEqual(classifyError(new Error("Connection timeout ETIMEDOUT")), "timeout");
@@ -338,8 +339,16 @@ test("Worker - error classification mapping for 401, 403, 404, 429, 500, timeout
   assert.strictEqual(getClientSafeErrorMessage("unsupported_file"), "جۆری ئەم فایلە پشتگیری ناکرێت. تەنها JPG، PNG و WebP بەکاربهێنە.");
 });
 
-test("Centralized model resolution - Worker Env and Node process.env override default model", async () => {
-  const { getPrimaryModel, getVisionModel } = await import("../server/config/aiModels.ts");
+test("Centralized model resolution & AI_CONFIG schema", async () => {
+  const { getPrimaryModel, getVisionModel, AI_CONFIG } = await import("../server/config/aiModels.ts");
+
+  // AI_CONFIG schema compliance
+  assert.strictEqual(AI_CONFIG.primaryModel, "gemini-3.6-flash");
+  assert.strictEqual(AI_CONFIG.visionModel, "gemini-3.6-flash");
+  assert.strictEqual(AI_CONFIG.apiBaseUrl, "https://generativelanguage.googleapis.com");
+  assert.strictEqual(AI_CONFIG.timeoutMs, 30000);
+  assert.strictEqual(AI_CONFIG.maxRetries, 2);
+  assert.deepStrictEqual(AI_CONFIG.retryableStatusCodes, [429, 500, 502, 503, 504]);
 
   // Default fallback
   assert.strictEqual(getPrimaryModel(), "gemini-3.6-flash");
@@ -357,5 +366,31 @@ test("Centralized model resolution - Worker Env and Node process.env override de
 
   delete process.env.GEMINI_PRIMARY_MODEL;
   delete process.env.GEMINI_VISION_MODEL;
+});
+
+test("Worker - No API key or prompt leakage on error responses", async () => {
+  const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/chat", {
+    method: "POST",
+    headers: {
+      Origin: "https://zana-app.web.app",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      message: "SECRET_USER_PROMPT_STRING_FOR_TEST",
+      profile: { name: "Amed", grade: "9", activeSubject: "math", level: "سەرەتا" }
+    })
+  });
+
+  const envWithSecretKey: any = {
+    ALLOWED_ORIGINS: "https://zana-app.web.app",
+    GEMINI_API_KEY: "secret_api_key_123456789_do_not_leak"
+  };
+
+  const res = await worker.fetch(req, envWithSecretKey);
+  const bodyText = await res.text();
+
+  assert.doesNotMatch(bodyText, /secret_api_key_123456789_do_not_leak/);
+  assert.doesNotMatch(bodyText, /SECRET_USER_PROMPT_STRING_FOR_TEST/);
+  assert.doesNotMatch(bodyText, /You are ZANA/);
 });
 

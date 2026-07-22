@@ -75,10 +75,6 @@ export function classifyError(error: unknown): SafeErrorCategory {
     return "upload_too_large";
   }
 
-  if (lowerMsg.includes("unsupported") || lowerMsg.includes("mime") || lowerMsg.includes("signature") || lowerMsg.includes("magic byte")) {
-    return "unsupported_file";
-  }
-
   if (lowerMsg.includes("timeout") || lowerMsg.includes("etimedout")) {
     return "timeout";
   }
@@ -103,8 +99,12 @@ export function classifyError(error: unknown): SafeErrorCategory {
     return lowerMsg.includes("rate") ? "rate_limited" : "quota_exceeded";
   }
 
-  if (lowerMsg.includes("400") || lowerMsg.includes("invalid request") || lowerMsg.includes("invalid_argument")) {
+  if (lowerMsg.includes("400") || lowerMsg.includes("invalid request") || lowerMsg.includes("invalid_argument") || lowerMsg.includes("unsupported parameter") || lowerMsg.includes("invalid parameter")) {
     return "invalid_provider_request";
+  }
+
+  if (lowerMsg.includes("unsupported mime") || lowerMsg.includes("unsupported file") || lowerMsg.includes("unsupported image") || lowerMsg.includes("unsupported format") || lowerMsg.includes("unsupported") || lowerMsg.includes("mime") || lowerMsg.includes("signature") || lowerMsg.includes("magic byte")) {
+    return "unsupported_file";
   }
 
   if (lowerMsg.includes("invalid json") || lowerMsg.includes("parse error") || lowerMsg.includes("response validation")) {
