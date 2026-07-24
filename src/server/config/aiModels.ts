@@ -26,8 +26,9 @@ export const AI_CONFIG = Object.freeze({
  *   models/gemini-3.6-flash
  *   "gemini-3.6-flash"
  *
- * Invalid or empty values fall back to the production default instead of
- * sending a malformed model identifier to the provider.
+ * Safe provider model identifiers are accepted so controlled Worker/Node
+ * overrides and future model names work without a code release. Empty,
+ * malformed, URL-like, or path-like values fall back to the production model.
  */
 export function normalizeGeminiModelId(
   value: string | undefined,
@@ -41,7 +42,7 @@ export function normalizeGeminiModelId(
     .replace(/^models\//i, "")
     .trim();
 
-  if (!/^gemini-[a-z0-9][a-z0-9.-]*$/i.test(normalized)) {
+  if (!/^[a-z0-9][a-z0-9.-]*$/i.test(normalized)) {
     return fallback;
   }
 
