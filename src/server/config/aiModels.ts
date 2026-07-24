@@ -1,5 +1,6 @@
 const DEFAULT_PRIMARY_MODEL = "gemini-3.6-flash";
 const DEFAULT_VISION_MODEL = "gemini-3.6-flash";
+const DEFAULT_MAX_RETRIES = 2;
 
 export const AI_CONFIG = Object.freeze({
   apiBaseUrl: "https://generativelanguage.googleapis.com",
@@ -7,8 +8,10 @@ export const AI_CONFIG = Object.freeze({
   primaryModel: DEFAULT_PRIMARY_MODEL,
   visionModel: DEFAULT_VISION_MODEL,
   timeoutMs: 30000,
+  // Keep the legacy top-level field while runtime callers migrate to retryPolicy.
+  maxRetries: DEFAULT_MAX_RETRIES,
   retryPolicy: Object.freeze({
-    maxRetries: 2,
+    maxRetries: DEFAULT_MAX_RETRIES,
     backoffMs: 1000,
   }),
   retryableStatusCodes: Object.freeze([429, 500, 502, 503, 504] as const),
