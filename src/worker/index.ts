@@ -13,6 +13,13 @@ import {
   AssessmentType,
   QuestionType
 } from "../assessment/index.ts";
+import {
+  PersistentLearningPlanProvider,
+  LearningPlanService,
+  StudyTaskStatus,
+  PlanningValidation,
+  PlanRebalancer
+} from "../planning/index.ts";
 
 export interface Env {
   GEMINI_API_KEY: string;
@@ -1378,6 +1385,141 @@ ${modeInstructions}
         const result = await ap.getResult(attemptId);
 
         return new Response(JSON.stringify({ attempt, result }), { status: 200, headers: responseHeaders });
+      }
+
+      // =========================================================================
+      // PERSONAL LEARNING PLAN & STUDY PATH ENGINE ROUTING ENDPOINTS (PHASE 17)
+      // =========================================================================
+
+      if (pathname.startsWith("/api/planning")) {
+        let studentId: string;
+        try {
+          studentId = getWorkerAuthenticatedStudentId(request);
+        } catch (e) {
+          return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
+        }
+
+        const kv = env.LEARNING_RECORDS_KV || env.ZANA_LEARNING_KV;
+        const planProvider = new PersistentLearningPlanProvider(kv, "production");
+        const learningProvider = new PersistentLearningRecordProvider(kv, "production");
+        const planningService = new LearningPlanService(planProvider, learningProvider);
+
+        // GET /api/planning/preferences
+        if (pathname === "/api/planning/preferences" && request.method === "GET") {
+          const preferences = await planningService.getPreferences(studentId);
+          return new Response(JSON.stringify(preferences), { status: 200, headers: responseHeaders });
+        }
+
+        // POST /api/planning/preferences
+        if (pathname === "/api/planning/preferences" && request.method === "POST") {
+          const body: any = await request.json().catch(() => ({}));
+          const preferences = await planningService.savePreferences(studentId, body);
+          return new Response(JSON.stringify(preferences), { status: 200, headers: responseHeaders });
+        }
+
+        // GET /api/planning/goals
+        if (pathname === "/api/planning/goals" && request.method === "GET") {
+          const goal = await planningService.getActiveGoal(studentId);
+          return new Response(JSON.stringify({ goals: [goal], activeGoal: goal }), { status: 200, headers: responseHeaders });
+        }
+
+        // POST /api/planning/goals
+        if (pathname === "/api/planning/goals" && request.method === "POST") {
+          const body: any = await request.json().catch(() => ({}));
+          const validated = PlanningValidation.validateGoal(studentId, body);
+          const fullGoal = {
+            id: `goal_${studentId}_${Date.now()}`,
+            studentId,
+            type: validated.type!,
+            titleKu: validated.titleKu!,
+            targetSubjectId: validated.targetSubjectId!,
+            targetCurriculumScope: body.targetCurriculumScope,
+            targetDate: body.targetDate,
+            weeklyTargetMinutes: validated.weeklyTargetMinutes!,
+            successCriteria: body.successCriteria || { metric: "mastery_score", targetValue: 0.8 },
+            status: "ACTIVE" as any,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+          };
+          await planProvider.saveGoal(fullGoal as any);
+          return new Response(JSON.stringify(fullGoal), { status: 200, headers: responseHeaders });
+        }
+
+        // POST /api/planning/generate
+        if (pathname === "/api/planning/generate" && request.method === "POST") {
+          const body: any = await request.json().catch(() => ({}));
+          const plan = await planningService.generatePlanForStudent(studentId, {
+            mode: body.mode || "MANUAL_REPLAN",
+            startDateIso: body.startDateIso
+          });
+          return new Response(JSON.stringify(plan), { status: 200, headers: responseHeaders });
+        }
+
+        // GET /api/planning/current
+        if (pathname === "/api/planning/current" && request.method === "GET") {
+          const plan = await planningService.getCurrentPlan(studentId);
+          return new Response(JSON.stringify(plan), { status: 200, headers: responseHeaders });
+        }
+
+        // GET /api/planning/today
+        if (pathname === "/api/planning/today" && request.method === "GET") {
+          const dateParam = url.searchParams.get("date") || undefined;
+          const todayPlan = await planningService.getTodayPlan(studentId, dateParam);
+          return new Response(JSON.stringify(todayPlan), { status: 200, headers: responseHeaders });
+        }
+
+        // GET /api/planning/week
+        if (pathname === "/api/planning/week" && request.method === "GET") {
+          const weekPlan = await planningService.getWeekPlan(studentId);
+          return new Response(JSON.stringify(weekPlan), { status: 200, headers: responseHeaders });
+        }
+
+        // POST /api/planning/tasks/:taskId/start
+        if (pathname.includes("/tasks/") && pathname.endsWith("/start") && request.method === "POST") {
+          const parts = pathname.split("/");
+          const taskId = parts[parts.indexOf("tasks") + 1];
+          const res = await planningService.updateTaskStatus(studentId, taskId, StudyTaskStatus.IN_PROGRESS);
+          return new Response(JSON.stringify(res), { status: 200, headers: responseHeaders });
+        }
+
+        // POST /api/planning/tasks/:taskId/complete
+        if (pathname.includes("/tasks/") && pathname.endsWith("/complete") && request.method === "POST") {
+          const parts = pathname.split("/");
+          const taskId = parts[parts.indexOf("tasks") + 1];
+          const body: any = await request.json().catch(() => ({}));
+          const res = await planningService.updateTaskStatus(studentId, taskId, StudyTaskStatus.COMPLETED, body.actualDurationMinutes);
+          return new Response(JSON.stringify(res), { status: 200, headers: responseHeaders });
+        }
+
+        // POST /api/planning/tasks/:taskId/skip
+        if (pathname.includes("/tasks/") && pathname.endsWith("/skip") && request.method === "POST") {
+          const parts = pathname.split("/");
+          const taskId = parts[parts.indexOf("tasks") + 1];
+          const res = await planningService.updateTaskStatus(studentId, taskId, StudyTaskStatus.SKIPPED);
+          return new Response(JSON.stringify(res), { status: 200, headers: responseHeaders });
+        }
+
+        // POST /api/planning/rebalance
+        if (pathname === "/api/planning/rebalance" && request.method === "POST") {
+          const plan = await planningService.getCurrentPlan(studentId);
+          const prefs = await planningService.getPreferences(studentId);
+          const { updatedPlan, adjustment } = PlanRebalancer.rebalancePlan(plan, prefs, {});
+          await planProvider.savePlan(updatedPlan);
+          await planProvider.saveAdjustment(adjustment);
+          return new Response(JSON.stringify({ plan: updatedPlan, adjustment }), { status: 200, headers: responseHeaders });
+        }
+
+        // GET /api/planning/next-action
+        if (pathname === "/api/planning/next-action" && request.method === "GET") {
+          const nextAction = await planningService.getNextBestAction(studentId);
+          return new Response(JSON.stringify(nextAction), { status: 200, headers: responseHeaders });
+        }
+
+        // GET /api/planning/progress
+        if (pathname === "/api/planning/progress" && request.method === "GET") {
+          const progress = await planningService.getProgress(studentId);
+          return new Response(JSON.stringify(progress), { status: 200, headers: responseHeaders });
+        }
       }
 
       // Fallback 404
