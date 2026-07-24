@@ -150,16 +150,12 @@ export class PlanningValidation {
       case StudyTaskStatus.PLANNED:
         return [
           StudyTaskStatus.AVAILABLE,
-          StudyTaskStatus.IN_PROGRESS,
-          StudyTaskStatus.SKIPPED,
-          StudyTaskStatus.MISSED,
           StudyTaskStatus.CANCELLED
         ].includes(targetStatus);
 
       case StudyTaskStatus.AVAILABLE:
         return [
           StudyTaskStatus.IN_PROGRESS,
-          StudyTaskStatus.COMPLETED,
           StudyTaskStatus.SKIPPED,
           StudyTaskStatus.MISSED,
           StudyTaskStatus.CANCELLED
@@ -169,24 +165,19 @@ export class PlanningValidation {
         return [
           StudyTaskStatus.COMPLETED,
           StudyTaskStatus.SKIPPED,
-          StudyTaskStatus.CANCELLED,
-          StudyTaskStatus.RESCHEDULED
+          StudyTaskStatus.MISSED,
+          StudyTaskStatus.CANCELLED
         ].includes(targetStatus);
 
       case StudyTaskStatus.MISSED:
       case StudyTaskStatus.SKIPPED:
         return [
-          StudyTaskStatus.RESCHEDULED,
-          StudyTaskStatus.CANCELLED,
-          StudyTaskStatus.AVAILABLE
+          StudyTaskStatus.RESCHEDULED
         ].includes(targetStatus);
 
       case StudyTaskStatus.RESCHEDULED:
         return [
-          StudyTaskStatus.PLANNED,
-          StudyTaskStatus.AVAILABLE,
-          StudyTaskStatus.IN_PROGRESS,
-          StudyTaskStatus.CANCELLED
+          StudyTaskStatus.AVAILABLE
         ].includes(targetStatus);
 
       default:

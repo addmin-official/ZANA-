@@ -103,9 +103,25 @@ test("4. StudyTaskPrioritizer - prerequisite score calculation", () => {
 });
 
 test("5. Task State Machine - transitions", () => {
-  assert.strictEqual(PlanningValidation.validateTaskTransition(StudyTaskStatus.PLANNED, StudyTaskStatus.IN_PROGRESS), true);
+  // Disallow PLANNED -> IN_PROGRESS directly
+  assert.strictEqual(PlanningValidation.validateTaskTransition(StudyTaskStatus.PLANNED, StudyTaskStatus.IN_PROGRESS), false);
+  // Normal flow: PLANNED -> AVAILABLE -> IN_PROGRESS -> COMPLETED
+  assert.strictEqual(PlanningValidation.validateTaskTransition(StudyTaskStatus.PLANNED, StudyTaskStatus.AVAILABLE), true);
+  assert.strictEqual(PlanningValidation.validateTaskTransition(StudyTaskStatus.AVAILABLE, StudyTaskStatus.IN_PROGRESS), true);
   assert.strictEqual(PlanningValidation.validateTaskTransition(StudyTaskStatus.IN_PROGRESS, StudyTaskStatus.COMPLETED), true);
+  // Terminal COMPLETED cannot transition
   assert.strictEqual(PlanningValidation.validateTaskTransition(StudyTaskStatus.COMPLETED, StudyTaskStatus.IN_PROGRESS), false);
+  // Duplicate completion is idempotent
+  assert.strictEqual(PlanningValidation.validateTaskTransition(StudyTaskStatus.COMPLETED, StudyTaskStatus.COMPLETED), true);
+  // Alternative transitions
+  assert.strictEqual(PlanningValidation.validateTaskTransition(StudyTaskStatus.PLANNED, StudyTaskStatus.CANCELLED), true);
+  assert.strictEqual(PlanningValidation.validateTaskTransition(StudyTaskStatus.AVAILABLE, StudyTaskStatus.SKIPPED), true);
+  assert.strictEqual(PlanningValidation.validateTaskTransition(StudyTaskStatus.AVAILABLE, StudyTaskStatus.MISSED), true);
+  assert.strictEqual(PlanningValidation.validateTaskTransition(StudyTaskStatus.IN_PROGRESS, StudyTaskStatus.SKIPPED), true);
+  assert.strictEqual(PlanningValidation.validateTaskTransition(StudyTaskStatus.IN_PROGRESS, StudyTaskStatus.MISSED), true);
+  assert.strictEqual(PlanningValidation.validateTaskTransition(StudyTaskStatus.SKIPPED, StudyTaskStatus.RESCHEDULED), true);
+  assert.strictEqual(PlanningValidation.validateTaskTransition(StudyTaskStatus.MISSED, StudyTaskStatus.RESCHEDULED), true);
+  assert.strictEqual(PlanningValidation.validateTaskTransition(StudyTaskStatus.RESCHEDULED, StudyTaskStatus.AVAILABLE), true);
 });
 
 test("6. LearningPlanProvider (InMemory)", async () => {
