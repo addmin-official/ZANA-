@@ -12,6 +12,7 @@ import { TodayPlanView } from "./TodayPlanView.tsx";
 import { WeeklyPlanView } from "./WeeklyPlanView.tsx";
 import { GoalManagementView } from "./GoalManagementView.tsx";
 import { Calendar, Compass, Target, BarChart3, RefreshCw } from "lucide-react";
+import { AuthService } from "../../../services/authService.ts";
 
 export interface StudentStudyPathDashboardProps {
   studentId: string;
@@ -24,7 +25,7 @@ export const StudentStudyPathDashboard: React.FC<StudentStudyPathDashboardProps>
   authToken,
   onNavigateToTask
 }) => {
-  const [activeTab, setActiveTab] = useState<"today" | "week" | "goals" | "progress">("today");
+  const [activeTab, setActiveTab] = useState<"today" | "week" | "goals">("today");
 
   const [todayPlan, setTodayPlan] = useState<DailyStudyPlan | null>(null);
   const [weekPlan, setWeekPlan] = useState<WeeklyStudyPlan | null>(null);
@@ -36,10 +37,15 @@ export const StudentStudyPathDashboard: React.FC<StudentStudyPathDashboardProps>
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isRebalancing, setIsRebalancing] = useState<boolean>(false);
 
-  const fetchHeaders = () => {
+  const fetchHeaders = async (): Promise<Record<string, string>> => {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (authToken) {
-      headers["Authorization"] = `Bearer ${authToken}`;
+    try {
+      const token = authToken || (await AuthService.getClientToken(studentId));
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+    } catch (e) {
+      console.warn("Could not retrieve client auth token for planning dashboard:", e);
     }
     return headers;
   };
@@ -47,13 +53,14 @@ export const StudentStudyPathDashboard: React.FC<StudentStudyPathDashboardProps>
   const loadData = async () => {
     setIsLoading(true);
     try {
+      const headers = await fetchHeaders();
       const [todayRes, weekRes, goalRes, prefsRes, nextActionRes, progressRes] = await Promise.all([
-        fetch("/api/planning/today", { headers: fetchHeaders() }).then(r => r.ok ? r.json() : null),
-        fetch("/api/planning/week", { headers: fetchHeaders() }).then(r => r.ok ? r.json() : null),
-        fetch("/api/planning/goals", { headers: fetchHeaders() }).then(r => r.ok ? r.json() : null),
-        fetch("/api/planning/preferences", { headers: fetchHeaders() }).then(r => r.ok ? r.json() : null),
-        fetch("/api/planning/next-action", { headers: fetchHeaders() }).then(r => r.ok ? r.json() : null),
-        fetch("/api/planning/progress", { headers: fetchHeaders() }).then(r => r.ok ? r.json() : null)
+        fetch("/api/planning/today", { headers }).then(r => r.ok ? r.json() : null),
+        fetch("/api/planning/week", { headers }).then(r => r.ok ? r.json() : null),
+        fetch("/api/planning/goals", { headers }).then(r => r.ok ? r.json() : null),
+        fetch("/api/planning/preferences", { headers }).then(r => r.ok ? r.json() : null),
+        fetch("/api/planning/next-action", { headers }).then(r => r.ok ? r.json() : null),
+        fetch("/api/planning/progress", { headers }).then(r => r.ok ? r.json() : null)
       ]);
 
       if (todayRes) setTodayPlan(todayRes);
@@ -75,9 +82,10 @@ export const StudentStudyPathDashboard: React.FC<StudentStudyPathDashboardProps>
 
   const handleStartTask = async (taskId: string) => {
     try {
+      const headers = await fetchHeaders();
       const res = await fetch(`/api/planning/tasks/${taskId}/start`, {
         method: "POST",
-        headers: fetchHeaders()
+        headers
       });
       if (res.ok) {
         await loadData();
@@ -89,9 +97,10 @@ export const StudentStudyPathDashboard: React.FC<StudentStudyPathDashboardProps>
 
   const handleCompleteTask = async (taskId: string) => {
     try {
+      const headers = await fetchHeaders();
       const res = await fetch(`/api/planning/tasks/${taskId}/complete`, {
         method: "POST",
-        headers: fetchHeaders(),
+        headers,
         body: JSON.stringify({ actualDurationMinutes: 20 })
       });
       if (res.ok) {
@@ -104,9 +113,10 @@ export const StudentStudyPathDashboard: React.FC<StudentStudyPathDashboardProps>
 
   const handleSkipTask = async (taskId: string) => {
     try {
+      const headers = await fetchHeaders();
       const res = await fetch(`/api/planning/tasks/${taskId}/skip`, {
         method: "POST",
-        headers: fetchHeaders()
+        headers
       });
       if (res.ok) {
         await loadData();
@@ -119,9 +129,10 @@ export const StudentStudyPathDashboard: React.FC<StudentStudyPathDashboardProps>
   const handleRebalancePlan = async () => {
     setIsRebalancing(true);
     try {
+      const headers = await fetchHeaders();
       const res = await fetch("/api/planning/rebalance", {
         method: "POST",
-        headers: fetchHeaders()
+        headers
       });
       if (res.ok) {
         await loadData();
@@ -135,9 +146,10 @@ export const StudentStudyPathDashboard: React.FC<StudentStudyPathDashboardProps>
 
   const handleSavePreferences = async (newPrefs: Partial<StudentLearningPreferences>) => {
     try {
+      const headers = await fetchHeaders();
       const res = await fetch("/api/planning/preferences", {
         method: "POST",
-        headers: fetchHeaders(),
+        headers,
         body: JSON.stringify(newPrefs)
       });
       if (res.ok) {

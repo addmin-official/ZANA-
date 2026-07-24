@@ -7,6 +7,7 @@ import { StudyWorkspaceScreen } from "./screens/StudyWorkspaceScreen.tsx";
 import { AssessmentScreen } from "./screens/AssessmentScreen.tsx";
 import { ParentReportScreen } from "./screens/ParentReportScreen.tsx";
 import { ProfileScreen } from "./screens/ProfileScreen.tsx";
+import { StudentStudyPathDashboard } from "./features/student/planning/StudentStudyPathDashboard.tsx";
 import { useStudentProfile } from "./features/student/useStudentProfile.ts";
 import { SubjectKey } from "./features/student/studentTypes.ts";
 import { NavTab } from "./components/BottomNavigation.tsx";
@@ -65,6 +66,12 @@ export default function App() {
               setActiveTab(tab as NavTab);
             }}
             onStartAssessment={handleStartAssessment}
+          />
+        );
+      case "plan":
+        return (
+          <StudentStudyPathDashboard
+            studentId={profile.id || "student_demo"}
           />
         );
       case "subjects":
