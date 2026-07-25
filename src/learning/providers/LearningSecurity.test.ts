@@ -63,6 +63,7 @@ test("Security - AuthService Firebase ID Token Verification", async () => {
     iss: "https://securetoken.google.com/gen-lang-client-0009572581",
     aud: "gen-lang-client-0009572581",
     sub: "firebase_student_123",
+    iat: Math.floor(Date.now() / 1000) - 60,
     exp: Math.floor(Date.now() / 1000) + 3600
   };
 
@@ -72,8 +73,8 @@ test("Security - AuthService Firebase ID Token Verification", async () => {
 
   const mockToken = `${toBase64Url(JSON.stringify(header))}.${toBase64Url(JSON.stringify(payload))}.mock-signature`;
 
-  const verifiedUid = await AuthService.verifyFirebaseIdToken(mockToken);
-  assert.strictEqual(verifiedUid, "firebase_student_123");
+  const verifiedClaims = await AuthService.verifyFirebaseIdToken(mockToken);
+  assert.strictEqual(verifiedClaims.uid, "firebase_student_123");
 
   // Reject expired token
   const expiredPayload = {

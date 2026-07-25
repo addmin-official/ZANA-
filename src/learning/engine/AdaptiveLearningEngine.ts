@@ -211,7 +211,7 @@ export class AdaptiveLearningEngine {
       interventionKu = "تێبینی دەکەین لەوانەیە پێویستت بە کەمێک پاڵپشتی بێت لە گواستنەوەی هێماکاندا. با پێکەوە فێری بین!";
     } 
     // Check common division instead of multiplication misconception
-    else if (!attempt.isCorrect && (ans.includes("/") || ans.includes("دابەش")) && qText.includes(" can ") || qText.includes("هاوکێشە") || qText.includes("لێکدان")) {
+    else if (!attempt.isCorrect && (ans.includes("/") || ans.includes("دابەش")) && (qText.includes(" can ") || qText.includes("هاوکێشە") || qText.includes("لێکدان"))) {
       detectedId = "misc_op_inverse";
       nameKu = "هەڵە تێکەڵکردنی کرداری لێکدان و دابەشکردنی پێچەوانە";
       interventionKu = "کرداری لێکدان و دابەشکردن زۆر گرنگن، وەرە با پێکەوە پێداچوونەوەیەکی خێرا بە شێوازی پێچەوانەکردنیان بکەین.";

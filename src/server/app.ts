@@ -938,11 +938,11 @@ app.post("/api/auth/token", async (req: Request, res: Response) => {
       return res.status(401).json({ error: "Firebase Identity Token پێویستە لە ژینگەی بەرهەمهێناندا." });
     }
 
-    const verifiedUid = await AuthService.verifyFirebaseIdToken(idToken || null);
-    if (!isProd && (!idToken || verifiedUid === "dev-guest")) {
+    const verifiedClaims = await AuthService.verifyFirebaseIdToken(idToken || null);
+    if (!isProd && (!idToken || verifiedClaims.uid === "dev-guest")) {
       // In development/test with no ID token, let it pass as guest
     } else {
-      if (verifiedUid !== studentId) {
+      if (verifiedClaims.uid !== studentId) {
         return res.status(403).json({ error: "ناونیشانی قوتابی یەکناکاتەوە لەگەڵ ناسنامەی ڕەسەن." });
       }
     }

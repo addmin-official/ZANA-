@@ -5,49 +5,103 @@ export const AI_CONFIG = {
   defaultModel: "gemini-3.6-flash",
   timeoutMs: 30000,
   maxRetries: 2,
+  retryableStatusCodes: [429, 500, 502, 503, 504],
   retryPolicy: {
     maxRetries: 2,
-    backoffMs: 1000,
+    baseBackoffMs: 300,
+    maxBackoffMs: 1000,
+    retryableStatusCodes: [429, 500, 502, 503, 504],
   },
-  retryableStatusCodes: [429, 500, 502, 503, 504],
-};
+} as const;
 
-export function normalizeModel(model?: string | null): string {
+export interface ModelNormalizationDiagnostic {
+  overridePresent: boolean;
+  invalidFormat: boolean;
+  fallbackUsed: boolean;
+  selectedModel: string;
+}
+
+export function normalizeModel(
+  model?: string | null,
+  fallbackModel: string = AI_CONFIG.primaryModel,
+  outDiagnostic?: (diag: ModelNormalizationDiagnostic) => void
+): string {
   if (!model || typeof model !== "string" || !model.trim()) {
-    return AI_CONFIG.primaryModel;
+    if (outDiagnostic) {
+      outDiagnostic({
+        overridePresent: false,
+        invalidFormat: false,
+        fallbackUsed: true,
+        selectedModel: fallbackModel,
+      });
+    }
+    return fallbackModel;
   }
+
   let cleaned = model.trim();
+
+  // Strip surrounding quotes
+  if ((cleaned.startsWith('"') && cleaned.endsWith('"')) || (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
+    cleaned = cleaned.slice(1, -1).trim();
+  }
+
+  // Strip repeated prefixes
   while (cleaned.startsWith("models/")) {
     cleaned = cleaned.substring(7).trim();
   }
   while (cleaned.startsWith("gemini/")) {
     cleaned = cleaned.substring(7).trim();
   }
-  if (!cleaned) return AI_CONFIG.primaryModel;
 
-  if (!/^[a-zA-Z0-9_.-]+$/.test(cleaned)) {
-    throw new Error(`Invalid model name override format: ${cleaned}`);
+  // Check for invalid format (URL, slashes, spaces, path traversal, control chars)
+  const isInvalid =
+    !cleaned ||
+    cleaned.includes("://") ||
+    cleaned.includes("/") ||
+    cleaned.includes("..") ||
+    /\s/.test(cleaned) ||
+    // eslint-disable-next-line no-control-regex
+    /[\x00-\x1F\x7F]/.test(cleaned) ||
+    !/^[a-zA-Z0-9_.-]+$/.test(cleaned);
+
+  if (isInvalid) {
+    if (outDiagnostic) {
+      outDiagnostic({
+        overridePresent: true,
+        invalidFormat: true,
+        fallbackUsed: true,
+        selectedModel: fallbackModel,
+      });
+    }
+    throw new Error("Invalid model name override format");
+  }
+
+  if (outDiagnostic) {
+    outDiagnostic({
+      overridePresent: true,
+      invalidFormat: false,
+      fallbackUsed: false,
+      selectedModel: cleaned,
+    });
   }
 
   return cleaned;
 }
 
+export function resolvePrimaryModel(env?: { GEMINI_PRIMARY_MODEL?: string }): string {
+  const envVal = env?.GEMINI_PRIMARY_MODEL || (typeof process !== "undefined" ? process.env?.GEMINI_PRIMARY_MODEL : undefined);
+  return normalizeModel(envVal, AI_CONFIG.primaryModel);
+}
+
+export function resolveVisionModel(env?: { GEMINI_VISION_MODEL?: string }): string {
+  const envVal = env?.GEMINI_VISION_MODEL || (typeof process !== "undefined" ? process.env?.GEMINI_VISION_MODEL : undefined);
+  return normalizeModel(envVal, AI_CONFIG.visionModel);
+}
+
 export function getPrimaryModel(env?: { GEMINI_PRIMARY_MODEL?: string }): string {
-  if (env?.GEMINI_PRIMARY_MODEL) {
-    return normalizeModel(env.GEMINI_PRIMARY_MODEL);
-  }
-  if (typeof process !== "undefined" && process.env?.GEMINI_PRIMARY_MODEL) {
-    return normalizeModel(process.env.GEMINI_PRIMARY_MODEL);
-  }
-  return normalizeModel(AI_CONFIG.primaryModel);
+  return resolvePrimaryModel(env);
 }
 
 export function getVisionModel(env?: { GEMINI_VISION_MODEL?: string }): string {
-  if (env?.GEMINI_VISION_MODEL) {
-    return normalizeModel(env.GEMINI_VISION_MODEL);
-  }
-  if (typeof process !== "undefined" && process.env?.GEMINI_VISION_MODEL) {
-    return normalizeModel(process.env.GEMINI_VISION_MODEL);
-  }
-  return normalizeModel(AI_CONFIG.visionModel);
+  return resolveVisionModel(env);
 }

@@ -1,6 +1,6 @@
-import { StudentProfile, StudentProfileDraft } from "./studentTypes.ts";
+import { StudentProfile, StudentProfileDraft, VerifiedIdentity } from "./studentTypes.ts";
 import { getValidatedGrade, getValidatedStream, getValidatedSubject, getValidatedLevel } from "./studentDefaults.ts";
-import { db, auth, isFirebaseConfigured } from "../../services/firebase.ts";
+import { getFirestoreDb, getFirebaseAuth, isFirebaseConfigured } from "../../services/firebase.ts";
 import { doc, setDoc } from "firebase/firestore";
 
 const PROFILE_KEY = "zana:student-profile";
@@ -19,9 +19,6 @@ interface LegacyProfileInput {
   grade?: string;
   stream?: string;
   level?: string;
-  authoritative?: boolean;
-  source?: string;
-  isStale?: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -31,46 +28,42 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function migrateStudentProfile(raw: unknown): StudentProfile {
   const now = new Date().toISOString();
   const rawObj = isRecord(raw) ? (raw as LegacyProfileInput) : {};
-  
-  // 1. Preserve or fallback basic fields
+
   const id = typeof rawObj.id === "string" ? rawObj.id : "stud_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now();
   const name = typeof rawObj.name === "string" ? rawObj.name.trim() : "";
   const createdAt = typeof rawObj.createdAt === "string" ? rawObj.createdAt : now;
   const updatedAt = typeof rawObj.updatedAt === "string" ? rawObj.updatedAt : now;
 
-  // 2. Migration rules for subject
   let rawSubject = rawObj.activeSubject;
   if (rawSubject === undefined || rawSubject === null) {
     rawSubject = rawObj.subject;
   }
   const activeSubject = getValidatedSubject(rawSubject);
 
-  // 3. Migration rules for onboarded
   let rawOnboarded = rawObj.onboardingCompleted;
   if (rawOnboarded === undefined || rawOnboarded === null) {
     rawOnboarded = rawObj.onboarded;
   }
   let onboardingCompleted = typeof rawOnboarded === "boolean" ? rawOnboarded : false;
 
-  // 4. Validate other fields
   const grade = getValidatedGrade(rawObj.grade);
   let stream = getValidatedStream(rawObj.stream);
   const level = getValidatedLevel(rawObj.level);
 
-  // Apply academic stream rules for migration
   if (grade === "9") {
     stream = "general";
   } else {
-    // Grade is "10", "11", or "12"
     if (stream !== "scientific" && stream !== "literary") {
       stream = "general";
-      onboardingCompleted = false; // Force stream selection again
+      onboardingCompleted = false;
     }
   }
 
-  const isAuthoritative = typeof rawObj.authoritative === "boolean" ? rawObj.authoritative : (rawObj.source === "server-authoritative");
-  const source: "guest-local" | "server-authoritative" = rawObj.source === "server-authoritative" ? "server-authoritative" : "guest-local";
+  const authoritative = typeof rawObj.authoritative === "boolean" ? rawObj.authoritative : false;
+  const source = typeof rawObj.source === "string" ? (rawObj.source as any) : "guest-local";
+  const isStale = typeof rawObj.isStale === "boolean" ? rawObj.isStale : undefined;
 
+  // Strictly downgrade local profiles to guest-local unless authoritative is explicitly true
   const migrated: StudentProfile = {
     id,
     name,
@@ -81,12 +74,11 @@ export function migrateStudentProfile(raw: unknown): StudentProfile {
     onboardingCompleted,
     createdAt,
     updatedAt,
-    authoritative: isAuthoritative,
+    authoritative,
     source,
-    isStale: typeof rawObj.isStale === "boolean" ? rawObj.isStale : undefined,
+    ...(isStale !== undefined ? { isStale } : {}),
   };
 
-  // Save the migrated canonical profile back to zana:student-profile
   if (isBrowser) {
     try {
       window.localStorage.setItem(PROFILE_KEY, JSON.stringify(migrated));
@@ -116,14 +108,14 @@ export function saveStudentProfile(profile: StudentProfile): void {
   try {
     const profileToSave: StudentProfile = {
       ...profile,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     };
     window.localStorage.setItem(PROFILE_KEY, JSON.stringify(profileToSave));
 
-    // Async sync with Firestore if authenticated and configured
     if (isFirebaseConfigured()) {
-      const user = auth.currentUser;
-      if (user && profile.id === user.uid) {
+      const auth = getFirebaseAuth();
+      const db = getFirestoreDb();
+      if (auth && db && auth.currentUser && !auth.currentUser.isAnonymous && profile.id === auth.currentUser.uid) {
         setDoc(doc(db, "students", profile.id), profileToSave).catch((e) => {
           console.warn("Firestore profile backup unavailable:", e);
         });
@@ -143,12 +135,10 @@ export function deleteStudentProfile(): void {
   }
 }
 
-export function createStudentProfile(draft: StudentProfileDraft, customId?: string): StudentProfile {
+export function createGuestStudentProfile(draft: StudentProfileDraft, customId?: string): StudentProfile {
   const now = new Date().toISOString();
-  
-  // Stable random ID generation or custom Firebase Auth user ID
   const uniqueId = customId || "stud_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now();
-  
+
   const grade = draft.grade;
   let stream = draft.stream;
   if (grade === "9") {
@@ -158,8 +148,6 @@ export function createStudentProfile(draft: StudentProfileDraft, customId?: stri
       throw new TypeError(`Invalid academic stream "${stream}" for Grade ${grade}: stream must be either "scientific" or "literary"`);
     }
   }
-
-  const isServerUser = Boolean(customId && customId !== "default-guest" && !customId.startsWith("stud_"));
 
   const profile: StudentProfile = {
     id: uniqueId,
@@ -171,12 +159,50 @@ export function createStudentProfile(draft: StudentProfileDraft, customId?: stri
     onboardingCompleted: true,
     createdAt: now,
     updatedAt: now,
-    authoritative: isServerUser,
-    source: isServerUser ? "server-authoritative" : "guest-local",
+    authoritative: false,
+    source: "guest-local",
   };
-  
+
   saveStudentProfile(profile);
   return profile;
+}
+
+export function createVerifiedStudentProfile(identity: VerifiedIdentity, serverData: StudentProfileDraft): StudentProfile {
+  if (!identity || !identity.verifiedUid || identity.isAnonymous !== false) {
+    throw new Error("Cannot create verified student profile without verified non-anonymous identity");
+  }
+
+  const now = new Date().toISOString();
+  const grade = serverData.grade;
+  let stream = serverData.stream;
+  if (grade === "9") {
+    stream = "general";
+  } else {
+    if (stream !== "scientific" && stream !== "literary") {
+      throw new TypeError(`Invalid academic stream "${stream}" for Grade ${grade}: stream must be either "scientific" or "literary"`);
+    }
+  }
+
+  const profile: StudentProfile = {
+    id: identity.verifiedUid,
+    name: serverData.name.trim(),
+    grade,
+    stream,
+    activeSubject: serverData.activeSubject,
+    level: serverData.level,
+    onboardingCompleted: true,
+    createdAt: now,
+    updatedAt: now,
+    authoritative: true,
+    source: "server-authoritative",
+  };
+
+  saveStudentProfile(profile);
+  return profile;
+}
+
+export function createStudentProfile(draft: StudentProfileDraft, customId?: string): StudentProfile {
+  return createGuestStudentProfile(draft, customId);
 }
 
 export function updateStudentProfile(
@@ -201,9 +227,9 @@ export function updateStudentProfile(
     stream,
     activeSubject: updates.activeSubject !== undefined ? updates.activeSubject : current.activeSubject,
     level: updates.level !== undefined ? updates.level : current.level,
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
   };
-  
+
   saveStudentProfile(updatedProfile);
   return updatedProfile;
 }

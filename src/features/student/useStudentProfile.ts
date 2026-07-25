@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
-import { StudentProfile, StudentProfileDraft, StudentGrade, AcademicStream, SubjectKey, StudentLevel } from "./studentTypes.ts";
-import { getStudentProfile, deleteStudentProfile, createStudentProfile, updateStudentProfile, saveStudentProfile } from "./studentStorage.ts";
+import { StudentProfile, StudentProfileDraft, StudentGrade, AcademicStream, SubjectKey, StudentLevel, VerifiedIdentity } from "./studentTypes.ts";
+import { getStudentProfile, deleteStudentProfile, createStudentProfile, createVerifiedStudentProfile, updateStudentProfile, saveStudentProfile } from "./studentStorage.ts";
 import { getValidatedGrade, getValidatedStream, getValidatedSubject, getValidatedLevel, sanitizeStudentName } from "./studentDefaults.ts";
 import { ZanaStorage } from "../../services/storage.ts";
-import { db, auth, isFirebaseConfigured } from "../../services/firebase.ts";
+import { getFirestoreDb, getFirebaseAuth, isFirebaseConfigured } from "../../services/firebase.ts";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { signInAnonymously, onAuthStateChanged } from "firebase/auth";
 
@@ -14,8 +14,7 @@ export function useStudentProfile() {
   const [profile, setProfileState] = useState<StudentProfile>(() => {
     const saved = getStudentProfile();
     if (saved) return saved;
-    
-    // Default initial guest profile
+
     return {
       id: "default-guest",
       name: "",
@@ -27,13 +26,20 @@ export function useStudentProfile() {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       authoritative: false,
-      source: "guest-local"
+      source: "guest-local",
     };
   });
 
-  // Synced state on Firebase Auth change
   useEffect(() => {
     if (!isFirebaseConfigured()) {
+      setIsOfflineFallback(true);
+      return;
+    }
+
+    const auth = getFirebaseAuth();
+    const db = getFirestoreDb();
+
+    if (!auth || !db) {
       setIsOfflineFallback(true);
       return;
     }
@@ -42,52 +48,46 @@ export function useStudentProfile() {
       if (user) {
         setIsOfflineFallback(false);
         setAuthError(null);
-        // Authenticated! Check/Sync with Firestore
+
+        // Anonymous users are NEVER granted server authority
+        if (user.isAnonymous) {
+          setProfileState((prev) => ({
+            ...prev,
+            id: user.uid,
+            authoritative: false,
+            source: "guest-local",
+          }));
+          return;
+        }
+
         const docRef = doc(db, "students", user.uid);
         try {
           const docSnap = await getDoc(docRef);
           if (docSnap.exists()) {
             const rawData = docSnap.data();
-            const cloudProfile: StudentProfile = {
-              ...(rawData as StudentProfile),
-              id: user.uid,
-              authoritative: true,
-              source: "server-authoritative",
-              isStale: false
+            const identity: VerifiedIdentity = {
+              verifiedUid: user.uid,
+              isAnonymous: false,
+              email: user.email,
             };
+            const cloudProfile = createVerifiedStudentProfile(identity, rawData as StudentProfileDraft);
             setProfileState(cloudProfile);
-            saveStudentProfile(cloudProfile);
           } else {
-            // Document doesn't exist in Firestore. Let's see if we have a local profile to migrate
             const saved = getStudentProfile();
             if (saved && saved.onboardingCompleted) {
-              const migratedProfile: StudentProfile = {
-                ...saved,
-                id: user.uid,
-                updatedAt: new Date().toISOString(),
-                authoritative: true,
-                source: "server-authoritative",
-                isStale: false
+              const identity: VerifiedIdentity = {
+                verifiedUid: user.uid,
+                isAnonymous: false,
+                email: user.email,
               };
-              setProfileState(migratedProfile);
-              saveStudentProfile(migratedProfile);
-              await setDoc(docRef, migratedProfile).catch(() => {});
+              const verifiedProfile = createVerifiedStudentProfile(identity, saved);
+              setProfileState(verifiedProfile);
+              await setDoc(docRef, verifiedProfile);
             }
           }
         } catch (e) {
-          console.warn("Firestore student profile sync unavailable, preserving last known profile marked stale:", e);
+          console.warn("Firestore student profile sync unavailable, running in guest mode:", e);
           setIsOfflineFallback(true);
-          setProfileState((prev) => {
-            if (prev && prev.id === user.uid) {
-              return {
-                ...prev,
-                authoritative: true,
-                source: "server-authoritative",
-                isStale: true
-              };
-            }
-            return prev;
-          });
         }
       } else {
         signInAnonymously(auth).catch((err) => {
@@ -96,6 +96,7 @@ export function useStudentProfile() {
         });
       }
     });
+
     return () => unsubscribe();
   }, []);
 
@@ -104,7 +105,7 @@ export function useStudentProfile() {
   const createProfile = (draft: StudentProfileDraft): StudentProfile => {
     const validatedGrade = getValidatedGrade(draft.grade);
     let stream = draft.stream;
-    
+
     if (validatedGrade === "9") {
       stream = "general";
     } else {
@@ -118,25 +119,24 @@ export function useStudentProfile() {
       grade: validatedGrade,
       stream,
       activeSubject: getValidatedSubject(draft.activeSubject),
-      level: getValidatedLevel(draft.level)
+      level: getValidatedLevel(draft.level),
     };
-    
-    const firebaseUid = auth.currentUser?.uid;
-    const newProfile = createStudentProfile(validatedDraft, firebaseUid || undefined);
+
+    const newProfile = createStudentProfile(validatedDraft);
     setProfileState(newProfile);
     return newProfile;
   };
 
-interface LegacyUpdateFields {
-  subject?: string;
-  onboarded?: boolean;
-}
+  interface LegacyUpdateFields {
+    subject?: string;
+    onboarded?: boolean;
+  }
 
   const updateProfile = (updates: Partial<StudentProfileDraft | StudentProfile> & LegacyUpdateFields) => {
     setProfileState((prev) => {
       const mappedUpdates: Partial<StudentProfileDraft> = {};
       if (updates.name !== undefined) mappedUpdates.name = sanitizeStudentName(updates.name);
-      
+
       let nextGrade = prev.grade;
       if (updates.grade !== undefined) {
         nextGrade = getValidatedGrade(updates.grade);
@@ -145,7 +145,6 @@ interface LegacyUpdateFields {
 
       let stream = updates.stream !== undefined ? updates.stream : prev.stream;
 
-      // Enforce rules on update too
       if (nextGrade === "9") {
         stream = "general";
       } else {
@@ -154,11 +153,10 @@ interface LegacyUpdateFields {
         }
       }
       mappedUpdates.stream = stream;
-      
-      // Support both activeSubject and legacy subject key safely
+
       const rawSubject = updates.activeSubject !== undefined ? updates.activeSubject : updates.subject;
       if (rawSubject !== undefined) mappedUpdates.activeSubject = getValidatedSubject(rawSubject);
-      
+
       const lvl = updates.level !== undefined ? updates.level : undefined;
       if (lvl !== undefined) mappedUpdates.level = getValidatedLevel(lvl);
 
@@ -180,7 +178,7 @@ interface LegacyUpdateFields {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       authoritative: false,
-      source: "guest-local"
+      source: "guest-local",
     };
     setProfileState(guest);
   };
@@ -198,7 +196,7 @@ interface LegacyUpdateFields {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       authoritative: false,
-      source: "guest-local"
+      source: "guest-local",
     };
     setProfileState(guest);
   };
@@ -219,22 +217,20 @@ interface LegacyUpdateFields {
     updateProfile({ stream });
   };
 
-  // Backward compatibility methods for existing callers
   const completeOnboarding = (name: string, grade: string, subject: string, level: string, stream?: string) => {
     const validatedGrade = getValidatedGrade(grade);
     const validatedSubject = getValidatedSubject(subject);
     const validatedLevel = getValidatedLevel(level);
     const validatedStream = getValidatedStream(stream);
-    
+
     const newProfile = createProfile({
       name,
       grade: validatedGrade,
       stream: validatedStream,
       activeSubject: validatedSubject,
-      level: validatedLevel
+      level: validatedLevel,
     });
-    
-    // Increment session counter for onboarding complete
+
     ZanaStorage.incrementSessions();
     return newProfile;
   };
@@ -252,7 +248,7 @@ interface LegacyUpdateFields {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       authoritative: false,
-      source: "guest-local"
+      source: "guest-local",
     };
     setProfileState(guest);
   };
@@ -271,6 +267,6 @@ interface LegacyUpdateFields {
     completeOnboarding,
     resetProfile,
     isOfflineFallback,
-    authError
+    authError,
   };
 }

@@ -1,5 +1,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { buildSystemPrompt } from "../ai/buildSystemPrompt.ts";
+import { ProviderAdapter } from "../server/ai/AiProvider.ts";
+import { classifyError, getClientSafeErrorMessage, type SafeErrorCategory } from "../server/ai/AiErrors.ts";
+export { classifyError, getClientSafeErrorMessage, type SafeErrorCategory };
 import { PersistentLearningRecordProvider } from "../learning/providers/LearningRecordProvider.ts";
 import { AdaptiveLearningEngine } from "../learning/engine/AdaptiveLearningEngine.ts";
 import { DifficultyLevel, MisconceptionStatus } from "../learning/domain/MasteryTypes.ts";
@@ -32,22 +35,6 @@ export interface Env {
   ASSETS?: any; // Cloudflare Static Assets fetcher binding
 }
 
-export type SafeErrorCategory =
-  | "validation"
-  | "timeout"
-  | "upload_too_large"
-  | "unsupported_file"
-  | "missing_credentials"
-  | "invalid_credentials"
-  | "permission_denied"
-  | "model_not_found"
-  | "invalid_provider_request"
-  | "quota_exceeded"
-  | "rate_limited"
-  | "provider_unavailable"
-  | "invalid_provider_response"
-  | "internal";
-
 // 1. LIGHTWEIGHT IN-MEMORY RATE LIMITING FOR WORKER ISOLATES
 export interface RateLimitRecord {
   timestamps: number[];
@@ -69,114 +56,6 @@ export function isRateLimited(ip: string, limit: number, windowMs: number): bool
   record.timestamps.push(now);
   rateLimitDb.set(ip, record);
   return false;
-}
-
-// 2. ERROR CLASSIFICATION AND KURDISH SORANI ERROR MESSAGES
-export function classifyError(error: unknown): SafeErrorCategory {
-  if (!error) return "internal";
-
-  const msg = error instanceof Error ? error.message : String(error);
-  const lowerMsg = msg.toLowerCase();
-
-  if (lowerMsg.includes("file too large") || lowerMsg.includes("limit_file_size") || lowerMsg.includes("oversized")) {
-    return "upload_too_large";
-  }
-
-  if (lowerMsg.includes("timeout") || lowerMsg.includes("etimedout")) {
-    return "timeout";
-  }
-
-  if (lowerMsg.includes("gemini_api_key") || lowerMsg.includes("missing key") || lowerMsg.includes("api key missing") || lowerMsg.includes("key is required")) {
-    return "missing_credentials";
-  }
-
-  if (
-    lowerMsg.includes("401") ||
-    lowerMsg.includes("unauthorized") ||
-    lowerMsg.includes("invalid key") ||
-    lowerMsg.includes("invalid_api_key") ||
-    lowerMsg.includes("api_key_invalid") ||
-    lowerMsg.includes("api key not valid")
-  ) {
-    return "invalid_credentials";
-  }
-
-  if (lowerMsg.includes("403") || lowerMsg.includes("forbidden") || lowerMsg.includes("permission_denied")) {
-    return "permission_denied";
-  }
-
-  if (lowerMsg.includes("404") || lowerMsg.includes("model not found") || lowerMsg.includes("not_found") || lowerMsg.includes("model_not_found")) {
-    return "model_not_found";
-  }
-
-  if (lowerMsg.includes("429") || lowerMsg.includes("quota") || lowerMsg.includes("rate limit") || lowerMsg.includes("resource_exhausted")) {
-    return lowerMsg.includes("rate") ? "rate_limited" : "quota_exceeded";
-  }
-
-  if (lowerMsg.includes("400") || lowerMsg.includes("invalid request") || lowerMsg.includes("invalid_argument") || lowerMsg.includes("unsupported parameter") || lowerMsg.includes("invalid parameter")) {
-    return "invalid_provider_request";
-  }
-
-  if (lowerMsg.includes("unsupported mime") || lowerMsg.includes("unsupported file") || lowerMsg.includes("unsupported image") || lowerMsg.includes("unsupported format") || lowerMsg.includes("unsupported") || lowerMsg.includes("mime") || lowerMsg.includes("signature") || lowerMsg.includes("magic byte")) {
-    return "unsupported_file";
-  }
-
-  if (lowerMsg.includes("invalid json") || lowerMsg.includes("parse error") || lowerMsg.includes("response validation")) {
-    return "invalid_provider_response";
-  }
-
-  if (
-    lowerMsg.includes("500") ||
-    lowerMsg.includes("502") ||
-    lowerMsg.includes("503") ||
-    lowerMsg.includes("504") ||
-    lowerMsg.includes("googlegenai") ||
-    lowerMsg.includes("provider") ||
-    lowerMsg.includes("unavailable") ||
-    lowerMsg.includes("fetcherror") ||
-    lowerMsg.includes("connect")
-  ) {
-    return "provider_unavailable";
-  }
-
-  if (
-    lowerMsg.includes("validation") ||
-    lowerMsg.includes("invalid") ||
-    lowerMsg.includes("bad request") ||
-    lowerMsg.includes("missing") ||
-    lowerMsg.includes("json") ||
-    lowerMsg.includes("syntaxerror")
-  ) {
-    return "validation";
-  }
-
-  return "internal";
-}
-
-export function getClientSafeErrorMessage(category: SafeErrorCategory): string {
-  switch (category) {
-    case "validation":
-      return "داواکارییەکە ناڕوونە یان نادروستە.";
-    case "timeout":
-      return "کاتەکە تەواو بوو. تکایە دووبارە هەوڵبدەرەوە.";
-    case "upload_too_large":
-      return "قەبارەی وێنەکە زۆر گەورەیە؛ تکایە وێنەیەک کەمتر لە ٥ مێگابایت هەڵبژێرە.";
-    case "unsupported_file":
-      return "جۆری ئەم فایلە پشتگیری ناکرێت. تەنها JPG، PNG و WebP بەکاربهێنە.";
-    case "missing_credentials":
-    case "invalid_credentials":
-    case "permission_denied":
-    case "model_not_found":
-    case "invalid_provider_request":
-    case "quota_exceeded":
-    case "rate_limited":
-    case "provider_unavailable":
-    case "invalid_provider_response":
-      return "خزمەتگوزارییەکە لە ئێستادا بەردەست نییە. تکایە دواتر هەوڵ بدەرەوە.";
-    case "internal":
-    default:
-      return "کێشەیەکی ناوخۆیی لە ڕاژەکاردا ڕوویدا.";
-  }
 }
 
 // 3. MAGIC BYTE SIGNATURE VALIDATOR FOR IMAGES
@@ -244,8 +123,15 @@ function isOriginAllowed(origin: string | null, env: Env): boolean {
     return true;
   }
   
-  const allowed = (env.ALLOWED_ORIGINS || "")
-    .split(",")
+  const allowed = [
+    ...(env.ALLOWED_ORIGINS || "").split(","),
+    ...((env as any).ZANA_FRONTEND_ORIGIN ? [(env as any).ZANA_FRONTEND_ORIGIN] : []),
+    "https://zana-app.web.app",
+    "https://zana-official.web.app",
+    "https://zana.krd",
+    "http://localhost:3000",
+    "http://localhost:5173",
+  ]
     .map(o => o.trim().toLowerCase().replace(/\/$/, ""))
     .filter(Boolean);
     
@@ -266,6 +152,10 @@ function getCorsHeaders(origin: string | null, env: Env): Headers {
   headers.set("Access-Control-Max-Age", "86400");
   
   // Secure production headers
+  headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload");
+  headers.set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://*.firebaseapp.com https://*.googleapis.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://*.workers.dev https://*.firebaseio.com https://*.googleapis.com https://identitytoolkit.googleapis.com;");
+  headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("X-Frame-Options", "DENY");
   headers.set("X-XSS-Protection", "1; mode=block");
@@ -468,7 +358,7 @@ export default {
       // Endpoint: POST /api/chat
       if (pathname === "/api/chat" && request.method === "POST") {
         const body: any = await request.json().catch(() => ({}));
-        const { message, history, profile } = body;
+        const { message, profile } = body;
 
         if (!message || !profile) {
           return new Response(
@@ -477,40 +367,8 @@ export default {
           );
         }
 
-        const ai = getAiClient(env);
-        const systemInstruction = buildSystemPrompt({
-          studentName: profile.name,
-          grade: profile.grade,
-          subject: profile.activeSubject,
-          level: profile.level,
-          mode: "chat",
-        });
-
-        const contents = (history || []).map((msg: any) => ({
-          role: msg.sender === "user" ? "user" : "model",
-          parts: [{ text: msg.text }],
-        }));
-
-        contents.push({
-          role: "user",
-          parts: [{ text: message }],
-        });
-
-        const response = await executeGeminiRequest(
-          ai,
-          {
-            model: getPrimaryModel(env),
-            contents,
-            config: {
-              systemInstruction,
-              temperature: 0.7,
-            },
-            pathname,
-          },
-          env
-        );
-
-        const replyText = response.text || "ببوورە، من نەمتوانی لە قسەکەت تێبگەم. تکایە دووبارە پرسیارەکەت بنووسەوە.";
+        const chatResult = await ProviderAdapter.chat(env.GEMINI_API_KEY, body, env);
+        const replyText = chatResult.text;
         const isEducational = !replyText.includes("دەرەوەی بوارە وانەییەکانی منە");
 
         return new Response(
@@ -534,83 +392,13 @@ export default {
           );
         }
 
-        const ai = getAiClient(env);
-        const systemInstruction = buildSystemPrompt({
-          studentName: profile.name,
-          grade: profile.grade,
-          subject: profile.activeSubject,
-          level: profile.level,
-          mode: "assessment",
-        });
+        const assessmentResult = await ProviderAdapter.assessment(env.GEMINI_API_KEY, body, env);
 
         const currentQuestionNum = state.currentQuestion;
-        const historySummary = [];
-
-        for (let i = 0; i < state.questions.length; i++) {
-          historySummary.push(`پێشنیار/پرسیار: ${state.questions[i]}`);
-          if (state.answers && state.answers[i]) {
-            historySummary.push(`وەڵامی قوتابی: ${state.answers[i]}`);
-          }
-        }
-
-        const userInstructionsPrompt = `
-تۆ ئێستا لە پرسیاری ژمارە ${currentQuestionNum}ی تاقیکردنەوەی خولی نێوان ٥ پرسیارکەیت.
-مێژووی ئەم تاقیکردنەوەیە تا ئێستا:
-${historySummary.join("\n")}
-
-کارەکانت بەپێی وەڵامەکان:
-١. ئەگەر لیستەکە خاڵییە و هیچ وەڵامێک نییە (پرسیاری یەکەم)، تکایە پرسیارێکی زۆر بەهێزی سەرەکی لەم بابەتەدا بۆ ئاستی ${profile.level} پێشکەش بکە لە 'question' و بە کورت دەستپێشخەری لە 'feedback' بنووسە.
-٢. ئەگەر قوتابی وەڵامی داوەتەوە، وەڵامەکەی دوایین بەراورد بکە بە دواین پرسیار. هەڵسەنگاندن بکە ئایا وەڵامەکە ڕاستە یان هەڵەیە (isCorrect=true/false).
-٣. لێدوان و فیدباکی فێرکاریی و سوقراتی میهرەبانانە لە 'feedback' دابنێ بە کوردی سۆرانی.
-٤. ئەگەر هێشتا نەگەیشتووینەتە پرسیاری کۆتایی (واتە currentQuestion کەمترە لە ٥)، پرسیارێکی نوێی زانستیی داهاتوو لە 'question' بنووسە.
-٥. ئەگەر ئەمە پرسیاری کۆتاییە (پرسیاری ٥)، 'question' با خاڵی بێت یان بنووسە "کۆتایی تاقیکردنەوە".
-
-پێویستە وەڵامەکەت تەنها لەم فۆرماتەدا بێت:
-{
-  "question": "پرسیاری داهاتوو لێرە",
-  "feedback": "فیدباکی وەڵامی پێشوو یان پێشەکی",
-  "isCorrect": true/false
-}
-`;
-
-        const response = await executeGeminiRequest(
-          ai,
-          {
-            model: getPrimaryModel(env),
-            contents: userInstructionsPrompt,
-            config: {
-              systemInstruction,
-              responseMimeType: "application/json",
-              responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                  question: {
-                    type: Type.STRING,
-                    description: "The next question to ask the student, or empty if assessment finished.",
-                  },
-                  feedback: {
-                    type: Type.STRING,
-                    description: "Warm, Socratic pedagogical evaluation feedback for the previous answer.",
-                  },
-                  isCorrect: {
-                    type: Type.BOOLEAN,
-                    description: "True if the student's answer was scientifically correct, false otherwise.",
-                  },
-                },
-                required: ["question", "feedback", "isCorrect"],
-              },
-            },
-            pathname,
-          },
-          env
-        );
-
-        const responseJson = JSON.parse(response.text || "{}");
-
         const isLast = currentQuestionNum === 5;
         let finalLevel = null;
         if (isLast) {
-          const correctCount = (state.correctAnswers || []).filter(Boolean).length + (responseJson.isCorrect ? 1 : 0);
+          const correctCount = (state.correctAnswers || []).filter(Boolean).length + (assessmentResult.isCorrect ? 1 : 0);
           if (correctCount <= 2) finalLevel = "سەرەتا";
           else if (correctCount <= 4) finalLevel = "مامناوەند";
           else finalLevel = "پێشکەوتوو";
@@ -618,9 +406,9 @@ ${historySummary.join("\n")}
 
         return new Response(
           JSON.stringify({
-            question: responseJson.question || "",
-            feedback: responseJson.feedback || "وەڵامەکە لەلایەن زانا هەڵسەنگێندرا.",
-            isCorrect: !!responseJson.isCorrect,
+            question: assessmentResult.question,
+            feedback: assessmentResult.feedback,
+            isCorrect: assessmentResult.isCorrect,
             completed: isLast,
             finalLevel,
           }),
@@ -640,54 +428,11 @@ ${historySummary.join("\n")}
           );
         }
 
-        const ai = getAiClient(env);
-        const systemInstruction = buildSystemPrompt({
-          studentName: profile.name,
-          grade: profile.grade,
-          subject: profile.activeSubject,
-          level: profile.level,
-          mode: "report",
-        });
-
-        const reportPrompt = `
-ڕاپۆرتی گەشەکردنی زانستی فەرمی بنووسە بۆ دایک و باوکی قوتابی ${profile.name} کە پۆلی ${profile.grade}یە و ئاستی خوێندنی ${profile.level}یە لە بابەتی ${profile.activeSubject}.
-ئامارە سەرەکییەکان:
-- خولەکانی گفتوگۆ: ${summaryStats.totalSessions} جار
-- پرسیارە گۆڕدراوەکانی چات: ${summaryStats.weeklyQuestionCount} پرسیار
-
-تکایە نووسینێکی زۆر ناوازە، دڵسۆزانە و هاندەر پێشکەش بکە بە کوردی سۆرانیی فەرمی، کە تێیدا خاڵەکانی سەرکەوتن باس دەکەیت لەگەڵ ڕێنمایی گونجاو بۆ دایک و باوک کە چۆن هاوکاری بکەن لە ماڵەوە.
-Scale: وەڵامەکەت تەنها بە فۆرماتی خواستراوی JSON بێت.
-`;
-
-        const response = await executeGeminiRequest(
-          ai,
-          {
-            model: getPrimaryModel(env),
-            contents: reportPrompt,
-            config: {
-              systemInstruction,
-              responseMimeType: "application/json",
-              responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                  recommendation: {
-                    type: Type.STRING,
-                    description: "Deep, beautiful, supportive paragraphs of recommendations for parents in Kurdish Sorani.",
-                  },
-                },
-                required: ["recommendation"],
-              },
-            },
-            pathname,
-          },
-          env
-        );
-
-        const responseJson = JSON.parse(response.text || "{}");
+        const reportResult = await ProviderAdapter.report(env.GEMINI_API_KEY, body, env);
 
         return new Response(
           JSON.stringify({
-            recommendation: responseJson.recommendation || "مامۆستا زانا زۆر هیوای سەرکەوتن بۆ قوتابی دەکات. هەمیشە هاندەری بن لە پۆلدا.",
+            recommendation: reportResult.recommendation,
           }),
           { status: 200, headers: responseHeaders }
         );
@@ -696,7 +441,7 @@ Scale: وەڵامەکەت تەنها بە فۆرماتی خواستراوی JSON
       // Endpoint: POST /api/study/ask
       if (pathname === "/api/study/ask" && request.method === "POST") {
         const body: any = await request.json().catch(() => ({}));
-        const { message, history, context } = body;
+        const { message, context } = body;
 
         if (!message || !context) {
           return new Response(
@@ -705,40 +450,8 @@ Scale: وەڵامەکەت تەنها بە فۆرماتی خواستراوی JSON
           );
         }
 
-        const ai = getAiClient(env);
-        const systemInstruction = buildSystemPrompt({
-          studentName: context.studentName,
-          grade: context.grade,
-          subject: context.subject,
-          level: context.level,
-          mode: "ask",
-        });
-
-        const contents = (history || []).map((msg: any) => ({
-          role: msg.role === "student" ? "user" : "model",
-          parts: [{ text: msg.text }],
-        }));
-
-        contents.push({
-          role: "user",
-          parts: [{ text: message }],
-        });
-
-        const response = await executeGeminiRequest(
-          ai,
-          {
-            model: getPrimaryModel(env),
-            contents,
-            config: {
-              systemInstruction,
-              temperature: 0.5,
-            },
-            pathname,
-          },
-          env
-        );
-
-        const replyText = response.text || "ببوورە، من نەمتوانی لە پرسیارەکەت تێبگەم. تکایە دووبارە پرسیارەکەت بنووسەوە.";
+        const askResult = await ProviderAdapter.ask(env.GEMINI_API_KEY, body, env);
+        const replyText = askResult.text;
         const isEducational = !replyText.includes("بوارە وانەییەکانی من نییە") && !replyText.includes("دەرەوەی بوارە وانەییەکانی منە");
 
         return new Response(
@@ -756,18 +469,16 @@ Scale: وەڵامەکەت تەنها بە فۆرماتی خواستراوی JSON
         const file = formData.get("image") as File | null;
 
         if (!file) {
-          const category: SafeErrorCategory = "validation";
           return new Response(
-            JSON.stringify({ error: getClientSafeErrorMessage(category) }),
+            JSON.stringify({ error: getClientSafeErrorMessage("validation") }),
             { status: 400, headers: responseHeaders }
           );
         }
 
         // 5MB file-size validation
         if (file.size > 5 * 1024 * 1024) {
-          const category: SafeErrorCategory = "upload_too_large";
           return new Response(
-            JSON.stringify({ error: getClientSafeErrorMessage(category) }),
+            JSON.stringify({ error: getClientSafeErrorMessage("upload_too_large") }),
             { status: 413, headers: responseHeaders }
           );
         }
@@ -778,52 +489,31 @@ Scale: وەڵامەکەت تەنها بە فۆرماتی خواستراوی JSON
 
         const isValidSignature = validateImageSignature(uint8Array, file.type);
         if (!isValidSignature) {
-          const category: SafeErrorCategory = "unsupported_file";
           return new Response(
-            JSON.stringify({ error: getClientSafeErrorMessage(category) }),
+            JSON.stringify({ error: getClientSafeErrorMessage("unsupported_file") }),
             { status: 415, headers: responseHeaders }
           );
         }
 
         const contextStr = formData.get("context") as string | null;
         const editedTextRaw = formData.get("editedText") as string | null;
-        const modeRaw = formData.get("mode") as string | null || "explain";
+        const modeRaw = (formData.get("mode") as string | null) || "explain";
 
         let editedText: string | undefined;
         if (editedTextRaw) {
           const trimmed = editedTextRaw.trim();
           if (trimmed.length > 5000) {
-            const category: SafeErrorCategory = "validation";
             return new Response(
-              JSON.stringify({ error: getClientSafeErrorMessage(category) }),
+              JSON.stringify({ error: getClientSafeErrorMessage("validation") }),
               { status: 400, headers: responseHeaders }
             );
           }
           editedText = trimmed;
         }
 
-        if (modeRaw !== "explain" && modeRaw !== "extract_only" && modeRaw !== "hint" && modeRaw !== "step_by_step" && modeRaw !== "formula") {
-          const category: SafeErrorCategory = "validation";
+        if (!contextStr || contextStr.length > 50 * 1024) {
           return new Response(
-            JSON.stringify({ error: getClientSafeErrorMessage(category) }),
-            { status: 400, headers: responseHeaders }
-          );
-        }
-        const mode = modeRaw;
-
-        if (!contextStr) {
-          const category: SafeErrorCategory = "validation";
-          return new Response(
-            JSON.stringify({ error: getClientSafeErrorMessage(category) }),
-            { status: 400, headers: responseHeaders }
-          );
-        }
-
-        // Request context length constraint
-        if (contextStr.length > 50 * 1024) {
-          const category: SafeErrorCategory = "validation";
-          return new Response(
-            JSON.stringify({ error: getClientSafeErrorMessage(category) }),
+            JSON.stringify({ error: getClientSafeErrorMessage("validation") }),
             { status: 400, headers: responseHeaders }
           );
         }
@@ -832,15 +522,14 @@ Scale: وەڵامەکەت تەنها بە فۆرماتی خواستراوی JSON
         try {
           parsed = JSON.parse(contextStr);
         } catch (e) {
-          const category: SafeErrorCategory = "validation";
           return new Response(
-            JSON.stringify({ error: getClientSafeErrorMessage(category) }),
+            JSON.stringify({ error: getClientSafeErrorMessage("validation") }),
             { status: 400, headers: responseHeaders }
           );
         }
 
         // Verify context fields strictly
-        const { studentId, grade, stream, subject, level, lessonTitle, conceptTitle } = parsed;
+        const { studentId, grade, stream, subject, level } = parsed;
         if (
           typeof studentId !== "string" || !studentId.trim() ||
           typeof grade !== "string" || !grade.trim() ||
@@ -848,141 +537,26 @@ Scale: وەڵامەکەت تەنها بە فۆرماتی خواستراوی JSON
           typeof subject !== "string" || !subject.trim() ||
           typeof level !== "string" || !level.trim()
         ) {
-          const category: SafeErrorCategory = "validation";
           return new Response(
-            JSON.stringify({ error: getClientSafeErrorMessage(category) }),
+            JSON.stringify({ error: getClientSafeErrorMessage("validation") }),
             { status: 400, headers: responseHeaders }
           );
         }
 
-        const context = parsed;
-
-        const ai = getAiClient(env);
-        const systemInstruction = buildSystemPrompt({
-          studentName: undefined, // Do not pass student name to AI to preserve privacy
-          grade: context.grade,
-          stream: context.stream,
-          subject: context.subject,
-          level: context.level,
-          lessonTitle: context.lessonTitle,
-          conceptTitle: context.conceptTitle,
-          mode: "vision",
-        });
-
-        // Pedagogical rules based on the requested mode
-        let modeInstructions = "";
-        if (mode === "extract_only") {
-          modeInstructions = "تەنها دەقی ناو وێنەکە بە تەواوی و بە ڕوونی دەربهێنە بەبێ هیچ ڕوونکردنەوەیەک یان وەڵامدانەوەیەک.";
-        } else if (mode === "hint") {
-          modeInstructions = "شیکاری تەواوی پرسیارەکە مەکە. تەنها ڕێنمایی زۆر سەرەکی, سەرەداو یان ڕێگای گونجاو پێشکەش بکە بە شێوازی سوقراتی میهرەبان بۆ یارمەتیدانی قوتابی تا خۆی بگاتە وەڵام.";
-        } else if (mode === "step_by_step") {
-          modeInstructions = "وردترین شیکاری هەنگاو بە هەنگاوی لۆجیکی پێشکەش بکە بۆ شیکارکردنی پرسیارەکە لە پڕۆگرامەکەدا. هەر هەنگاوێک بە ڕوونی ڕوون بکەرەوە.";
-        } else if (mode === "formula") {
-          modeInstructions = "هەموو یاساکان, تیۆرمەکان, و هاوکێشە بیرکاریی یان فیزیاییە سەرەکییەکان کە پێویستن بۆ شیکاری ئەم جۆرە پرسیارە دەستنیشان بکە و ڕوونیان بکەرەوە.";
-        } else {
-          modeInstructions = "وەڵامی فێرکاری و ڕوونکردنەوەی تەواوی چەمکەکە پێشکەش بکە. ئەگەر پرسیارەکە تاقیکردنەوە یان ڕاهێنان دەردەکەوێت, پێش پێشکەشکردنی ئەنجام یان وەڵامی کۆتایی, سەرەتا پێویستە شێواز و مێتۆدی شیکارەکە بە تەواوی ڕوون بکەیتەوە.";
-        }
-
-        let modeKurdish = "ڕوونکردنەوەی فێرکاریی گشتی";
-        if (mode === "extract_only") {
-          modeKurdish = "تەنها دەرهێنانی دەق";
-        } else if (mode === "hint") {
-          modeKurdish = "پێدانی سەرەداو و یارمەتیدان";
-        } else if (mode === "step_by_step") {
-          modeKurdish = "شیکاری هەنگاو بە هەنگاو";
-        } else if (mode === "formula") {
-          modeKurdish = "یاسا و هاوکێشەکان";
-        }
-
-        const userInstructionsPrompt = `
-تۆ زانایت، یاریدەدەری زیرەکی فێربوونی قوتابیان.
-وێنەیەک هاوپێچ کراوە لە لایەن قوتابی لە پۆلی ${context.grade} لە بابەتی ${context.subject}.
-وانەی چالاکی ئێستا: ${context.lessonTitle || "چەمکەکانی خوێندن"}.
-
-شێوازی داواکراو: ${modeKurdish}
-ڕێنمایی گشتی بۆ وەڵامدانەوە:
-${modeInstructions}
-
-ئەرکەکانت:
-١. دەقی وێنەکە دەربهێنە بە وردی. ئەگەر دەقەکە ناڕوونە، دڵنیایی بە نزم بنووسە. هیچ نووسین یان هاوکێشەیەک لە خۆتەوە دامەهێنە ئەگەر بە ڕوونی نەخوێندرایەوە.
-٢. پشکنین بکە ئایا بابەتەکە پەیوەندی بە بابەتی سەرەکی خوێندنی قوتابی (بابەتی: ${context.subject}) هەیە یان نا. ئەگەر پرسیارەکە هی بابەتێکی جیاوازە (بۆ نموونە پرسیارەکە مێژووە بەڵام بابەتی ئێستا بیرکارییە)، هۆشدارییەکی میهرەبانانە بە کوردی سۆرانی لە لیستی 'warnings' بنووسە: 'ئەم پرسیارە وەک بابەتێکی دەرەوەی ${context.subject === "math" ? "بیرکاری" : context.subject === "physics" ? "فیزیا" : context.subject === "chemistry" ? "کیمیا" : "ئینگلیزی"} دەردەکەوێت. ئایا دڵنیایت دەتەوێت بەردەوام بیر بکەیتەوە؟'.
-٣. هەرگیز ئیدیعای ئەوە مەکە کە ئەم پرسیارە پرسیارێکی فەرمی یان نیشتمانییە، مەگەر بە بەڵگە و دەقی ڕوون تێیدا نووسرابێت.
-٤. ئەگەر قوتابی خۆی دەستکاری دەقەکەی کردبوو (${editedText ? `دەقی نوێی دەستکاریکراو لەلایەن قوتابی: ${editedText}` : "قوتابی دەستکاری نەکردووە"}), ئەوا لە شیکار و ڕوونکردنەوەکەتدا زیاتر پشت بەو دەقە دەستکاریکراوە ببەستە.
-٥. وەڵامەکەت بە زمانی کوردی سۆرانیی فەرمی، زۆر پاراو و دڵسۆزانە پێشکەش بکە بە فۆرماتی Markdown.
-
-پێویستە ئەنجامی وەڵامەکەت تەنها بە فۆرماتی JSON و بەم شێوازەی خوارەوە بێت:
-{
-  "extractedText": "دەقی دەرهێنراوی وێنەکە لێرە بنووسە",
-  "detectedSubject": "بابەتی دۆزراوە (بیرکاری/فیزیا/کیمیا/ئینگلیزی/یان هیتر)",
-  "responseText": "ڕوونکردنەوەی زانا بەپێی شێوازی داواکراو و بە فۆرماتی Markdown",
-  "confidence": "high یان medium یان low",
-  "warnings": ["هۆشدارییەکان ئەگەر هەبن لێرە بنووسە بە کوردی سۆرانی"]
-}
-`;
-
-        const visionModel = getVisionModel(env);
-
-        // Native Uint8Array to Base64 encoder for the environment
-        let binaryString = "";
-        for (let i = 0; i < uint8Array.length; i++) {
-          binaryString += String.fromCharCode(uint8Array[i]);
-        }
-        const base64Data = btoa(binaryString);
-
-        const response = await executeGeminiRequest(
-          ai,
+        const visionResult = await ProviderAdapter.vision(
+          env.GEMINI_API_KEY,
           {
-            model: visionModel,
-            contents: [
-              {
-                inlineData: {
-                  data: base64Data,
-                  mimeType: file.type,
-                },
-              },
-              userInstructionsPrompt,
-            ],
-            config: {
-              systemInstruction,
-              responseMimeType: "application/json",
-              responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                  extractedText: {
-                    type: Type.STRING,
-                    description: "Strictly extracted text of the question or formula from the image.",
-                  },
-                  detectedSubject: {
-                    type: Type.STRING,
-                    description: "The primary academic subject, e.g., 'math', 'physics', 'chemistry', 'english' or 'other'.",
-                  },
-                  responseText: {
-                    type: Type.STRING,
-                    description: "The educational explanation/hints formatted in rich markdown.",
-                  },
-                  confidence: {
-                    type: Type.STRING,
-                    description: "The visual extraction confidence level, must be high, medium, or low.",
-                  },
-                  warnings: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING },
-                    description: "Any warning messages in formal Kurdish Sorani (e.g. if subject mismatch).",
-                  },
-                },
-                required: ["extractedText", "confidence", "warnings"],
-              },
-            },
-            pathname,
+            imageBytes: uint8Array,
+            mimeType: file.type,
+            context: parsed,
+            mode: modeRaw as any,
+            editedText,
           },
           env
         );
 
-        const textOutput = response.text || "{}";
-        const parsedResponse = JSON.parse(textOutput);
-
         return new Response(
-          JSON.stringify(parsedResponse),
+          JSON.stringify(visionResult),
           { status: 200, headers: responseHeaders }
         );
       }
@@ -991,8 +565,8 @@ ${modeInstructions}
       // STUDENT MASTERY & ADAPTIVE LEARNING ENGINE ENDPOINTS (PHASE 15)
       // =========================================================================
       
-      // Helper to securely derive and authenticate student identity inside Worker
-      function getWorkerAuthenticatedStudentId(req: Request): string {
+      // Helper to securely derive and authenticate student identity inside Worker using Firebase ID Token
+      async function getWorkerAuthenticatedStudentId(req: Request): Promise<string> {
         const authHeader = req.headers.get("Authorization");
         if (!authHeader || !authHeader.startsWith("Bearer ")) {
           throw new Error("Missing or invalid authorization header prefix");
@@ -1002,43 +576,32 @@ ${modeInstructions}
           throw new Error("Authorization bearer token is empty");
         }
         
-        // Cryptographically verify identity token
-        const payload = AuthService.verifyToken(token);
-        return payload.uid;
+        // Cryptographically verify Firebase ID token directly
+        const claims = await AuthService.verifyFirebaseIdToken(token);
+        return claims.uid;
       }
 
-      // Token exchange endpoint inside Cloudflare Worker
+      // Token verification endpoint inside Cloudflare Worker
       if (pathname === "/api/auth/token" && request.method === "POST") {
         const body: any = await request.json().catch(() => ({}));
-        const { studentId, idToken } = body;
-        if (!studentId || typeof studentId !== "string" || studentId.trim() === "") {
-          return new Response(JSON.stringify({ error: "Nasنامەی قوتابی (studentId) پێویستە." }), { status: 400, headers: responseHeaders });
+        const { idToken } = body;
+        if (!idToken) {
+          return new Response(JSON.stringify({ error: "Firebase Identity Token پێویستە." }), { status: 400, headers: responseHeaders });
         }
         
-        // Cryptographically verify Firebase Identity Token
         try {
-          // Worker is always running in production environment
-          if (!idToken) {
-            return new Response(JSON.stringify({ error: "Firebase Identity Token پێویستە لە ژینگەی بەرهەمهێناندا." }), { status: 401, headers: responseHeaders });
-          }
-          const verifiedUid = await AuthService.verifyFirebaseIdToken(idToken);
-          if (verifiedUid !== studentId) {
-            return new Response(JSON.stringify({ error: "ناونیشانی قوتابی یەکناکاتەوە لەگەڵ ناسنامەی ڕەسەن." }), { status: 403, headers: responseHeaders });
-          }
+          const claims = await AuthService.verifyFirebaseIdToken(idToken);
+          return new Response(JSON.stringify({ ok: true, uid: claims.uid, expiresAt: claims.exp }), { status: 200, headers: responseHeaders });
         } catch (authErr: any) {
           return new Response(JSON.stringify({ error: "ناسنامەی ڕەسەن پشتڕاست نەکراوەتەوە: " + authErr.message }), { status: 401, headers: responseHeaders });
         }
-        
-        // Sign and return a cryptographically verified token
-        const token = AuthService.signToken(studentId);
-        return new Response(JSON.stringify({ token }), { status: 200, headers: responseHeaders });
       }
 
       // 1. GET MASTERY PROFILE
       if (pathname === "/api/learning/mastery" && request.method === "GET") {
         let studentId: string;
         try {
-          studentId = getWorkerAuthenticatedStudentId(request);
+          studentId = await getWorkerAuthenticatedStudentId(request);
         } catch (e) {
           return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
         }
@@ -1057,7 +620,7 @@ ${modeInstructions}
       if (pathname.startsWith("/api/learning/mastery/") && request.method === "GET") {
         let studentId: string;
         try {
-          studentId = getWorkerAuthenticatedStudentId(request);
+          studentId = await getWorkerAuthenticatedStudentId(request);
         } catch (e) {
           return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
         }
@@ -1082,7 +645,7 @@ ${modeInstructions}
       if (pathname === "/api/learning/recommendations" && request.method === "GET") {
         let studentId: string;
         try {
-          studentId = getWorkerAuthenticatedStudentId(request);
+          studentId = await getWorkerAuthenticatedStudentId(request);
         } catch (e) {
           return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
         }
@@ -1102,7 +665,7 @@ ${modeInstructions}
       if (pathname === "/api/learning/events" && request.method === "POST") {
         let studentId: string;
         try {
-          studentId = getWorkerAuthenticatedStudentId(request);
+          studentId = await getWorkerAuthenticatedStudentId(request);
         } catch (e) {
           return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
         }
@@ -1131,7 +694,7 @@ ${modeInstructions}
       if (pathname === "/api/learning/attempts" && request.method === "POST") {
         let studentId: string;
         try {
-          studentId = getWorkerAuthenticatedStudentId(request);
+          studentId = await getWorkerAuthenticatedStudentId(request);
         } catch (e) {
           return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
         }
@@ -1270,7 +833,7 @@ ${modeInstructions}
       if (pathname === "/api/learning/sessions/start" && request.method === "POST") {
         let studentId: string;
         try {
-          studentId = getWorkerAuthenticatedStudentId(request);
+          studentId = await getWorkerAuthenticatedStudentId(request);
         } catch (e) {
           return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
         }
@@ -1293,7 +856,7 @@ ${modeInstructions}
       if (pathname.startsWith("/api/learning/sessions/") && pathname.endsWith("/end") && request.method === "POST") {
         let studentId: string;
         try {
-          studentId = getWorkerAuthenticatedStudentId(request);
+          studentId = await getWorkerAuthenticatedStudentId(request);
         } catch (e) {
           return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
         }
@@ -1326,7 +889,7 @@ ${modeInstructions}
       if (pathname === "/api/assessment/start" && request.method === "POST") {
         let studentId: string;
         try {
-          studentId = getWorkerAuthenticatedStudentId(request);
+          studentId = await getWorkerAuthenticatedStudentId(request);
         } catch (e) {
           return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
         }
@@ -1408,7 +971,7 @@ ${modeInstructions}
       if (pathname === "/api/assessment/submit" && request.method === "POST") {
         let studentId: string;
         try {
-          studentId = getWorkerAuthenticatedStudentId(request);
+          studentId = await getWorkerAuthenticatedStudentId(request);
         } catch (e) {
           return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
         }
@@ -1439,7 +1002,7 @@ ${modeInstructions}
       if (pathname === "/api/assessment/finish" && request.method === "POST") {
         let studentId: string;
         try {
-          studentId = getWorkerAuthenticatedStudentId(request);
+          studentId = await getWorkerAuthenticatedStudentId(request);
         } catch (e) {
           return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
         }
@@ -1464,7 +1027,7 @@ ${modeInstructions}
       if (pathname.startsWith("/api/assessment/attempts/") && request.method === "GET") {
         let studentId: string;
         try {
-          studentId = getWorkerAuthenticatedStudentId(request);
+          studentId = await getWorkerAuthenticatedStudentId(request);
         } catch (e) {
           return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
         }
@@ -1495,7 +1058,7 @@ ${modeInstructions}
       if (pathname.startsWith("/api/planning")) {
         let studentId: string;
         try {
-          studentId = getWorkerAuthenticatedStudentId(request);
+          studentId = await getWorkerAuthenticatedStudentId(request);
         } catch (e) {
           return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
         }

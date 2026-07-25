@@ -28,3 +28,9 @@ export interface StudentProfileDraft {
   activeSubject: SubjectKey;
   level: StudentLevel;
 }
+
+export interface VerifiedIdentity {
+  verifiedUid: string;
+  isAnonymous: false;
+  email?: string | null;
+}

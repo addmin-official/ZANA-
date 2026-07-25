@@ -2,50 +2,66 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Global Safety Net (Pillar 4 - Global Safety Net)
+    // Global Safety Net
     match /{document=**} {
       allow read, write: if false;
     }
     
-    // Standard primitive ID format check (Pillar 3 - Path Variable Hardening)
+    // Valid identifier check
     function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
     
-    // Simple sign-in validation check
-    function isSignedIn() {
-      return request.auth != null;
+    // Authenticated non-anonymous user check
+    function isVerifiedUser() {
+      return request.auth != null && 
+             request.auth.token.firebase.sign_in_provider != 'anonymous';
     }
     
-    // Owner authorization boundary validation check (Pillar 8 - Secure List Queries)
+    // Owner authorization check
     function isOwner(studentId) {
-      return isSignedIn() && request.auth.uid == studentId;
+      return isVerifiedUser() && request.auth.uid == studentId;
     }
     
-    // Student profiles access control definitions
+    // Schema validation for Student Profile
+    function isValidStudentData(data) {
+      return data.keys().hasAll(['id', 'name', 'grade', 'stream', 'activeSubject', 'level']) &&
+             data.id is string && data.id.size() <= 128 &&
+             data.name is string && data.name.size() <= 100 &&
+             data.grade in ['9', '10', '11', '12'] &&
+             data.stream in ['scientific', 'literary', 'general'] &&
+             data.activeSubject in ['math', 'physics', 'chemistry', 'english'] &&
+             data.level in ['beginner', 'intermediate', 'advanced'];
+    }
+    
+    // Student profiles access control
     match /students/{studentId} {
       allow read: if isOwner(studentId);
-      allow write: if isOwner(studentId) && isValidId(studentId);
+      allow create, update: if isOwner(studentId) && isValidId(studentId) && isValidStudentData(request.resource.data);
+      allow delete: if false;
       
       // Mastery subcollection
-      match /mastery/profile {
+      match /mastery/{docId} {
         allow read: if isOwner(studentId);
-        allow write: if isOwner(studentId);
+        allow write: if isOwner(studentId) && isValidId(docId);
       }
       
       // Chat messages subcollection
       match /chatMessages/{messageId} {
-        allow read, write: if isOwner(studentId) && isValidId(messageId);
+        allow read: if isOwner(studentId);
+        allow write: if isOwner(studentId) && isValidId(messageId);
       }
       
       // Attempts subcollection
       match /attempts/{attemptId} {
-        allow read, write: if isOwner(studentId) && isValidId(attemptId);
+        allow read: if isOwner(studentId);
+        allow write: if isOwner(studentId) && isValidId(attemptId);
       }
       
       // Sessions subcollection
       match /sessions/{sessionId} {
-        allow read, write: if isOwner(studentId) && isValidId(sessionId);
+        allow read: if isOwner(studentId);
+        allow write: if isOwner(studentId) && isValidId(sessionId);
       }
     }
   }

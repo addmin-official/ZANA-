@@ -131,6 +131,10 @@ export function validateCloudflareInputs(env = process.env) {
   };
 }
 
+function escapeRegExp(str) {
+  return typeof str === "string" ? str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") : "";
+}
+
 /**
  * Cloudflare REST API wrapper with token masking and error handling.
  */
@@ -156,7 +160,7 @@ export async function cfFetch(url, options = {}, fetchImpl = globalThis.fetch) {
   try {
     res = await fetchImpl(url, reqOptions);
   } catch (err) {
-    const sanitizeMsg = (err.message || "").replace(new RegExp(token, "g"), "[MASKED_TOKEN]");
+    const sanitizeMsg = (err.message || "").replace(new RegExp(escapeRegExp(token), "g"), "[MASKED_TOKEN]");
     const networkErr = new Error(`Network error calling Cloudflare API: ${sanitizeMsg}`);
     networkErr.operation = options.operation || "Cloudflare API Call";
     networkErr.code = "NETWORK_ERROR";
@@ -188,7 +192,7 @@ export async function cfFetch(url, options = {}, fetchImpl = globalThis.fetch) {
     const errors = json.errors && json.errors.length > 0
       ? json.errors.map((e) => `${e.code || ""}: ${e.message || ""}`).join("; ")
       : `HTTP ${status}`;
-    const sanitizedError = errors.replace(new RegExp(token, "g"), "[MASKED_TOKEN]");
+    const sanitizedError = errors.replace(new RegExp(escapeRegExp(token), "g"), "[MASKED_TOKEN]");
 
     const apiErr = new Error(`Cloudflare API error (HTTP ${status}): ${sanitizedError}`);
     apiErr.status = status;
@@ -266,8 +270,7 @@ export async function fetchWorkerBindings(accountId, workerName, token, fetchImp
     if (err.status === 404) {
       return null;
     }
-    console.warn(`Note: Could not fetch existing Worker bindings for '${workerName}': ${err.message}`);
-    return null;
+    throw err;
   }
   return null;
 }
