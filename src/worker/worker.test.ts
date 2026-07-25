@@ -373,6 +373,9 @@ test("Centralized model normalization & prefix stripping", async () => {
   assert.strictEqual(getPrimaryModel(), "custom-node-primary");
   assert.strictEqual(getVisionModel(), "custom-node-vision");
 
+  // Invalid model override rejection
+  assert.throws(() => normalizeModel("invalid model name!"), /Invalid model name override format/);
+
   delete process.env.GEMINI_PRIMARY_MODEL;
   delete process.env.GEMINI_VISION_MODEL;
 });

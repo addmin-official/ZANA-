@@ -23,7 +23,13 @@ export function normalizeModel(model?: string | null): string {
   while (cleaned.startsWith("gemini/")) {
     cleaned = cleaned.substring(7).trim();
   }
-  return cleaned || AI_CONFIG.primaryModel;
+  if (!cleaned) return AI_CONFIG.primaryModel;
+
+  if (!/^[a-zA-Z0-9_.-]+$/.test(cleaned)) {
+    throw new Error(`Invalid model name override format: ${cleaned}`);
+  }
+
+  return cleaned;
 }
 
 export function getPrimaryModel(env?: { GEMINI_PRIMARY_MODEL?: string }): string {
