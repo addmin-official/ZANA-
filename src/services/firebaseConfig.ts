@@ -47,11 +47,15 @@ export const firebaseConfig = {
                     (typeof process !== "undefined" && process.env && process.env.VITE_FIREBASE_RECAPTCHA_SITE_KEY) || "",
 };
 
-export const isFirebaseConfigured = (): boolean => {
-  const apiKey = firebaseConfig.apiKey;
-  const projectId = firebaseConfig.projectId;
-  if (!apiKey || !projectId) return false;
-  if (apiKey.includes("FakeKey") || apiKey.trim() === "") return false;
+export const isFirebaseConfigured = (cfg: Partial<typeof firebaseConfig> = firebaseConfig): boolean => {
+  const apiKey = cfg.apiKey;
+  const projectId = cfg.projectId;
+  const appId = cfg.appId;
+  if (!apiKey || typeof apiKey !== "string" || !apiKey.trim()) return false;
+  if (!projectId || typeof projectId !== "string" || !projectId.trim()) return false;
+  if (appId !== undefined && typeof appId === "string" && appId.length > 0 && !appId.trim()) return false;
+  if (apiKey.includes("FakeKey") || apiKey.includes("placeholder") || apiKey.includes("YOUR_")) return false;
+  if (projectId.includes("placeholder") || projectId.includes("YOUR_")) return false;
   return true;
 };
 

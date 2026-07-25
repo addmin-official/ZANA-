@@ -25,7 +25,9 @@ export function useStudentProfile() {
       level: "intermediate",
       onboardingCompleted: false,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      authoritative: false,
+      source: "guest-local"
     };
   });
 
@@ -45,17 +47,27 @@ export function useStudentProfile() {
         try {
           const docSnap = await getDoc(docRef);
           if (docSnap.exists()) {
-            const cloudProfile = docSnap.data() as StudentProfile;
+            const rawData = docSnap.data();
+            const cloudProfile: StudentProfile = {
+              ...(rawData as StudentProfile),
+              id: user.uid,
+              authoritative: true,
+              source: "server-authoritative",
+              isStale: false
+            };
             setProfileState(cloudProfile);
             saveStudentProfile(cloudProfile);
           } else {
-            // Document doesn't exist in Firestore. Let's see if we have a legacy profile to migrate
+            // Document doesn't exist in Firestore. Let's see if we have a local profile to migrate
             const saved = getStudentProfile();
             if (saved && saved.onboardingCompleted) {
               const migratedProfile: StudentProfile = {
                 ...saved,
                 id: user.uid,
-                updatedAt: new Date().toISOString()
+                updatedAt: new Date().toISOString(),
+                authoritative: true,
+                source: "server-authoritative",
+                isStale: false
               };
               setProfileState(migratedProfile);
               saveStudentProfile(migratedProfile);
@@ -63,7 +75,19 @@ export function useStudentProfile() {
             }
           }
         } catch (e) {
-          console.warn("Firestore student profile sync unavailable, operating in offline guest mode:", e);
+          console.warn("Firestore student profile sync unavailable, preserving last known profile marked stale:", e);
+          setIsOfflineFallback(true);
+          setProfileState((prev) => {
+            if (prev && prev.id === user.uid) {
+              return {
+                ...prev,
+                authoritative: true,
+                source: "server-authoritative",
+                isStale: true
+              };
+            }
+            return prev;
+          });
         }
       } else {
         signInAnonymously(auth).catch((err) => {
@@ -154,7 +178,9 @@ interface LegacyUpdateFields {
       level: "intermediate",
       onboardingCompleted: false,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      authoritative: false,
+      source: "guest-local"
     };
     setProfileState(guest);
   };
@@ -170,7 +196,9 @@ interface LegacyUpdateFields {
       level: "intermediate",
       onboardingCompleted: false,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      authoritative: false,
+      source: "guest-local"
     };
     setProfileState(guest);
   };
@@ -222,7 +250,9 @@ interface LegacyUpdateFields {
       level: "intermediate",
       onboardingCompleted: false,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      authoritative: false,
+      source: "guest-local"
     };
     setProfileState(guest);
   };

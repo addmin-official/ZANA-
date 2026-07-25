@@ -16,6 +16,9 @@ export interface StudentProfile {
   onboardingCompleted: boolean;
   createdAt: string;
   updatedAt: string;
+  authoritative: boolean;
+  source: "guest-local" | "server-authoritative";
+  isStale?: boolean;
 }
 
 export interface StudentProfileDraft {

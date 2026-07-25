@@ -19,6 +19,9 @@ interface LegacyProfileInput {
   grade?: string;
   stream?: string;
   level?: string;
+  authoritative?: boolean;
+  source?: string;
+  isStale?: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -65,6 +68,9 @@ export function migrateStudentProfile(raw: unknown): StudentProfile {
     }
   }
 
+  const isAuthoritative = typeof rawObj.authoritative === "boolean" ? rawObj.authoritative : (rawObj.source === "server-authoritative");
+  const source: "guest-local" | "server-authoritative" = rawObj.source === "server-authoritative" ? "server-authoritative" : "guest-local";
+
   const migrated: StudentProfile = {
     id,
     name,
@@ -74,7 +80,10 @@ export function migrateStudentProfile(raw: unknown): StudentProfile {
     level,
     onboardingCompleted,
     createdAt,
-    updatedAt
+    updatedAt,
+    authoritative: isAuthoritative,
+    source,
+    isStale: typeof rawObj.isStale === "boolean" ? rawObj.isStale : undefined,
   };
 
   // Save the migrated canonical profile back to zana:student-profile
@@ -150,6 +159,8 @@ export function createStudentProfile(draft: StudentProfileDraft, customId?: stri
     }
   }
 
+  const isServerUser = Boolean(customId && customId !== "default-guest" && !customId.startsWith("stud_"));
+
   const profile: StudentProfile = {
     id: uniqueId,
     name: draft.name.trim(),
@@ -159,7 +170,9 @@ export function createStudentProfile(draft: StudentProfileDraft, customId?: stri
     level: draft.level,
     onboardingCompleted: true,
     createdAt: now,
-    updatedAt: now
+    updatedAt: now,
+    authoritative: isServerUser,
+    source: isServerUser ? "server-authoritative" : "guest-local",
   };
   
   saveStudentProfile(profile);

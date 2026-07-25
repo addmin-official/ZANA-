@@ -113,7 +113,9 @@ export const ZanaStorage = {
       level: "intermediate",
       onboardingCompleted: false,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      authoritative: false,
+      source: "guest-local"
     };
   },
 

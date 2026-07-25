@@ -17,6 +17,8 @@ export interface MasteryAttemptInput {
   hintUsed?: boolean;
   unreliableTiming?: boolean;
   isPassiveView?: boolean;
+  isGuest?: boolean;
+  isNonAuthoritative?: boolean;
 }
 
 export class AdaptiveLearningEngine {
@@ -29,6 +31,19 @@ export class AdaptiveLearningEngine {
     attempt: MasteryAttemptInput
   ): ConceptMasteryState {
     const conceptId = previous?.conceptId || "unknown";
+
+    // Non-authoritative / guest attempts must NEVER update official mastery
+    if (attempt.isGuest || attempt.isNonAuthoritative) {
+      return previous || {
+        conceptId,
+        masteryScore: 0.0,
+        status: MasteryStatus.NOT_STARTED,
+        lastAttemptedAt: new Date().toISOString(),
+        totalAttempts: 0,
+        consecutiveCorrect: 0,
+        history: []
+      };
+    }
     const history = previous?.history ? [...previous.history] : [];
     
     // Default/fallback values for history logging
