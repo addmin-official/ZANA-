@@ -1,6 +1,6 @@
 import { StudentProfile, StudentProfileDraft } from "./studentTypes.ts";
 import { getValidatedGrade, getValidatedStream, getValidatedSubject, getValidatedLevel } from "./studentDefaults.ts";
-import { db, auth } from "../../services/firebase.ts";
+import { db, auth, isFirebaseConfigured } from "../../services/firebase.ts";
 import { doc, setDoc } from "firebase/firestore";
 
 const PROFILE_KEY = "zana:student-profile";
@@ -111,12 +111,14 @@ export function saveStudentProfile(profile: StudentProfile): void {
     };
     window.localStorage.setItem(PROFILE_KEY, JSON.stringify(profileToSave));
 
-    // Async sync with Firestore if authenticated
-    const user = auth.currentUser;
-    if (user && profile.id === user.uid) {
-      setDoc(doc(db, "students", profile.id), profileToSave).catch((e) => {
-        console.error("Error backing up student profile to Firestore:", e);
-      });
+    // Async sync with Firestore if authenticated and configured
+    if (isFirebaseConfigured()) {
+      const user = auth.currentUser;
+      if (user && profile.id === user.uid) {
+        setDoc(doc(db, "students", profile.id), profileToSave).catch((e) => {
+          console.warn("Firestore profile backup unavailable:", e);
+        });
+      }
     }
   } catch (error) {
     console.error("Error saving student profile to localStorage:", error);

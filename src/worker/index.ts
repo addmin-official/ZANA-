@@ -5,7 +5,7 @@ import { AdaptiveLearningEngine } from "../learning/engine/AdaptiveLearningEngin
 import { DifficultyLevel, MisconceptionStatus } from "../learning/domain/MasteryTypes.ts";
 import { CurriculumRegistry } from "../curriculum/registry/CurriculumRegistry.ts";
 import { AuthService } from "../services/authService.ts";
-import { getPrimaryModel as getCentralPrimaryModel, getVisionModel as getCentralVisionModel } from "../server/config/aiModels.ts";
+import { getPrimaryModel as getCentralPrimaryModel, getVisionModel as getCentralVisionModel, normalizeModel, AI_CONFIG } from "../server/config/aiModels.ts";
 import {
   PersistentAssessmentRecordProvider,
   AssessmentService,
@@ -90,7 +90,14 @@ export function classifyError(error: unknown): SafeErrorCategory {
     return "missing_credentials";
   }
 
-  if (lowerMsg.includes("401") || lowerMsg.includes("unauthorized") || lowerMsg.includes("invalid key") || lowerMsg.includes("invalid_api_key")) {
+  if (
+    lowerMsg.includes("401") ||
+    lowerMsg.includes("unauthorized") ||
+    lowerMsg.includes("invalid key") ||
+    lowerMsg.includes("invalid_api_key") ||
+    lowerMsg.includes("api_key_invalid") ||
+    lowerMsg.includes("api key not valid")
+  ) {
     return "invalid_credentials";
   }
 
@@ -273,12 +280,81 @@ function getAiClient(env: Env): GoogleGenAI {
   }
   return new GoogleGenAI({
     apiKey: apiKey,
-    httpOptions: {
-      headers: {
-        "User-Agent": "aistudio-build",
-      },
-    },
   });
+}
+
+export interface GenerateContentParams {
+  model: string;
+  contents: any;
+  config?: any;
+  pathname: string;
+}
+
+export async function executeGeminiRequest(
+  ai: GoogleGenAI,
+  params: GenerateContentParams,
+  env: Env
+): Promise<any> {
+  const correlationId = crypto.randomUUID();
+  const selectedModel = normalizeModel(params.model);
+  const maxRetries = AI_CONFIG.maxRetries || 2;
+  let attempt = 0;
+  let lastError: unknown = null;
+
+  while (attempt <= maxRetries) {
+    try {
+      const response = await ai.models.generateContent({
+        model: selectedModel,
+        contents: params.contents,
+        config: params.config,
+      });
+
+      return response;
+    } catch (err: any) {
+      lastError = err;
+      const category = classifyError(err);
+
+      const isRetryable =
+        category === "quota_exceeded" ||
+        category === "rate_limited" ||
+        category === "provider_unavailable" ||
+        category === "timeout";
+
+      let providerStatusCode = 500;
+      let providerErrorCode = category;
+      if (err && typeof err === "object") {
+        if (typeof err.status === "number") providerStatusCode = err.status;
+        else if (typeof err.code === "number") providerStatusCode = err.code;
+
+        if (err.error && typeof err.error === "object") {
+          if (typeof err.error.code === "number") providerStatusCode = err.error.code;
+          if (typeof err.error.status === "string") providerErrorCode = err.error.status;
+        }
+      }
+
+      console.error("[AI Worker Diagnostic]", {
+        correlationId,
+        pathname: params.pathname,
+        category,
+        providerStatusCode: providerStatusCode || (category === "invalid_credentials" ? 401 : category === "permission_denied" ? 403 : category === "model_not_found" ? 404 : category === "invalid_provider_request" ? 400 : 500),
+        providerErrorCode,
+        selectedModel,
+        hasApiKey: Boolean(env.GEMINI_API_KEY),
+        hasModelOverride: Boolean(env.GEMINI_PRIMARY_MODEL || env.GEMINI_VISION_MODEL),
+        retryCount: attempt,
+      });
+
+      if (!isRetryable || attempt >= maxRetries) {
+        throw err;
+      }
+
+      attempt++;
+      const backoffMs = Math.min(300 * Math.pow(2, attempt - 1), 1000);
+      await new Promise((res) => setTimeout(res, backoffMs));
+    }
+  }
+
+  throw lastError;
 }
 
 // 6. MAIN WORKER ROUTER
@@ -420,14 +496,19 @@ export default {
           parts: [{ text: message }],
         });
 
-        const response = await ai.models.generateContent({
-          model: getPrimaryModel(env),
-          contents,
-          config: {
-            systemInstruction,
-            temperature: 0.7,
+        const response = await executeGeminiRequest(
+          ai,
+          {
+            model: getPrimaryModel(env),
+            contents,
+            config: {
+              systemInstruction,
+              temperature: 0.7,
+            },
+            pathname,
           },
-        });
+          env
+        );
 
         const replyText = response.text || "ببوورە، من نەمتوانی لە قسەکەت تێبگەم. تکایە دووبارە پرسیارەکەت بنووسەوە.";
         const isEducational = !replyText.includes("دەرەوەی بوارە وانەییەکانی منە");
@@ -492,32 +573,37 @@ ${historySummary.join("\n")}
 }
 `;
 
-        const response = await ai.models.generateContent({
-          model: getPrimaryModel(env),
-          contents: userInstructionsPrompt,
-          config: {
-            systemInstruction,
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                question: {
-                  type: Type.STRING,
-                  description: "The next question to ask the student, or empty if assessment finished.",
+        const response = await executeGeminiRequest(
+          ai,
+          {
+            model: getPrimaryModel(env),
+            contents: userInstructionsPrompt,
+            config: {
+              systemInstruction,
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  question: {
+                    type: Type.STRING,
+                    description: "The next question to ask the student, or empty if assessment finished.",
+                  },
+                  feedback: {
+                    type: Type.STRING,
+                    description: "Warm, Socratic pedagogical evaluation feedback for the previous answer.",
+                  },
+                  isCorrect: {
+                    type: Type.BOOLEAN,
+                    description: "True if the student's answer was scientifically correct, false otherwise.",
+                  },
                 },
-                feedback: {
-                  type: Type.STRING,
-                  description: "Warm, Socratic pedagogical evaluation feedback for the previous answer.",
-                },
-                isCorrect: {
-                  type: Type.BOOLEAN,
-                  description: "True if the student's answer was scientifically correct, false otherwise.",
-                },
+                required: ["question", "feedback", "isCorrect"],
               },
-              required: ["question", "feedback", "isCorrect"],
             },
+            pathname,
           },
-        });
+          env
+        );
 
         const responseJson = JSON.parse(response.text || "{}");
 
@@ -573,24 +659,29 @@ ${historySummary.join("\n")}
 Scale: وەڵامەکەت تەنها بە فۆرماتی خواستراوی JSON بێت.
 `;
 
-        const response = await ai.models.generateContent({
-          model: getPrimaryModel(env),
-          contents: reportPrompt,
-          config: {
-            systemInstruction,
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                recommendation: {
-                  type: Type.STRING,
-                  description: "Deep, beautiful, supportive paragraphs of recommendations for parents in Kurdish Sorani.",
+        const response = await executeGeminiRequest(
+          ai,
+          {
+            model: getPrimaryModel(env),
+            contents: reportPrompt,
+            config: {
+              systemInstruction,
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  recommendation: {
+                    type: Type.STRING,
+                    description: "Deep, beautiful, supportive paragraphs of recommendations for parents in Kurdish Sorani.",
+                  },
                 },
+                required: ["recommendation"],
               },
-              required: ["recommendation"],
             },
+            pathname,
           },
-        });
+          env
+        );
 
         const responseJson = JSON.parse(response.text || "{}");
 
@@ -633,14 +724,19 @@ Scale: وەڵامەکەت تەنها بە فۆرماتی خواستراوی JSON
           parts: [{ text: message }],
         });
 
-        const response = await ai.models.generateContent({
-          model: getPrimaryModel(env),
-          contents,
-          config: {
-            systemInstruction,
-            temperature: 0.5,
+        const response = await executeGeminiRequest(
+          ai,
+          {
+            model: getPrimaryModel(env),
+            contents,
+            config: {
+              systemInstruction,
+              temperature: 0.5,
+            },
+            pathname,
           },
-        });
+          env
+        );
 
         const replyText = response.text || "ببوورە، من نەمتوانی لە پرسیارەکەت تێبگەم. تکایە دووبارە پرسیارەکەت بنووسەوە.";
         const isEducational = !replyText.includes("بوارە وانەییەکانی من نییە") && !replyText.includes("دەرەوەی بوارە وانەییەکانی منە");
@@ -833,49 +929,54 @@ ${modeInstructions}
         }
         const base64Data = btoa(binaryString);
 
-        const response = await ai.models.generateContent({
-          model: visionModel,
-          contents: [
-            {
-              inlineData: {
-                data: base64Data,
-                mimeType: file.type,
-              },
-            },
-            userInstructionsPrompt,
-          ],
-          config: {
-            systemInstruction,
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                extractedText: {
-                  type: Type.STRING,
-                  description: "Strictly extracted text of the question or formula from the image.",
-                },
-                detectedSubject: {
-                  type: Type.STRING,
-                  description: "The primary academic subject, e.g., 'math', 'physics', 'chemistry', 'english' or 'other'.",
-                },
-                responseText: {
-                  type: Type.STRING,
-                  description: "The educational explanation/hints formatted in rich markdown.",
-                },
-                confidence: {
-                  type: Type.STRING,
-                  description: "The visual extraction confidence level, must be high, medium, or low.",
-                },
-                warnings: {
-                  type: Type.ARRAY,
-                  items: { type: Type.STRING },
-                  description: "Any warning messages in formal Kurdish Sorani (e.g. if subject mismatch).",
+        const response = await executeGeminiRequest(
+          ai,
+          {
+            model: visionModel,
+            contents: [
+              {
+                inlineData: {
+                  data: base64Data,
+                  mimeType: file.type,
                 },
               },
-              required: ["extractedText", "confidence", "warnings"],
+              userInstructionsPrompt,
+            ],
+            config: {
+              systemInstruction,
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  extractedText: {
+                    type: Type.STRING,
+                    description: "Strictly extracted text of the question or formula from the image.",
+                  },
+                  detectedSubject: {
+                    type: Type.STRING,
+                    description: "The primary academic subject, e.g., 'math', 'physics', 'chemistry', 'english' or 'other'.",
+                  },
+                  responseText: {
+                    type: Type.STRING,
+                    description: "The educational explanation/hints formatted in rich markdown.",
+                  },
+                  confidence: {
+                    type: Type.STRING,
+                    description: "The visual extraction confidence level, must be high, medium, or low.",
+                  },
+                  warnings: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING },
+                    description: "Any warning messages in formal Kurdish Sorani (e.g. if subject mismatch).",
+                  },
+                },
+                required: ["extractedText", "confidence", "warnings"],
+              },
             },
+            pathname,
           },
-        });
+          env
+        );
 
         const textOutput = response.text || "{}";
         const parsedResponse = JSON.parse(textOutput);
@@ -1545,14 +1646,18 @@ ${modeInstructions}
         { status: 404, headers: responseHeaders }
       );
     } catch (err: unknown) {
+      const category = classifyError(err);
+      const correlationId = crypto.randomUUID();
       console.error("[AI Worker Diagnostic]", {
+        correlationId,
         pathname,
+        category,
         hasApiKey: Boolean(env.GEMINI_API_KEY),
+        hasModelOverride: Boolean(env.GEMINI_PRIMARY_MODEL || env.GEMINI_VISION_MODEL),
         modelPrimary: getPrimaryModel(env),
         modelVision: getVisionModel(env),
-        error: err instanceof Error ? err.message.replace(/key=[^&]+/gi, "key=REDACTED") : String(err),
+        errorName: err instanceof Error ? err.name : "UnknownError",
       });
-      const category = classifyError(err);
       return new Response(
         JSON.stringify({ error: getClientSafeErrorMessage(category) }),
         { status: 500, headers: responseHeaders }

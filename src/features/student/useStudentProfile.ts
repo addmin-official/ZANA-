@@ -3,7 +3,7 @@ import { StudentProfile, StudentProfileDraft, StudentGrade, AcademicStream, Subj
 import { getStudentProfile, deleteStudentProfile, createStudentProfile, updateStudentProfile, saveStudentProfile } from "./studentStorage.ts";
 import { getValidatedGrade, getValidatedStream, getValidatedSubject, getValidatedLevel, sanitizeStudentName } from "./studentDefaults.ts";
 import { ZanaStorage } from "../../services/storage.ts";
-import { db, auth } from "../../services/firebase.ts";
+import { db, auth, isFirebaseConfigured } from "../../services/firebase.ts";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { signInAnonymously, onAuthStateChanged } from "firebase/auth";
 
@@ -31,6 +31,11 @@ export function useStudentProfile() {
 
   // Synced state on Firebase Auth change
   useEffect(() => {
+    if (!isFirebaseConfigured()) {
+      setIsOfflineFallback(true);
+      return;
+    }
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         setIsOfflineFallback(false);
@@ -54,24 +59,16 @@ export function useStudentProfile() {
               };
               setProfileState(migratedProfile);
               saveStudentProfile(migratedProfile);
-              await setDoc(docRef, migratedProfile);
+              await setDoc(docRef, migratedProfile).catch(() => {});
             }
           }
         } catch (e) {
-          console.error("Error syncing student profile with Firestore:", e);
+          console.warn("Firestore student profile sync unavailable, operating in offline guest mode:", e);
         }
       } else {
         signInAnonymously(auth).catch((err) => {
           setIsOfflineFallback(true);
-          // If anonymous authentication is disabled/restricted in the Firebase Console (auth/admin-restricted-operation),
-          // the application will gracefully run in offline/localStorage mode. We log this as a warning instead of a fatal error.
-          if (err && (err.code === "auth/admin-restricted-operation" || err.message?.includes("admin-restricted-operation"))) {
-            console.warn("Firebase Anonymous Sign-In is restricted/disabled. Falling back to local guest session.");
-            setAuthError("Firebase Anonymous Sign-In is restricted or disabled. Running in limited offline guest session.");
-          } else {
-            console.error("Firebase Auth anonymous sign-in failed:", err);
-            setAuthError(`Firebase Auth anonymous sign-in failed: ${err.message || err}. Running in limited offline guest session.`);
-          }
+          console.warn("Firebase Auth anonymous sign-in unavailable, running in local guest mode:", err?.message || err);
         });
       }
     });

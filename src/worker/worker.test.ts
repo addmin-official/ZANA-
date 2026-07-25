@@ -339,8 +339,8 @@ test("Worker - error classification mapping for 401, 403, 404, 429, 500, timeout
   assert.strictEqual(getClientSafeErrorMessage("unsupported_file"), "جۆری ئەم فایلە پشتگیری ناکرێت. تەنها JPG، PNG و WebP بەکاربهێنە.");
 });
 
-test("Centralized model resolution & AI_CONFIG schema", async () => {
-  const { getPrimaryModel, getVisionModel, AI_CONFIG } = await import("../server/config/aiModels.ts");
+test("Centralized model normalization & prefix stripping", async () => {
+  const { normalizeModel, getPrimaryModel, getVisionModel, AI_CONFIG } = await import("../server/config/aiModels.ts");
 
   // AI_CONFIG schema compliance
   assert.strictEqual(AI_CONFIG.primaryModel, "gemini-3.6-flash");
@@ -350,22 +350,117 @@ test("Centralized model resolution & AI_CONFIG schema", async () => {
   assert.strictEqual(AI_CONFIG.maxRetries, 2);
   assert.deepStrictEqual(AI_CONFIG.retryableStatusCodes, [429, 500, 502, 503, 504]);
 
+  // Model normalization
+  assert.strictEqual(normalizeModel("gemini-3.6-flash"), "gemini-3.6-flash");
+  assert.strictEqual(normalizeModel("models/gemini-3.6-flash"), "gemini-3.6-flash");
+  assert.strictEqual(normalizeModel("models/models/gemini-3.6-flash"), "gemini-3.6-flash");
+  assert.strictEqual(normalizeModel("gemini/gemini-3.6-flash"), "gemini-3.6-flash");
+  assert.strictEqual(normalizeModel(""), "gemini-3.6-flash");
+  assert.strictEqual(normalizeModel(null), "gemini-3.6-flash");
+  assert.strictEqual(normalizeModel(undefined), "gemini-3.6-flash");
+
   // Default fallback
   assert.strictEqual(getPrimaryModel(), "gemini-3.6-flash");
   assert.strictEqual(getVisionModel(), "gemini-3.6-flash");
 
-  // Worker Env override
-  assert.strictEqual(getPrimaryModel({ GEMINI_PRIMARY_MODEL: "custom-worker-primary" }), "custom-worker-primary");
-  assert.strictEqual(getVisionModel({ GEMINI_VISION_MODEL: "custom-worker-vision" }), "custom-worker-vision");
+  // Worker Env override with models/ prefix
+  assert.strictEqual(getPrimaryModel({ GEMINI_PRIMARY_MODEL: "models/custom-worker-primary" }), "custom-worker-primary");
+  assert.strictEqual(getVisionModel({ GEMINI_VISION_MODEL: "models/custom-worker-vision" }), "custom-worker-vision");
 
   // Node process.env override
-  process.env.GEMINI_PRIMARY_MODEL = "custom-node-primary";
-  process.env.GEMINI_VISION_MODEL = "custom-node-vision";
+  process.env.GEMINI_PRIMARY_MODEL = "models/custom-node-primary";
+  process.env.GEMINI_VISION_MODEL = "models/custom-node-vision";
   assert.strictEqual(getPrimaryModel(), "custom-node-primary");
   assert.strictEqual(getVisionModel(), "custom-node-vision");
 
   delete process.env.GEMINI_PRIMARY_MODEL;
   delete process.env.GEMINI_VISION_MODEL;
+});
+
+test("Worker - Provider error classification for 401, 404, 429, 400, 500, missing key", () => {
+  assert.strictEqual(classifyError(new Error("GEMINI_API_KEY missing")), "missing_credentials");
+  assert.strictEqual(classifyError(new Error("API key not valid. Please pass a valid API key.")), "invalid_credentials");
+  assert.strictEqual(classifyError(new Error("HTTP 401 Unauthorized")), "invalid_credentials");
+  assert.strictEqual(classifyError(new Error("HTTP 404 Model Not Found")), "model_not_found");
+  assert.strictEqual(classifyError(new Error("RESOURCE_EXHAUSTED: 429 Quota Exceeded")), "quota_exceeded");
+  assert.strictEqual(classifyError(new Error("HTTP 429 Rate Limit")), "rate_limited");
+  assert.strictEqual(classifyError(new Error("INVALID_ARGUMENT: 400 Invalid Request")), "invalid_provider_request");
+  assert.strictEqual(classifyError(new Error("HTTP 500 Internal Server Error")), "provider_unavailable");
+});
+
+test("executeGeminiRequest - Bounded retries for transient 5xx errors and no retries for permanent 4xx errors", async () => {
+  const { executeGeminiRequest } = await import("./index.ts");
+
+  // 1. Success on first retry
+  let callCount1 = 0;
+  const mockAiSuccessOnRetry: any = {
+    models: {
+      generateContent: async () => {
+        callCount1++;
+        if (callCount1 === 1) {
+          throw new Error("HTTP 503 Service Unavailable");
+        }
+        return { text: "Success response" };
+      }
+    }
+  };
+
+  const res1 = await executeGeminiRequest(
+    mockAiSuccessOnRetry,
+    { model: "models/gemini-3.6-flash", contents: "test", pathname: "/api/chat" },
+    { GEMINI_API_KEY: "valid_key", ALLOWED_ORIGINS: "*" }
+  );
+
+  assert.strictEqual(res1.text, "Success response");
+  assert.strictEqual(callCount1, 2); // 1 initial + 1 retry
+
+  // 2. Permanent 400 error fails immediately without retrying
+  let callCount2 = 0;
+  const mockAiPermanentFail: any = {
+    models: {
+      generateContent: async () => {
+        callCount2++;
+        throw new Error("INVALID_ARGUMENT: 400 Invalid parameter");
+      }
+    }
+  };
+
+  await assert.rejects(
+    async () => {
+      await executeGeminiRequest(
+        mockAiPermanentFail,
+        { model: "gemini-3.6-flash", contents: "test", pathname: "/api/chat" },
+        { GEMINI_API_KEY: "valid_key", ALLOWED_ORIGINS: "*" }
+      );
+    },
+    (err: any) => err.message.includes("INVALID_ARGUMENT")
+  );
+
+  assert.strictEqual(callCount2, 1); // No retries for 400
+
+  // 3. Max retries bounded at 2 retries (3 total calls) for continuous 500
+  let callCount3 = 0;
+  const mockAiContinuousFail: any = {
+    models: {
+      generateContent: async () => {
+        callCount3++;
+        throw new Error("HTTP 500 Internal Server Error");
+      }
+    }
+  };
+
+  await assert.rejects(
+    async () => {
+      await executeGeminiRequest(
+        mockAiContinuousFail,
+        { model: "gemini-3.6-flash", contents: "test", pathname: "/api/chat" },
+        { GEMINI_API_KEY: "valid_key", ALLOWED_ORIGINS: "*" }
+      );
+    },
+    (err: any) => err.message.includes("500")
+  );
+
+  assert.strictEqual(callCount3, 3); // Initial + 2 retries = 3 calls total
 });
 
 test("Worker - No API key or prompt leakage on error responses", async () => {

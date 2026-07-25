@@ -47,4 +47,12 @@ export const firebaseConfig = {
                     (typeof process !== "undefined" && process.env && process.env.VITE_FIREBASE_RECAPTCHA_SITE_KEY) || "",
 };
 
+export const isFirebaseConfigured = (): boolean => {
+  const apiKey = firebaseConfig.apiKey;
+  const projectId = firebaseConfig.projectId;
+  if (!apiKey || !projectId) return false;
+  if (apiKey.includes("FakeKey") || apiKey.trim() === "") return false;
+  return true;
+};
+
 export default firebaseConfig;
