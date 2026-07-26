@@ -1,6 +1,6 @@
 import { useState, FormEvent } from "react";
 import { StudentProfile } from "../services/storage.ts";
-import { SubjectKey } from "../features/student/studentTypes.ts";
+import { StudentGrade, StudentLevel, SubjectKey } from "../features/student/studentTypes.ts";
 import { ZanaCard } from "../components/ZanaCard.tsx";
 import { ZanaButton } from "../components/ZanaButton.tsx";
 import { GRADES_LIST, SUBJECTS_DATA, LEVELS_LIST } from "../data/subjects.ts";
@@ -14,16 +14,22 @@ interface ProfileScreenProps {
   onResetAll: () => void;
 }
 
+function isStudentGrade(value: string): value is StudentGrade {
+  return value === "9" || value === "10" || value === "11" || value === "12";
+}
+
+function isStudentLevel(value: string): value is StudentLevel {
+  return value === "beginner" || value === "intermediate" || value === "advanced";
+}
+
 export function ProfileScreen({ profile, onUpdateProfile, onResetAll }: ProfileScreenProps) {
   const [name, setName] = useState(profile.name);
-  const [grade, setGrade] = useState(profile.grade);
-  const [subject, setSubject] = useState(profile.activeSubject);
-  const [level, setLevel] = useState(profile.level);
+  const [grade, setGrade] = useState<StudentGrade>(profile.grade);
+  const [subject, setSubject] = useState<SubjectKey>(profile.activeSubject);
+  const [level, setLevel] = useState<StudentLevel>(profile.level);
   const [showSuccess, setShowSuccess] = useState(false);
   const { profile: masteryProfile, recommendations: recs, loading } = useStudentMastery(profile.id);
   const misconceptions = masteryProfile?.activeMisconceptions || [];
-
-  // Destruction confirmations
   const [showConfirmResetAll, setShowConfirmResetAll] = useState(false);
 
   const handleSave = (e: FormEvent) => {
@@ -46,27 +52,25 @@ export function ProfileScreen({ profile, onUpdateProfile, onResetAll }: ProfileS
   };
 
   return (
-    <div className="space-y-6 flex-1 flex flex-col justify-start pb-10">
-      {/* Title */}
+    <div className="space-y-6 flex-1 flex flex-col justify-start pb-10" dir="rtl">
       <div className="text-right flex items-center gap-2 justify-end">
         <h2 className="font-sans font-bold text-xl text-slate-900">ڕێکخستنی پڕۆفایل</h2>
         <Settings className="w-5 h-5 text-slate-500" />
       </div>
 
       {showSuccess && (
-        <div className="p-3 bg-emerald-50 border border-emerald-100 text-emerald-800 text-xs font-sans rounded-xl text-right flex items-center gap-2 justify-start">
+        <div className="p-3 bg-emerald-50 border border-emerald-100 text-emerald-800 text-xs font-sans rounded-xl text-right flex items-center gap-2 justify-start" role="status" aria-live="polite">
           <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>زانیارییەکانت بە سەرکەوتوویی نوێکرانەوە!</span>
         </div>
       )}
 
-      {/* PHASE 15 - MASTERY & ADAPTIVE LEARNING DASHBOARD */}
       <ZanaCard className="border-blue-150 bg-slate-50/30">
-        <div className="space-y-4 text-right" style={{ direction: "rtl" }}>
+        <div className="space-y-4 text-right">
           <div className="flex items-center gap-2 justify-start border-b border-slate-100 pb-2.5 mb-2">
             <Brain className="w-5 h-5 text-blue-600" />
             <h3 className="font-sans font-black text-sm text-slate-800">
-              ئاستی لێهاتوویی و ڕێڕەوی فێربوون (Mastery Profile)
+              ئاستی لێهاتوویی و ڕێڕەوی فێربوون
             </h3>
           </div>
 
@@ -74,7 +78,6 @@ export function ProfileScreen({ profile, onUpdateProfile, onResetAll }: ProfileS
             <p className="font-sans text-xs text-slate-400 py-4 text-center">بۆ متمانەت، زانیارییەکان باردەکرێن...</p>
           ) : (
             <div className="space-y-4">
-              {/* Overall Score */}
               <div className="bg-white p-4 rounded-xl border border-slate-100 flex items-center justify-between gap-4">
                 <div className="text-right space-y-0.5">
                   <span className="font-sans text-[11px] font-bold text-slate-400 block">نمرەی لێهاتوویی گشتی</span>
@@ -87,10 +90,9 @@ export function ProfileScreen({ profile, onUpdateProfile, onResetAll }: ProfileS
                 </div>
               </div>
 
-              {/* Recommendations */}
               {recs && recs.length > 0 && (
                 <div className="space-y-2">
-                  <span className="font-sans text-xs font-bold text-slate-500 block">پێشنیارە گونجێنراوەکانی زانا (Adaptive Recommendations)</span>
+                  <span className="font-sans text-xs font-bold text-slate-500 block">پێشنیارە گونجێنراوەکانی زانا</span>
                   {recs.map((r) => (
                     <div key={r.id} className="bg-amber-50/40 p-3 rounded-xl border border-amber-100/70 text-right space-y-1.5">
                       <div className="flex items-center gap-1.5 justify-start text-amber-800">
@@ -109,23 +111,21 @@ export function ProfileScreen({ profile, onUpdateProfile, onResetAll }: ProfileS
                 </div>
               )}
 
-              {/* Active Misconceptions */}
-              {misconceptions && misconceptions.length > 0 && (
+              {misconceptions.length > 0 && (
                 <div className="space-y-2">
-                  <span className="font-sans text-xs font-bold text-red-500 block">لێکتێنەگەیشتنە دەستنیشانکراوەکان (Detected Misconceptions)</span>
+                  <span className="font-sans text-xs font-bold text-red-500 block">کەم‌وکوڕییە دەستنیشانکراوەکانی تێگەیشتن</span>
                   {misconceptions.map((m) => (
                     <div key={m.misconceptionId} className="bg-red-50/50 p-3 rounded-xl border border-red-100 text-right flex items-start gap-2.5">
                       <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
                       <div className="space-y-0.5 flex-1">
                         <span className="font-sans font-bold text-xs text-red-800 block">{m.nameKu}</span>
-                        <span className="font-sans text-[10px] text-slate-500 block">تەواوی دووبارەبوونەوە: {m.count} جار</span>
+                        <span className="font-sans text-[10px] text-slate-500 block">ژمارەی دووبارەبوونەوە: {m.count} جار</span>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
 
-              {/* Concept Masteries List */}
               <div className="space-y-2">
                 <span className="font-sans text-xs font-bold text-slate-500 block">چەمکەکانی خشتەی خوێندن و فێربوون</span>
                 {Object.keys(masteryProfile?.conceptMasteries || {}).length === 0 ? (
@@ -155,7 +155,6 @@ export function ProfileScreen({ profile, onUpdateProfile, onResetAll }: ProfileS
                               {statusKurdish}
                             </span>
                           </div>
-                          {/* Progress bar */}
                           <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
                             <div
                               className={`h-full transition-all duration-500 ${
@@ -177,80 +176,76 @@ export function ProfileScreen({ profile, onUpdateProfile, onResetAll }: ProfileS
         </div>
       </ZanaCard>
 
-      {/* Edit Form Card */}
       <ZanaCard>
         <form onSubmit={handleSave} className="space-y-4 text-right">
           <h3 className="font-sans font-bold text-sm text-slate-800 border-b border-slate-50 pb-2 mb-2">
             دەستکاریکردنی زانیارییەکان
           </h3>
 
-          {/* Name */}
           <div className="space-y-1">
-            <label className="block text-right font-sans text-xs font-bold text-slate-500">
+            <label htmlFor="profile-name" className="block text-right font-sans text-xs font-bold text-slate-500">
               ناوی قوتابی
             </label>
             <input
+              id="profile-name"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="w-full font-sans text-sm min-h-[48px] px-4 rounded-xl border border-slate-200 focus:outline-none focus:border-blue-500 text-right"
-              style={{ direction: "rtl" }}
             />
           </div>
 
-          {/* Grade selection */}
           <div className="space-y-1">
-            <label className="block text-right font-sans text-xs font-bold text-slate-500">
+            <label htmlFor="profile-grade" className="block text-right font-sans text-xs font-bold text-slate-500">
               پۆلی خوێندن
             </label>
             <select
+              id="profile-grade"
               value={grade}
-              onChange={(e) => setGrade(e.target.value)}
+              onChange={(e) => {
+                if (isStudentGrade(e.target.value)) setGrade(e.target.value);
+              }}
               className="w-full font-sans text-sm min-h-[48px] px-3 rounded-xl border border-slate-200 bg-white text-right"
-              style={{ direction: "rtl" }}
             >
               {GRADES_LIST.map((g) => (
-                <option key={g.value} value={g.value}>
-                  {g.label}
-                </option>
+                <option key={g.value} value={g.value}>{g.label}</option>
               ))}
             </select>
           </div>
 
-          {/* Subject selection */}
           <div className="space-y-1">
-            <label className="block text-right font-sans text-xs font-bold text-slate-500">
+            <label htmlFor="profile-subject" className="block text-right font-sans text-xs font-bold text-slate-500">
               بابەتی خوێندن
             </label>
             <select
+              id="profile-subject"
               value={subject}
-              onChange={(e) => setSubject(e.target.value as SubjectKey)}
+              onChange={(e) => {
+                const nextSubject = SUBJECTS_DATA.find((item) => item.id === e.target.value)?.id;
+                if (nextSubject) setSubject(nextSubject);
+              }}
               className="w-full font-sans text-sm min-h-[48px] px-3 rounded-xl border border-slate-200 bg-white text-right"
-              style={{ direction: "rtl" }}
             >
               {SUBJECTS_DATA.map((sub) => (
-                <option key={sub.id} value={sub.id}>
-                  {sub.name}
-                </option>
+                <option key={sub.id} value={sub.id}>{sub.name}</option>
               ))}
             </select>
           </div>
 
-          {/* Level selection */}
           <div className="space-y-1">
-            <label className="block text-right font-sans text-xs font-bold text-slate-500">
+            <label htmlFor="profile-level" className="block text-right font-sans text-xs font-bold text-slate-500">
               ئاستی ئێستای فێربوون
             </label>
             <select
+              id="profile-level"
               value={level}
-              onChange={(e) => setLevel(e.target.value)}
+              onChange={(e) => {
+                if (isStudentLevel(e.target.value)) setLevel(e.target.value);
+              }}
               className="w-full font-sans text-sm min-h-[48px] px-3 rounded-xl border border-slate-200 bg-white text-right"
-              style={{ direction: "rtl" }}
             >
               {LEVELS_LIST.map((lvl) => (
-                <option key={lvl.value} value={lvl.value}>
-                  {lvl.label}
-                </option>
+                <option key={lvl.value} value={lvl.value}>{lvl.label}</option>
               ))}
             </select>
           </div>
@@ -261,17 +256,13 @@ export function ProfileScreen({ profile, onUpdateProfile, onResetAll }: ProfileS
         </form>
       </ZanaCard>
 
-      {/* Danger Zone Actions */}
       <ZanaCard className="border-red-100">
         <div className="space-y-3 text-right">
           <h3 className="font-sans font-bold text-sm text-red-800 border-b border-red-50 pb-2 mb-2 flex items-center gap-1.5 justify-start">
             <AlertTriangle className="w-4 h-4 text-red-600" />
             <span>ناوچەی مەترسیدار</span>
           </h3>
-          <p className="font-sans text-xs text-slate-400">
-            کرداری خوارەوە دەبێتە هۆی سرڕینەوەی بەردەوامی زانیارییەکانت.
-          </p>
-
+          <p className="font-sans text-xs text-slate-400">کرداری خوارەوە دەبێتە هۆی سڕینەوەی هەمیشەیی زانیارییەکانت.</p>
           <ZanaButton
             variant="outline"
             fullWidth
@@ -279,36 +270,27 @@ export function ProfileScreen({ profile, onUpdateProfile, onResetAll }: ProfileS
             className="border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 flex items-center justify-center gap-2"
           >
             <Trash2 className="w-4 h-4" />
-            <span>سرینەوەی گشتی سەرجەم زانیارییەکان</span>
+            <span>سڕینەوەی گشتی سەرجەم زانیارییەکان</span>
           </ZanaButton>
         </div>
       </ZanaCard>
 
-      {/* Confirmation Reset All Modal Overlay */}
       {showConfirmResetAll && (
-        <div className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-xs flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="reset-profile-title">
           <div className="bg-white rounded-2xl max-w-xs w-full p-6 text-right border border-slate-100 shadow-xl space-y-4">
             <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-2">
               <AlertTriangle className="w-6 h-6" />
             </div>
-            <h4 className="font-sans font-bold text-base text-slate-900">
-              دڵنیایت لە سڕینەوەی گشتی؟
-            </h4>
+            <h4 id="reset-profile-title" className="font-sans font-bold text-base text-slate-900">دڵنیایت لە سڕینەوەی گشتی؟</h4>
             <p className="font-sans text-xs text-slate-500 leading-relaxed">
-              ئەم کردارە تەواوی ناسنامەی قوتابی، پێشکەوتنەکان، نمرەی تاقیکردنەوەکان و مێژووی چات لەگەڵ زانا بە تەواوی ڕەشدەکاتەوە.
+              ئەم کردارە ناسنامەی قوتابی، پێشکەوتنەکان، نمرەکانی تاقیکردنەوە و مێژووی گفتوگۆ بە تەواوی دەسڕێتەوە.
             </p>
             <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => setShowConfirmResetAll(false)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-sans font-bold cursor-pointer transition-colors"
-              >
+              <button onClick={() => setShowConfirmResetAll(false)} className="min-h-11 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-sans font-bold cursor-pointer transition-colors">
                 پەشیمانبوونەوە
               </button>
-              <button
-                onClick={handleHardReset}
-                className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl text-xs font-sans font-bold cursor-pointer transition-colors"
-              >
-                بەڵێ، ڕەشیبکەرەوە
+              <button onClick={handleHardReset} className="min-h-11 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl text-xs font-sans font-bold cursor-pointer transition-colors">
+                بەڵێ، بیسڕەوە
               </button>
             </div>
           </div>
