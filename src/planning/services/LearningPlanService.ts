@@ -9,7 +9,8 @@ import {
   NextBestAction,
   PlanProgress,
   GoalStatus,
-  LearningGoalType
+  LearningGoalType,
+  PlanGenerationMode
 } from "../domain/LearningPlanTypes.ts";
 import { PlanningValidation } from "../domain/PlanningValidation.ts";
 import { PersonalLearningPlanEngine } from "../engine/PersonalLearningPlanEngine.ts";
@@ -37,7 +38,6 @@ export class LearningPlanService {
     if (existing) {
       return existing;
     }
-    // Return normalized defaults
     const defaults = PlanningValidation.validatePreferences(studentId);
     await this.planProvider.savePreferences(defaults);
     return defaults;
@@ -57,7 +57,6 @@ export class LearningPlanService {
     if (active) {
       return active;
     }
-    // Default default goal if none exists
     const defaultGoal: LearningGoal = {
       id: `goal_default_${studentId}`,
       studentId,
@@ -105,7 +104,6 @@ export class LearningPlanService {
 
     await this.planProvider.savePlan(plan);
 
-    // Save individual tasks for point-lookup
     for (const week of plan.weeklyPlans) {
       for (const day of week.dailyPlans) {
         for (const task of day.tasks) {
@@ -136,7 +134,6 @@ export class LearningPlanService {
       }
     }
 
-    // If exact date not found in plan, return default rest/empty day
     return {
       date: dateStr,
       dayOfWeek: new Date(dateStr).getDay(),
@@ -170,18 +167,16 @@ export class LearningPlanService {
     const plan = await this.getCurrentPlan(studentId);
 
     let targetTask: StudyTask | null = null;
-    let _targetDayPlan: DailyStudyPlan | null = null;
 
-    // Search for task inside plan structure
     for (const week of plan.weeklyPlans) {
       for (const day of week.dailyPlans) {
         const found = day.tasks.find(t => t.id === taskId);
         if (found) {
           targetTask = found;
-          _targetDayPlan = day;
           break;
         }
       }
+      if (targetTask) break;
     }
 
     if (!targetTask || targetTask.studentId !== studentId) {
@@ -203,10 +198,8 @@ export class LearningPlanService {
       }
     }
 
-    // Save updated task
     await this.planProvider.saveTask(targetTask);
 
-    // Rebalance plan if missed or completed
     const prefs = await this.getPreferences(studentId);
     const rebalanceRes = PlanRebalancer.rebalancePlan(plan, prefs, {
       completedTaskId: targetStatus === StudyTaskStatus.COMPLETED ? taskId : undefined,
@@ -224,7 +217,7 @@ export class LearningPlanService {
     const todayPlan = await this.getTodayPlan(studentId);
     const prefs = await this.getPreferences(studentId);
 
-    let masteryProfile = undefined;
+    let masteryProfile: StudentMasteryProfile | undefined;
     if (this.learningProvider) {
       masteryProfile = await this.learningProvider.getStudentMasteryProfile(studentId);
     }
