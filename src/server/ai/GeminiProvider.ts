@@ -2,97 +2,106 @@ import { GoogleGenAI } from "@google/genai";
 import { AI_CONFIG } from "../config/aiModels.ts";
 import { classifyError } from "./AiErrors.ts";
 
+type GenerateContentRequest = Parameters<GoogleGenAI["models"]["generateContent"]>[0];
+
 export interface ProviderGenerateParams {
   apiKey: string;
   model: string;
-  contents: unknown;
-  config?: unknown;
+  contents: GenerateContentRequest["contents"];
+  config?: GenerateContentRequest["config"];
   pathname?: string;
+}
+
+function getProviderStatusCode(error: unknown): number {
+  if (typeof error !== "object" || error === null) return 500;
+  const record = error as Record<string, unknown>;
+  if (typeof record.status === "number") return record.status;
+  if (typeof record.code === "number") return record.code;
+  if (typeof record.error === "object" && record.error !== null) {
+    const nested = record.error as Record<string, unknown>;
+    if (typeof nested.code === "number") return nested.code;
+  }
+  return 500;
 }
 
 export class GeminiProvider {
   static async generate(params: ProviderGenerateParams): Promise<{ text: string }> {
-    if (!params.apiKey || typeof params.apiKey !== "string" || !params.apiKey.trim()) {
-      throw new Error("کلیل (GEMINI_API_KEY) بۆ سیستەمی زیرەکی زانا بەردەست نییە لە ڕێکخستنەکاندا.");
+    if (!params.apiKey.trim()) {
+      throw new Error("کلیلی سیستەمی زیرەکی زانا لە ڕێکخستنەکاندا بەردەست نییە.");
     }
 
     const maxRetries = AI_CONFIG.retryPolicy.maxRetries;
     const timeoutMs = AI_CONFIG.timeoutMs;
-
     let attempt = 0;
-    let lastError: unknown = null;
+    let lastError: unknown = new Error("Gemini request did not start");
 
     while (attempt <= maxRetries) {
-      let timeoutId: ReturnType<typeof setTimeout> | null = null;
+      const abortController = new AbortController();
+      const timeoutId: ReturnType<typeof setTimeout> = setTimeout(() => {
+        abortController.abort(new Error("Request timeout"));
+      }, timeoutMs);
 
       try {
-        const ai = new GoogleGenAI({
-          apiKey: params.apiKey,
-        });
+        const ai = new GoogleGenAI({ apiKey: params.apiKey });
+        const config: GenerateContentRequest["config"] = {
+          ...(params.config ?? {}),
+          abortSignal: abortController.signal,
+        };
 
-        const fetchPromise = ai.models.generateContent({
+        const response = await ai.models.generateContent({
           model: params.model,
-          contents: params.contents as Parameters<typeof ai.models.generateContent>[0]["contents"],
-          config: params.config as Parameters<typeof ai.models.generateContent>[0]["config"],
+          contents: params.contents,
+          config,
         });
 
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          timeoutId = setTimeout(() => {
-            reject(new Error("Request timeout"));
-          }, timeoutMs);
-        });
-
-        const response = await Promise.race([fetchPromise, timeoutPromise]);
-        clearTimeout(timeoutId);
-
-        const text = response?.text;
+        const text = response.text;
         if (typeof text !== "string" || text.trim().length === 0) {
           throw new Error("Invalid provider response: empty response text");
         }
 
         return { text: text.trim() };
-      } catch (err: unknown) {
-        if (timeoutId) clearTimeout(timeoutId);
-        lastError = err;
-        const category = classifyError(err);
+      } catch (error: unknown) {
+        const effectiveError = abortController.signal.aborted
+          ? new Error("Request timeout")
+          : error;
+        lastError = effectiveError;
 
-        let providerStatusCode = 500;
-        if (err && typeof err === "object") {
-          const errObj = err as Record<string, unknown>;
-          if (typeof errObj.status === "number") providerStatusCode = errObj.status;
-          else if (typeof errObj.code === "number") providerStatusCode = errObj.code;
-          if (errObj.error && typeof errObj.error === "object" && typeof (errObj.error as Record<string, unknown>).code === "number") {
-            providerStatusCode = (errObj.error as Record<string, unknown>).code as number;
-          }
-        }
-
+        const category = classifyError(effectiveError);
+        const providerStatusCode = getProviderStatusCode(effectiveError);
+        const isPermanentClientError = providerStatusCode >= 400 && providerStatusCode < 500 && providerStatusCode !== 408 && providerStatusCode !== 429;
         const isRetryable =
-          (AI_CONFIG.retryPolicy.retryableStatusCodes as readonly number[]).includes(providerStatusCode) ||
-          category === "timeout" ||
-          category === "quota_exceeded" ||
-          category === "rate_limited" ||
-          category === "provider_unavailable";
+          !isPermanentClientError &&
+          ((AI_CONFIG.retryPolicy.retryableStatusCodes as readonly number[]).includes(providerStatusCode) ||
+            category === "timeout" ||
+            category === "quota_exceeded" ||
+            category === "rate_limited" ||
+            category === "provider_unavailable");
 
         console.error("[AI Diagnostic]", {
           pathname: params.pathname || "unknown",
           category,
           providerStatusCode,
           selectedModel: params.model,
-          hasApiKey: Boolean(params.apiKey),
+          hasApiKey: true,
           retryCount: attempt,
+          timeout: abortController.signal.aborted,
         });
 
         if (!isRetryable || attempt >= maxRetries) {
-          throw err;
+          throw effectiveError;
         }
 
-        attempt++;
+        attempt += 1;
         const jitter = Math.random() * 100;
         const backoffMs = Math.min(
           AI_CONFIG.retryPolicy.baseBackoffMs * Math.pow(2, attempt - 1) + jitter,
           AI_CONFIG.retryPolicy.maxBackoffMs
         );
-        await new Promise((res) => setTimeout(res, backoffMs));
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, backoffMs);
+        });
+      } finally {
+        clearTimeout(timeoutId);
       }
     }
 
