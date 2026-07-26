@@ -1,68 +1,125 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Global Safety Net
-    match /{document=**} {
-      allow read, write: if false;
-    }
-    
-    // Valid identifier check
-    function isValidId(id) {
-      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
-    }
-    
-    // Authenticated non-anonymous user check
     function isVerifiedUser() {
-      return request.auth != null && 
+      return request.auth != null &&
              request.auth.token.firebase.sign_in_provider != 'anonymous';
     }
-    
-    // Owner authorization check
+
     function isOwner(studentId) {
       return isVerifiedUser() && request.auth.uid == studentId;
     }
-    
-    // Schema validation for Student Profile
-    function isValidStudentData(data) {
-      return data.keys().hasAll(['id', 'name', 'grade', 'stream', 'activeSubject', 'level']) &&
-             data.id is string && data.id.size() <= 128 &&
-             data.name is string && data.name.size() <= 100 &&
+
+    function isValidId(id) {
+      return id is string &&
+             id.size() > 0 &&
+             id.size() <= 128 &&
+             id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidStudentProfile(studentId, data) {
+      return data.keys().hasOnly([
+               'id',
+               'name',
+               'grade',
+               'stream',
+               'activeSubject',
+               'level',
+               'createdAt',
+               'updatedAt'
+             ]) &&
+             data.keys().hasAll([
+               'id',
+               'name',
+               'grade',
+               'stream',
+               'activeSubject',
+               'level',
+               'createdAt',
+               'updatedAt'
+             ]) &&
+             data.id == studentId &&
+             data.name is string &&
+             data.name.size() > 0 &&
+             data.name.size() <= 100 &&
              data.grade in ['9', '10', '11', '12'] &&
              data.stream in ['scientific', 'literary', 'general'] &&
+             (data.grade != '9' || data.stream == 'general') &&
              data.activeSubject in ['math', 'physics', 'chemistry', 'english'] &&
-             data.level in ['beginner', 'intermediate', 'advanced'];
+             data.level in ['beginner', 'intermediate', 'advanced'] &&
+             data.createdAt is string &&
+             data.createdAt.size() <= 40 &&
+             data.updatedAt is string &&
+             data.updatedAt.size() <= 40;
     }
-    
-    // Student profiles access control
+
+    function keepsImmutableProfileFields() {
+      return request.resource.data.id == resource.data.id &&
+             request.resource.data.createdAt == resource.data.createdAt;
+    }
+
+    function isValidChatMessage(data) {
+      return data.keys().hasOnly(['id', 'sender', 'text', 'timestamp']) &&
+             data.keys().hasAll(['id', 'sender', 'text', 'timestamp']) &&
+             data.id is string &&
+             data.id.size() <= 128 &&
+             data.sender in ['user', 'zana'] &&
+             data.text is string &&
+             data.text.size() > 0 &&
+             data.text.size() <= 12000 &&
+             data.timestamp is string &&
+             data.timestamp.size() <= 40;
+    }
+
     match /students/{studentId} {
       allow read: if isOwner(studentId);
-      allow create, update: if isOwner(studentId) && isValidId(studentId) && isValidStudentData(request.resource.data);
+      allow create: if isOwner(studentId) &&
+                       isValidId(studentId) &&
+                       isValidStudentProfile(studentId, request.resource.data);
+      allow update: if isOwner(studentId) &&
+                       isValidId(studentId) &&
+                       isValidStudentProfile(studentId, request.resource.data) &&
+                       keepsImmutableProfileFields();
       allow delete: if false;
-      
-      // Mastery subcollection
-      match /mastery/{docId} {
-        allow read: if isOwner(studentId);
-        allow write: if isOwner(studentId) && isValidId(docId);
+
+      // Official learning records are Worker/KV authoritative. Clients may read
+      // their own records but can never create or mutate official state directly.
+      match /mastery/{documentId} {
+        allow read: if isOwner(studentId) && isValidId(documentId);
+        allow write: if false;
       }
-      
-      // Chat messages subcollection
+
+      match /attempts/{documentId} {
+        allow read: if isOwner(studentId) && isValidId(documentId);
+        allow write: if false;
+      }
+
+      match /sessions/{documentId} {
+        allow read: if isOwner(studentId) && isValidId(documentId);
+        allow write: if false;
+      }
+
+      match /planning/{documentId} {
+        allow read: if isOwner(studentId) && isValidId(documentId);
+        allow write: if false;
+      }
+
+      match /assessments/{documentId} {
+        allow read: if isOwner(studentId) && isValidId(documentId);
+        allow write: if false;
+      }
+
       match /chatMessages/{messageId} {
-        allow read: if isOwner(studentId);
-        allow write: if isOwner(studentId) && isValidId(messageId);
+        allow read: if isOwner(studentId) && isValidId(messageId);
+        allow create: if isOwner(studentId) &&
+                         isValidId(messageId) &&
+                         isValidChatMessage(request.resource.data);
+        allow update, delete: if false;
       }
-      
-      // Attempts subcollection
-      match /attempts/{attemptId} {
-        allow read: if isOwner(studentId);
-        allow write: if isOwner(studentId) && isValidId(attemptId);
-      }
-      
-      // Sessions subcollection
-      match /sessions/{sessionId} {
-        allow read: if isOwner(studentId);
-        allow write: if isOwner(studentId) && isValidId(sessionId);
-      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
