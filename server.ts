@@ -1,6 +1,3 @@
-import express from "express";
-import path from "path";
-import fs from "fs";
 import { app } from "./src/server/app.ts";
 
 export {
@@ -14,34 +11,29 @@ export {
   isRateLimited,
 } from "./src/server/app.ts";
 
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const PORT = process.env.PORT ? Number.parseInt(process.env.PORT, 10) : 3000;
 
-async function bootstrap() {
-  if (process.env.NODE_ENV !== "production") {
-    // Dynamically import Vite only during local development
-    const { createServer: createViteServer } = await import("vite");
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    // Static production serving
-    const clientPath = path.join(process.cwd(), "dist", "client");
-    const distPath = fs.existsSync(clientPath) ? clientPath : path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
+async function bootstrapLocalServer(): Promise<void> {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "The Express adapter is local-development-only. Production must run on Cloudflare Worker and Static Assets.",
+    );
   }
 
-  if (process.env.NODE_ENV !== "test") {
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`ZANA Server running on port ${PORT}`);
-    });
-  }
+  if (process.env.NODE_ENV === "test") return;
+
+  const { createServer: createViteServer } = await import("vite");
+  const vite = await createViteServer({
+    server: { middlewareMode: true },
+    appType: "spa",
+  });
+  app.use(vite.middlewares);
+
+  app.listen(PORT, "127.0.0.1", () => {
+    console.log(`ZANA local development server is running on port ${PORT}`);
+  });
 }
 
-bootstrap().catch((err) => {
-  console.error("Failed to bootstrap ZANA local server:", err);
+void bootstrapLocalServer().catch(() => {
+  process.exitCode = 1;
 });
