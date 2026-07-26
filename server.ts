@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { app } from "./src/server/app.ts";
 
 export {
@@ -26,10 +27,13 @@ async function bootstrap() {
     app.use(vite.middlewares);
   } else {
     // In production/local start, serve compiled dist assets
-    const distPath = path.join(process.cwd(), "dist/client");
-    app.use(express.static(distPath));
+    const distClientPath = path.join(process.cwd(), "dist/client");
+    const distPath = path.join(process.cwd(), "dist");
+    const staticPath = fs.existsSync(distClientPath) ? distClientPath : distPath;
+
+    app.use(express.static(staticPath));
     app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
+      res.sendFile(path.join(staticPath, "index.html"));
     });
   }
 
