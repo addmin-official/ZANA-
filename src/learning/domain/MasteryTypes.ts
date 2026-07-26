@@ -1,5 +1,3 @@
-import { StudentGrade, AcademicStream, SubjectKey, StudentLevel } from "../../features/student/studentTypes.ts";
-
 export enum DifficultyLevel {
   FOUNDATION = "FOUNDATION",
   EASY = "EASY",
@@ -71,7 +69,7 @@ export interface LearningEvent {
   studentId: string;
   timestamp: string;
   type: LearningEventType;
-  data: Record<string, any>;
+  data: Record<string, unknown>;
 }
 
 export interface ExerciseAttempt {

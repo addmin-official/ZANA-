@@ -143,7 +143,8 @@ export class AuthService {
     jwk: JWKKey,
     payload: Record<string, unknown>
   ): Promise<VerifiedTokenClaims> {
-    const cryptoApi = typeof crypto !== "undefined" && crypto.subtle ? crypto : (globalThis as any).crypto;
+    const globalCrypto = (globalThis as unknown as { crypto?: Crypto }).crypto;
+    const cryptoApi = typeof crypto !== "undefined" && crypto.subtle ? crypto : globalCrypto;
     if (!cryptoApi || !cryptoApi.subtle) {
       throw new Error("Web Crypto API unavailable in current environment");
     }

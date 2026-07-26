@@ -2,10 +2,7 @@ import { StudentProfile } from "../features/student/studentTypes.ts";
 import { StudentIntelligenceSnapshot } from "../intelligence/types.ts";
 import { CurriculumIntelligenceSnapshot } from "../curriculum/types.ts";
 import {
-  StudentSession,
   SessionSnapshot,
-  SessionTimelineEvent,
-  SessionAnalyticsSummary,
   LearningMode
 } from "./types.ts";
 import { SessionEngine } from "./SessionEngine.ts";

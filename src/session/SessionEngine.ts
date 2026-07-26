@@ -1,6 +1,5 @@
 import { StudentSession, LearningMode, SessionGoal } from "./types.ts";
 import { SessionStateEngine } from "./SessionStateEngine.ts";
-import { CurriculumNode } from "../curriculum/types.ts";
 
 export class SessionEngine {
   private stateEngine: SessionStateEngine;

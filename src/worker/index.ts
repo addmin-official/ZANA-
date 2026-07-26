@@ -6,7 +6,6 @@ import { AdaptiveLearningEngine } from "../learning/engine/AdaptiveLearningEngin
 import { DifficultyLevel, MisconceptionStatus } from "../learning/domain/MasteryTypes.ts";
 import { CurriculumRegistry } from "../curriculum/registry/CurriculumRegistry.ts";
 import { AuthService } from "../services/authService.ts";
-import { getPrimaryModel as getCentralPrimaryModel, getVisionModel as getCentralVisionModel } from "../server/config/aiModels.ts";
 import {
   ChatRequest,
   AssessmentRequest,
@@ -32,6 +31,7 @@ import {
   StudyTaskStatus,
   PlanningValidation,
   PlanRebalancer,
+  PlanGenerationMode,
 } from "../planning/index.ts";
 
 export interface Env {
@@ -40,9 +40,9 @@ export interface Env {
   FIREBASE_PROJECT_ID: string;
   GEMINI_PRIMARY_MODEL?: string;
   GEMINI_VISION_MODEL?: string;
-  ZANA_LEARNING_KV?: any;
-  LEARNING_RECORDS_KV?: any;
-  ASSETS?: any;
+  ZANA_LEARNING_KV?: unknown;
+  LEARNING_RECORDS_KV?: unknown;
+  ASSETS?: { fetch: (req: Request) => Promise<Response> };
 }
 
 // 1. IN-MEMORY RATE LIMITING
@@ -180,7 +180,7 @@ async function getWorkerAuthenticatedStudentId(req: Request, env: Env): Promise<
 }
 
 export default {
-  async fetch(request: Request, env: Env, _ctx?: any): Promise<Response> {
+  async fetch(request: Request, env: Env, _ctx?: unknown): Promise<Response> {
     const url = new URL(request.url);
     let pathname = url.pathname.replace(/\/+/g, "/");
 
@@ -271,8 +271,8 @@ export default {
         try {
           const body = await request.json().catch(() => ({}));
           chatReq = parseChatRequest(body);
-        } catch (err: any) {
-          return new Response(JSON.stringify({ error: err?.message || "داواکارییەکە کەموکوڕی تێدایە." }), {
+        } catch (err: unknown) {
+          return new Response(JSON.stringify({ error: (err as { message?: string })?.message || "داواکارییەکە کەموکوڕی تێدایە." }), {
             status: 400,
             headers: responseHeaders,
           });
@@ -295,8 +295,8 @@ export default {
         try {
           const body = await request.json().catch(() => ({}));
           assessReq = parseAssessmentRequest(body);
-        } catch (err: any) {
-          return new Response(JSON.stringify({ error: err?.message || "زانیارییەکانی تاقیکردنەوە نەنێردراون." }), {
+        } catch (err: unknown) {
+          return new Response(JSON.stringify({ error: (err as { message?: string })?.message || "زانیارییەکانی تاقیکردنەوە نەنێردراون." }), {
             status: 400,
             headers: responseHeaders,
           });
@@ -332,8 +332,8 @@ export default {
         try {
           const body = await request.json().catch(() => ({}));
           reportReq = parseReportRequest(body);
-        } catch (err: any) {
-          return new Response(JSON.stringify({ error: err?.message || "زانیارییەکان تەواو نین بۆ دروستکردنی ڕاپۆرت." }), {
+        } catch (err: unknown) {
+          return new Response(JSON.stringify({ error: (err as { message?: string })?.message || "زانیارییەکان تەواو نین بۆ دروستکردنی ڕاپۆرت." }), {
             status: 400,
             headers: responseHeaders,
           });
@@ -355,8 +355,8 @@ export default {
         try {
           const body = await request.json().catch(() => ({}));
           askReq = parseAskRequest(body);
-        } catch (err: any) {
-          return new Response(JSON.stringify({ error: err?.message || "داواکارییەکە کەموکوڕی تێدایە." }), {
+        } catch (err: unknown) {
+          return new Response(JSON.stringify({ error: (err as { message?: string })?.message || "داواکارییەکە کەموکوڕی تێدایە." }), {
             status: 400,
             headers: responseHeaders,
           });
@@ -428,8 +428,8 @@ export default {
             mode: modeRaw,
             editedText: editedTextRaw,
           });
-        } catch (err: any) {
-          return new Response(JSON.stringify({ error: err?.message || getClientSafeErrorMessage("validation") }), {
+        } catch (err: unknown) {
+          return new Response(JSON.stringify({ error: (err as { message?: string })?.message || getClientSafeErrorMessage("validation") }), {
             status: 400,
             headers: responseHeaders,
           });
@@ -513,7 +513,7 @@ export default {
           return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
         }
 
-        const body: any = await request.json().catch(() => ({}));
+        const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
         const { type, data } = body;
         if (!type) {
           return new Response(JSON.stringify({ error: "زانیاری پێویست بۆ ناردنی ڕووداو بوونی نییە." }), { status: 400, headers: responseHeaders });
@@ -542,7 +542,7 @@ export default {
           return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
         }
 
-        const body: any = await request.json().catch(() => ({}));
+        const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
         const {
           conceptId,
           isCorrect,
@@ -710,7 +710,7 @@ export default {
         const parts = pathname.split("/");
         const sessionId = decodeURIComponent(parts[parts.length - 2]);
 
-        const body: any = await request.json().catch(() => ({}));
+        const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
         const { focusScore } = body;
 
         const session = {
@@ -736,7 +736,7 @@ export default {
           return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
         }
 
-        const body: any = await request.json().catch(() => ({}));
+        const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
         const { unitId, subjectId, type, titleKu, instructionsKu } = body;
 
         if (!unitId || !subjectId) {
@@ -809,14 +809,14 @@ export default {
 
       // POST /api/assessment/submit
       if (pathname === "/api/assessment/submit" && request.method === "POST") {
-        let studentId: string;
+        let _studentId: string;
         try {
-          studentId = await getWorkerAuthenticatedStudentId(request, env);
+          _studentId = await getWorkerAuthenticatedStudentId(request, env);
         } catch {
           return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
         }
 
-        const body: any = await request.json().catch(() => ({}));
+        const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
         const { attemptId, questionId, submission, blueprint } = body;
 
         if (!attemptId || !questionId || !submission || !blueprint) {
@@ -834,14 +834,14 @@ export default {
 
       // POST /api/assessment/finish
       if (pathname === "/api/assessment/finish" && request.method === "POST") {
-        let studentId: string;
+        let _studentId: string;
         try {
-          studentId = await getWorkerAuthenticatedStudentId(request, env);
+          _studentId = await getWorkerAuthenticatedStudentId(request, env);
         } catch {
           return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
         }
 
-        const body: any = await request.json().catch(() => ({}));
+        const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
         const { attemptId, blueprint } = body;
 
         if (!attemptId || !blueprint) {
@@ -906,8 +906,8 @@ export default {
           }
 
           if (pathname === "/api/planning/preferences" && request.method === "POST") {
-            const body: any = await request.json().catch(() => ({}));
-            const preferences = await planningService.savePreferences(studentId, body);
+            const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+            const preferences = await planningService.savePreferences(studentId, body as Record<string, unknown>);
             return new Response(JSON.stringify(preferences), { status: 200, headers: responseHeaders });
           }
 
@@ -917,8 +917,8 @@ export default {
           }
 
           if (pathname === "/api/planning/goals" && request.method === "POST") {
-            const body: any = await request.json().catch(() => ({}));
-            const validated = PlanningValidation.validateGoal(studentId, body);
+            const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+            const validated = PlanningValidation.validateGoal(studentId, body as Record<string, unknown>);
             const fullGoal = {
               id: `goal_${studentId}_${Date.now()}`,
               studentId,
@@ -929,19 +929,19 @@ export default {
               targetDate: body.targetDate,
               weeklyTargetMinutes: validated.weeklyTargetMinutes!,
               successCriteria: body.successCriteria || { metric: "mastery_score", targetValue: 0.8 },
-              status: "ACTIVE" as any,
+              status: "ACTIVE" as const,
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
             };
-            await planProvider.saveGoal(fullGoal as any);
+            await planProvider.saveGoal(fullGoal as never);
             return new Response(JSON.stringify(fullGoal), { status: 200, headers: responseHeaders });
           }
 
           if (pathname === "/api/planning/generate" && request.method === "POST") {
-            const body: any = await request.json().catch(() => ({}));
+            const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
             const plan = await planningService.generatePlanForStudent(studentId, {
-              mode: body.mode || "MANUAL_REPLAN",
-              startDateIso: body.startDateIso,
+              mode: (body.mode as PlanGenerationMode) || "MANUAL_REPLAN",
+              startDateIso: body.startDateIso as string | undefined,
             });
             return new Response(JSON.stringify(plan), { status: 200, headers: responseHeaders });
           }
@@ -972,8 +972,8 @@ export default {
           if (pathname.includes("/tasks/") && pathname.endsWith("/complete") && request.method === "POST") {
             const parts = pathname.split("/");
             const taskId = parts[parts.indexOf("tasks") + 1];
-            const body: any = await request.json().catch(() => ({}));
-            const res = await planningService.updateTaskStatus(studentId, taskId, StudyTaskStatus.COMPLETED, body.actualDurationMinutes);
+            const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+            const res = await planningService.updateTaskStatus(studentId, taskId, StudyTaskStatus.COMPLETED, body.actualDurationMinutes as number | undefined);
             return new Response(JSON.stringify(res), { status: 200, headers: responseHeaders });
           }
 
@@ -1002,8 +1002,8 @@ export default {
             const progress = await planningService.getProgress(studentId);
             return new Response(JSON.stringify(progress), { status: 200, headers: responseHeaders });
           }
-        } catch (planError: any) {
-          const errMsg = planError?.message || String(planError);
+        } catch (planError: unknown) {
+          const errMsg = (planError as Error)?.message || String(planError);
           if (errMsg.includes("نەدۆزرایەوە")) {
             return new Response(JSON.stringify({ error: errMsg }), { status: 404, headers: responseHeaders });
           }

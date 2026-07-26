@@ -76,7 +76,7 @@ export class LearningPlanService {
 
   public async generatePlanForStudent(
     studentId: string,
-    options?: { mode?: any; startDateIso?: string; authoritative?: boolean }
+    options?: { mode?: PlanGenerationMode; startDateIso?: string; authoritative?: boolean }
   ): Promise<LearningPlan> {
     const prefs = await this.getPreferences(studentId);
     const goal = await this.getActiveGoal(studentId);
@@ -170,7 +170,7 @@ export class LearningPlanService {
     const plan = await this.getCurrentPlan(studentId);
 
     let targetTask: StudyTask | null = null;
-    let targetDayPlan: DailyStudyPlan | null = null;
+    let _targetDayPlan: DailyStudyPlan | null = null;
 
     // Search for task inside plan structure
     for (const week of plan.weeklyPlans) {
@@ -178,7 +178,7 @@ export class LearningPlanService {
         const found = day.tasks.find(t => t.id === taskId);
         if (found) {
           targetTask = found;
-          targetDayPlan = day;
+          _targetDayPlan = day;
           break;
         }
       }

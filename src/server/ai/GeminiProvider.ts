@@ -23,7 +23,7 @@ export class GeminiProvider {
     let lastError: unknown = null;
 
     while (attempt <= maxRetries) {
-      let timeoutId: any = null;
+      let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
       try {
         const ai = new GoogleGenAI({
@@ -32,8 +32,8 @@ export class GeminiProvider {
 
         const fetchPromise = ai.models.generateContent({
           model: params.model,
-          contents: params.contents as any,
-          config: params.config as any,
+          contents: params.contents as Parameters<typeof ai.models.generateContent>[0]["contents"],
+          config: params.config as Parameters<typeof ai.models.generateContent>[0]["config"],
         });
 
         const timeoutPromise = new Promise<never>((_, reject) => {

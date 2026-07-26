@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { StudentProfile } from "../../student/studentTypes.ts";
 import { CurriculumIntelligenceSnapshot } from "../../../curriculum/types.ts";
 import { SessionSnapshot } from "../../../session/types.ts";
@@ -16,40 +16,30 @@ export function useExplainMode({
   curriculumSnapshot,
   sessionSnapshot
 }: UseExplainModeProps) {
-  const [snapshot, setSnapshot] = useState<ExplainSnapshot | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
+  const [forceKey, setForceKey] = useState(0);
 
-  const calculateSnapshot = useCallback(() => {
-    setIsLoading(true);
-    setError(null);
+  const { snapshot, error } = useMemo(() => {
     try {
       const snap = ExplainModeEngine.buildExplainSnapshot({
         studentProfile,
         curriculumSnapshot,
         sessionSnapshot
       });
-      setSnapshot(snap);
-    } catch (e: any) {
+      return { snapshot: snap, error: null };
+    } catch (e: unknown) {
       console.error("Error building ExplainSnapshot:", e);
-      setError(e?.message || "هەڵەیەک ڕوویدا لە کاتی داڕشتنی وانەکەدا.");
-    } finally {
-      setIsLoading(false);
+      const errMessage = e instanceof Error ? e.message : "هەڵەیەک ڕوویدا لە کاتی داڕشتنی وانەکەدا.";
+      return { snapshot: null, error: errMessage };
     }
-  }, [studentProfile, curriculumSnapshot, sessionSnapshot]);
-
-  // Recalculate when dependency states or current active node changes
-  useEffect(() => {
-    calculateSnapshot();
-  }, [calculateSnapshot]);
+  }, [studentProfile, curriculumSnapshot, sessionSnapshot, forceKey]);
 
   const refresh = useCallback(() => {
-    calculateSnapshot();
-  }, [calculateSnapshot]);
+    setForceKey(k => k + 1);
+  }, []);
 
   return {
-    snapshot,
-    isLoading,
+    snapshot: snapshot as ExplainSnapshot | null,
+    isLoading: false,
     error,
     refresh
   };

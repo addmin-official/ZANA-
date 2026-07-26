@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { StudentProfile } from "../../student/studentTypes.ts";
 import { CurriculumIntelligenceSnapshot } from "../../../curriculum/types.ts";
 import { SessionSnapshot } from "../../../session/types.ts";
-import { PracticeSnapshot, PracticeAttempt, PracticeQuestion } from "./practiceTypes.ts";
+import { PracticeSnapshot, PracticeAttempt } from "./practiceTypes.ts";
 import { PracticeModeEngine } from "./PracticeModeEngine.ts";
 import { DomainEventBus } from "../../../domain/DomainEventBus.ts";
 import { DomainEventFactory } from "../../../domain/DomainEventFactory.ts";
@@ -24,10 +24,12 @@ export function usePracticeMode({
   const conceptId = sessionSnapshot.currentSession?.currentNodeId || "12_sci_math_con1";
 
   // Reset attempts when active concept changes
-  useEffect(() => {
+  const [prevConceptId, setPrevConceptId] = useState(conceptId);
+  if (conceptId !== prevConceptId) {
+    setPrevConceptId(conceptId);
     setAttempts([]);
     setError(null);
-  }, [conceptId]);
+  }
 
   // Build the snapshot dynamically using the engine
   const snapshot = useMemo<PracticeSnapshot | null>(() => {
@@ -38,9 +40,8 @@ export function usePracticeMode({
         sessionSnapshot,
         attempts
       });
-    } catch (e: any) {
+    } catch (e) {
       console.error("Error building practice snapshot:", e);
-      setError(e?.message || "هەڵەیەک لە داڕشتنی پانێلی ڕاهێناندا ڕوویدا.");
       return null;
     }
   }, [studentProfile, curriculumSnapshot, sessionSnapshot, attempts]);
@@ -90,7 +91,7 @@ export function usePracticeMode({
             stream: studentProfile.stream
           }
         );
-        eventBus.publish(subEvent);
+        void eventBus.publish(subEvent);
       } catch (evtErr) {
         console.warn("Domain events could not publish ANSWER_SUBMITTED:", evtErr);
       }
@@ -116,7 +117,7 @@ export function usePracticeMode({
             stream: studentProfile.stream
           }
         );
-        eventBus.publish(evalEvent);
+        void eventBus.publish(evalEvent);
       } catch (evtErr) {
         console.warn("Domain events could not publish ANSWER_EVALUATED:", evtErr);
       }
@@ -150,13 +151,13 @@ export function usePracticeMode({
                 stream: studentProfile.stream
               }
             );
-            eventBus.publish(conceptCompEvent);
+            void eventBus.publish(conceptCompEvent);
           } catch (evtErr) {
             console.warn("Domain events could not publish CONCEPT_COMPLETED:", evtErr);
           }
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error during answer submission:", err);
       setError("کێشەیەک لە پێشکەشکردنی وەڵامدا دروست بوو.");
     }

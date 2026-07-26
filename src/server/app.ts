@@ -4,11 +4,6 @@ import multer from "multer";
 import { ProviderAdapter } from "./ai/AiProvider.ts";
 import { classifyError, getClientSafeErrorMessage, logMinimalError, SafeErrorCategory } from "./ai/AiErrors.ts";
 import {
-  ChatRequest,
-  AssessmentRequest,
-  ReportRequest,
-  AskRequest,
-  VisionRequest,
   parseChatRequest,
   parseAssessmentRequest,
   parseReportRequest,
@@ -48,7 +43,7 @@ app.get("/api/health", (req: Request, res: Response) => {
 export { classifyError, getClientSafeErrorMessage, logMinimalError, type SafeErrorCategory };
 
 export class UploadValidationError extends Error {
-  readonly code: "UNSUPPORTED_MIME_TYPE" = "UNSUPPORTED_MIME_TYPE";
+  readonly code = "UNSUPPORTED_MIME_TYPE" as const;
 
   constructor(message: string) {
     super(message);
@@ -541,10 +536,13 @@ app.post("/api/learning/sessions/:sessionId/end", async (req: Request, res: Resp
   }
 });
 
-app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
+app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
   const category = classifyError(err);
   logMinimalError(req.originalUrl, category, err);
-  res.status(err.status || err.statusCode || 500).json({
+  const status = (err && typeof err === "object" && ("status" in err || "statusCode" in err))
+    ? Number((err as Record<string, unknown>).status || (err as Record<string, unknown>).statusCode) || 500
+    : 500;
+  res.status(status).json({
     error: getClientSafeErrorMessage(category),
   });
 });

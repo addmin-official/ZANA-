@@ -12,8 +12,7 @@ import {
   BookOpen,
   Clock,
   Flame,
-  AlertCircle,
-  HelpCircle
+  AlertCircle
 } from "lucide-react";
 import { useState } from "react";
 
@@ -23,7 +22,7 @@ interface DailySparkScreenProps {
   onStartAssessment: () => void;
 }
 
-export function DailySparkScreen({ profile, onNavigate, onStartAssessment }: DailySparkScreenProps) {
+export function DailySparkScreen({ profile: _profile, onNavigate, onStartAssessment }: DailySparkScreenProps) {
   const { snapshot, isLoading, error } = useDailySpark();
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 

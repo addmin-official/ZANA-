@@ -1,11 +1,9 @@
 import { useState, useEffect } from "react";
 import { StudentProfile } from "../features/student/studentTypes.ts";
-import { useStudentProfile } from "../features/student/useStudentProfile.ts";
 import { StudentIntelligenceEngine } from "../intelligence/StudentIntelligenceEngine.ts";
 import { CurriculumIntelligenceEngine } from "../curriculum/CurriculumIntelligenceEngine.ts";
 import { learningSessionEngineInstance } from "../session/LearningSessionEngine.ts";
 import { CurriculumNode } from "../curriculum/types.ts";
-import { LearningMode } from "../session/types.ts";
 import { ZanaCard } from "../components/ZanaCard.tsx";
 import { ZanaButton } from "../components/ZanaButton.tsx";
 import { ExplainPanel } from "../features/study/explain/index.ts";
@@ -24,10 +22,6 @@ import {
   Clock,
   BookMarked,
   Layers,
-  ChevronLeft,
-  CheckCircle,
-  AlertCircle,
-  Send,
   Check,
   Brain,
   Camera
@@ -422,21 +416,9 @@ export function StudyWorkspaceScreen({ profile, onNavigate }: StudyWorkspaceScre
 
   // States
   const [activeAction, setActiveAction] = useState<"explain" | "practice" | "ask" | "summary" | "formula" | "vision">("explain");
-  const [explainStepIndex, setExplainStepIndex] = useState(0);
-  
-  // Practice states
-  const [currentQuizIdx, setCurrentQuizIdx] = useState(0);
-  const [selectedOption, setSelectedOption] = useState<number | null>(null);
-  const [isAnswered, setIsAnswered] = useState(false);
-  const [practiceCompleted, setPracticeCompleted] = useState(false);
-
   // Reset indices on concept shift
   useEffect(() => {
-    setExplainStepIndex(0);
-    setCurrentQuizIdx(0);
-    setSelectedOption(null);
-    setIsAnswered(false);
-    setPracticeCompleted(false);
+    // Concept shifted
   }, [currentNodeId]);
 
   // UI helpers for subjects in Kurdish
@@ -482,28 +464,6 @@ export function StudyWorkspaceScreen({ profile, onNavigate }: StudyWorkspaceScre
       setLseSnapshot(updatedSnapshot);
     }
   };
-
-  // Handle Practice Quiz option click
-  const handleOptionClick = (idx: number) => {
-    if (isAnswered) return;
-    setSelectedOption(idx);
-    setIsAnswered(true);
-
-    const isCorrect = idx === content.practice[currentQuizIdx].correctIndex;
-
-    // Trigger state save on LSE for a completed practice attempt
-    if (isCorrect) {
-      const nextSnapshot = learningSessionEngineInstance.registerActivity(
-        currentNodeId,
-        "practice",
-        true,
-        60
-      );
-      setLseSnapshot(nextSnapshot);
-    }
-  };
-
-  const currentQuiz = content.practice[currentQuizIdx] || content.practice[0];
 
   return (
     <div className="flex-1 flex flex-col justify-start pb-8 space-y-5 select-none" dir="rtl">

@@ -17,8 +17,6 @@ import {
   Award,
   CheckCircle2,
   BookMarked,
-  ArrowRight,
-  ArrowLeft,
   ChevronLeft,
   ChevronRight
 } from "lucide-react";

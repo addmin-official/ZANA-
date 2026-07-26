@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { StudentProfile } from "../../student/studentTypes.ts";
 import { CurriculumIntelligenceSnapshot } from "../../../curriculum/types.ts";
 import { SessionSnapshot } from "../../../session/types.ts";
@@ -12,14 +12,10 @@ import {
   ArrowRight,
   BookOpen,
   CheckCircle,
-  HelpCircle,
-  Clock,
-  Sparkles,
   Info,
   Check,
   X,
-  RotateCcw,
-  ListTodo
+  RotateCcw
 } from "lucide-react";
 
 interface PracticePanelProps {
@@ -34,7 +30,7 @@ export function PracticePanel({
   studentProfile,
   curriculumSnapshot,
   sessionSnapshot,
-  onNavigate,
+  onNavigate: _onNavigate,
   onConceptCompleted
 }: PracticePanelProps) {
   const {
@@ -54,10 +50,13 @@ export function PracticePanel({
   const [shortAnswers, setShortAnswers] = useState<Record<string, string>>({});
 
   // Reset local form states when the concept shifts or reset is clicked
-  useEffect(() => {
+  const [prevResetKey, setPrevResetKey] = useState(`${snapshot?.conceptTitle}_${snapshot?.attempts.length}`);
+  const currentResetKey = `${snapshot?.conceptTitle}_${snapshot?.attempts.length}`;
+  if (currentResetKey !== prevResetKey) {
+    setPrevResetKey(currentResetKey);
     setSelectedChoices({});
     setShortAnswers({});
-  }, [snapshot?.conceptTitle, snapshot?.attempts.length]);
+  }
 
   if (error || !snapshot) {
     return (
@@ -140,12 +139,12 @@ export function PracticePanel({
 
       {/* 2. QUESTIONS WORKSPACE */}
       <motion.div
-        variants={containerVariants as any}
+        variants={containerVariants}
         initial="hidden"
         animate="show"
         className="space-y-4"
       >
-        {questions.map((question: PracticeQuestion, idx: number) => {
+        {questions.map((question: PracticeQuestion) => {
           const attempt = attemptsMap.get(question.id);
           const isAnswered = !!attempt;
           const isCorrect = attempt?.isCorrect || false;
@@ -153,7 +152,7 @@ export function PracticePanel({
           return (
             <motion.div
               key={question.id}
-              variants={itemVariants as any}
+              variants={itemVariants}
               className={`bg-white border rounded-2xl p-4 shadow-2xs space-y-3.5 transition-all duration-300 ${
                 isAnswered
                   ? isCorrect

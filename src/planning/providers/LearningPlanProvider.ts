@@ -42,10 +42,10 @@ export interface LearningPlanProvider {
 }
 
 export class PersistentLearningPlanProvider implements LearningPlanProvider {
-  private kv: any;
+  private kv: unknown;
   private envMode: "production" | "development" | "test";
 
-  constructor(kvBinding?: any, envMode: "production" | "development" | "test" = "production") {
+  constructor(kvBinding?: unknown, envMode: "production" | "development" | "test" = "production") {
     this.kv = kvBinding;
     this.envMode = envMode;
 

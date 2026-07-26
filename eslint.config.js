@@ -4,16 +4,44 @@ import reactHooks from "eslint-plugin-react-hooks";
 
 export default [
   {
-    ignores: ["dist/**", "node_modules/**", "coverage/**", "*.js"]
+    ignores: ["dist/**", "node_modules/**", "coverage/**", "*.js", "scripts/**", "test_vision.ts"]
   },
   {
     files: ["src/**/*.ts", "src/**/*.tsx"],
+    ignores: ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test/**"],
     languageOptions: {
       parser: tsParser,
       parserOptions: {
         ecmaVersion: "latest",
         sourceType: "module",
-        jsx: true
+        jsx: true,
+        project: "./tsconfig.json"
+      }
+    },
+    plugins: {
+      "@typescript-eslint": tsPlugin,
+      "react-hooks": reactHooks
+    },
+    linterOptions: {
+      reportUnusedDisableDirectives: true
+    },
+    rules: {
+      ...tsPlugin.configs.recommended.rules,
+      ...reactHooks.configs.recommended.rules,
+      "@typescript-eslint/no-explicit-any": "error",
+      "@typescript-eslint/no-floating-promises": "error",
+      "@typescript-eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }]
+    }
+  },
+  {
+    files: ["src/**/*.test.ts", "src/**/*.test.tsx", "src/test/**"],
+    languageOptions: {
+      parser: tsParser,
+      parserOptions: {
+        ecmaVersion: "latest",
+        sourceType: "module",
+        jsx: true,
+        project: "./tsconfig.json"
       }
     },
     plugins: {
@@ -22,17 +50,8 @@ export default [
     },
     rules: {
       ...tsPlugin.configs.recommended.rules,
-      ...reactHooks.configs.recommended.rules,
       "@typescript-eslint/no-explicit-any": "off",
-      "@typescript-eslint/no-unused-vars": "off",
-      "react-hooks/set-state-in-effect": "off",
-      "react-hooks/set-state-in-render": "off",
-      "react-hooks/preserve-manual-memoization": "off",
-      "react-hooks/exhaustive-deps": "off",
-      "@typescript-eslint/prefer-as-const": "off",
-      "@typescript-eslint/no-empty-object-type": "off",
-      "@typescript-eslint/no-require-imports": "off",
-      "@typescript-eslint/ban-ts-comment": "off"
+      "@typescript-eslint/no-floating-promises": "off"
     }
   }
 ];

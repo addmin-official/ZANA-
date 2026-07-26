@@ -86,9 +86,17 @@ export function useStudentMastery(studentId: string, onAuthFailure?: () => void)
   }, [studentId, fetchWithAuth]);
 
   useEffect(() => {
+    let ignore = false;
     if (studentId && studentId !== "default-guest") {
-      loadProfile();
+      void (async () => {
+        if (!ignore) {
+          await loadProfile();
+        }
+      })();
     }
+    return () => {
+      ignore = true;
+    };
   }, [studentId, loadProfile]);
 
   // Record an exercise attempt securely on the server

@@ -1,4 +1,4 @@
-import { DifficultyLevel, MisconceptionState } from "../../learning/domain/MasteryTypes.ts";
+import { MisconceptionState } from "../../learning/domain/MasteryTypes.ts";
 import { AssessmentResult } from "../../assessment/domain/AssessmentTypes.ts";
 import {
   StudyTask,

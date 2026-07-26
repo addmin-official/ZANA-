@@ -26,7 +26,7 @@ export class ProviderAdapter {
   }
 
   static async chat(apiKey: string, req: ChatRequest, env?: unknown): Promise<ChatResponse> {
-    const model = resolvePrimaryModel(env as any);
+    const model = resolvePrimaryModel(env as Record<string, unknown> | undefined);
     const systemInstruction = buildSystemPrompt({
       studentName: req.profile.name || "قوتابی",
       grade: req.profile.grade || "9",
@@ -76,7 +76,7 @@ export class ProviderAdapter {
   }
 
   static async assessment(apiKey: string, req: AssessmentRequest, env?: unknown): Promise<AssessmentResponse> {
-    const model = resolvePrimaryModel(env as any);
+    const model = resolvePrimaryModel(env as Record<string, unknown> | undefined);
     const systemInstruction = buildSystemPrompt({
       studentName: req.profile.name || "قوتابی",
       grade: req.profile.grade || "9",
@@ -146,7 +146,7 @@ ${historySummary.join("\n")}
   }
 
   static async report(apiKey: string, req: ReportRequest, env?: unknown): Promise<ReportResponse> {
-    const model = resolvePrimaryModel(env as any);
+    const model = resolvePrimaryModel(env as Record<string, unknown> | undefined);
     const systemInstruction = buildSystemPrompt({
       studentName: req.profile.name || "قوتابی",
       grade: req.profile.grade || "9",
@@ -195,7 +195,7 @@ ${historySummary.join("\n")}
   }
 
   static async ask(apiKey: string, req: AskRequest, env?: unknown): Promise<AskResponse> {
-    const model = resolvePrimaryModel(env as any);
+    const model = resolvePrimaryModel(env as Record<string, unknown> | undefined);
     const systemInstruction = buildSystemPrompt({
       studentName: req.context.studentName || "قوتابی",
       grade: req.context.grade || "9",
@@ -247,7 +247,7 @@ ${historySummary.join("\n")}
   }
 
   static async vision(apiKey: string, req: VisionRequest, env?: unknown): Promise<VisionResponse> {
-    const model = resolveVisionModel(env as any);
+    const model = resolveVisionModel(env as Record<string, unknown> | undefined);
     const base64Data = Buffer.from(req.imageBytes).toString("base64");
 
     const systemInstruction = buildSystemPrompt({

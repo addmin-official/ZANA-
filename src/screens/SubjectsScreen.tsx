@@ -1,8 +1,7 @@
 import { useState } from "react";
-import { ZanaCard } from "../components/ZanaCard.tsx";
 import { ZanaButton } from "../components/ZanaButton.tsx";
 import { StudentProfile, SubjectKey } from "../features/student/studentTypes.ts";
-import { SUBJECTS_DATA, CurriculumSubject } from "../data/subjects.ts";
+import { SUBJECTS_DATA } from "../data/subjects.ts";
 import { BookOpen, Calculator, Flame, Atom, Languages, ChevronDown, ChevronUp, MessageSquare } from "lucide-react";
 
 interface SubjectsScreenProps {

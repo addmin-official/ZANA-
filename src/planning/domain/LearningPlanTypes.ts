@@ -266,5 +266,5 @@ export interface PlanningAnalyticsEvent {
   studentId: string;
   type: PlanningEventType;
   timestamp: string;
-  data: Record<string, any>;
+  data: Record<string, unknown>;
 }

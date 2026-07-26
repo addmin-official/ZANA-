@@ -123,7 +123,7 @@ export function VisionCapturePanel({ context }: VisionCapturePanelProps) {
         result={snapshot.result}
         onEditSubmit={(newText) => {
           updateEditableText(newText);
-          submitImage(newText);
+          void submitImage(newText);
         }}
         onReset={reset}
       />

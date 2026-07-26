@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert";
 import { AdaptiveLearningEngine } from "./AdaptiveLearningEngine.ts";
-import { MasteryStatus, DifficultyLevel, MisconceptionStatus } from "../domain/MasteryTypes.ts";
+import { MasteryStatus, DifficultyLevel } from "../domain/MasteryTypes.ts";
 
 test("AdaptiveLearningEngine - Mastery Score Calculations", () => {
   // Test baseline mastery calculation

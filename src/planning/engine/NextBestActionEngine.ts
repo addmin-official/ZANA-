@@ -43,7 +43,7 @@ export class NextBestActionEngine {
     // 1. Cold Start Check: No mastery profile or empty masteries
     if (!profile || Object.keys(profile.conceptMasteries).length === 0) {
       // Look for a planned diagnostic task or offer diagnostic assessment
-      const plannedDiag = activeTasks.find(t => t.type === "ASSESSMENT" as any || t.type === "MASTERY_CHECK" as any);
+      const plannedDiag = activeTasks.find(t => (t.type as string) === "ASSESSMENT" || (t.type as string) === "MASTERY_CHECK");
       return {
         actionType: "TAKE_DIAGNOSTIC",
         titleKu: "ئەنجامدانی تاقیکردنەوەی دیاریکردنی ئاست",
@@ -111,7 +111,7 @@ export class NextBestActionEngine {
 
     if (currentAvailableTask) {
       return {
-        actionType: currentAvailableTask.type === ("MASTERY_CHECK" as any) ? "TAKE_MASTERY_CHECK" : "CONTINUE_LESSON",
+        actionType: (currentAvailableTask.type as string) === "MASTERY_CHECK" ? "TAKE_MASTERY_CHECK" : "CONTINUE_LESSON",
         titleKu: currentAvailableTask.titleKu,
         reasonKu: currentAvailableTask.reason?.descriptionKu || "ئەرکی پلاندانراوی هەنووکەیی لە پلانی خوێندندا",
         estimatedDurationMinutes: currentAvailableTask.estimatedDurationMinutes,

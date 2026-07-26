@@ -10,8 +10,7 @@ import {
   StudyTaskStatus,
   StudentLearningPreferences,
   LearningGoal,
-  PlanGenerationMode,
-  StudyTaskSource
+  PlanGenerationMode
 } from "../domain/LearningPlanTypes.ts";
 import { StudyTaskPrioritizer } from "./StudyTaskPrioritizer.ts";
 import { PrerequisitePlanner } from "./PrerequisitePlanner.ts";
@@ -49,7 +48,7 @@ export class PersonalLearningPlanEngine {
       masteryProfile,
       mode = "FIRST_TIME_PLAN",
       recentAssessmentResult,
-      incompleteTasks = [],
+      incompleteTasks: _incompleteTasks = [],
       startDateIso,
       authoritative = true
     } = input;

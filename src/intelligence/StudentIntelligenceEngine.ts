@@ -1,5 +1,5 @@
 import { StudentProfile } from "../features/student/studentTypes.ts";
-import { StudentIntelligenceSnapshot, ExplanationStyle, MasteryStatus } from "./types.ts";
+import { StudentIntelligenceSnapshot, ExplanationStyle } from "./types.ts";
 import { StudentIdentityEngine } from "./StudentIdentityEngine.ts";
 import { LearningDNAEngine } from "./LearningDNAEngine.ts";
 import { KnowledgeGraphEngine } from "./KnowledgeGraphEngine.ts";

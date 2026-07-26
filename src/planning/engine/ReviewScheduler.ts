@@ -11,7 +11,7 @@ export class ReviewScheduler {
     currentDateIso?: string
   ): ReviewItem[] {
     const now = currentDateIso ? new Date(currentDateIso) : new Date();
-    const todayStr = now.toISOString().split("T")[0];
+    const _todayStr = now.toISOString().split("T")[0];
     const reviewItems: ReviewItem[] = [];
 
     for (const [conceptId, state] of Object.entries(profile.conceptMasteries)) {

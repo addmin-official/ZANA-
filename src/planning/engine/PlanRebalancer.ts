@@ -5,9 +5,10 @@ import {
   StudyTaskStatus,
   StudyTaskPriority,
   PlanAdjustment,
-  StudentLearningPreferences
+  StudentLearningPreferences,
+  StudyTaskType
 } from "../domain/LearningPlanTypes.ts";
-import { StudyTaskPrioritizer } from "./StudyTaskPrioritizer.ts";
+import { DifficultyLevel } from "../../learning/domain/MasteryTypes.ts";
 
 export class PlanRebalancer {
   /**
@@ -95,7 +96,7 @@ export class PlanRebalancer {
                 id: `task_assessment_fix_${conceptId}_${Date.now()}`,
                 planId: updatedPlan.id,
                 studentId: updatedPlan.studentId,
-                type: "PRACTICE" as any,
+                type: "PRACTICE" as StudyTaskType,
                 status: StudyTaskStatus.PLANNED,
                 priority: StudyTaskPriority.HIGH,
                 priorityScore: 50,
@@ -110,7 +111,7 @@ export class PlanRebalancer {
                 },
                 estimatedDurationMinutes: 15,
                 scheduledDate: nextDateStr,
-                targetDifficulty: "EASY" as any,
+                targetDifficulty: "EASY" as DifficultyLevel,
                 source: "ASSESSMENT_WEAKNESS",
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()

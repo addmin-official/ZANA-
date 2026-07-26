@@ -51,9 +51,10 @@ export const ZanaApiClient = {
       }
 
       return await response.json();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("API Error in sendChatMessage", error);
-      throw new Error(error.message || "پەیوەندی ئینتەرنێتەکەت تێکچووە، تکایە جارێکی تر هەوڵ بدەرەوە.");
+      const errMsg = error instanceof Error ? error.message : "پەیوەندی ئینتەرنێتەکەت تێکچووە، تکایە جارێکی تر هەوڵ بدەرەوە.";
+      throw new Error(errMsg);
     }
   },
 
@@ -74,9 +75,10 @@ export const ZanaApiClient = {
       }
 
       return await response.json();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("API Error in getAssessmentNextQuestion", error);
-      throw new Error(error.message || "ناتوانرێت تاقیکردنەوەکە باربکرێت، تکایە هێڵەکەت پشکنیار بکەرەوە.");
+      const errMsg = error instanceof Error ? error.message : "ناتوانرێت تاقیکردنەوەکە باربکرێت، تکایە هێڵەکەت پشکنیار بکەرەوە.";
+      throw new Error(errMsg);
     }
   },
 
@@ -97,9 +99,10 @@ export const ZanaApiClient = {
       }
 
       return await response.json();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("API Error in getParentReport", error);
-      throw new Error(error.message || "ڕاپۆرت دروستکردن سەرکەوتوو نەبوو. تکایە دواتر هەوڵ بدەرەوە.");
+      const errMsg = error instanceof Error ? error.message : "ڕاپۆرت دروستکردن سەرکەوتوو نەبوو. تکایە دواتر هەوڵ بدەرەوە.";
+      throw new Error(errMsg);
     }
   }
 };

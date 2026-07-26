@@ -4,8 +4,7 @@ import { useTutorChat } from "../features/chat/useTutorChat.ts";
 import { ChatMessage } from "../features/chat/ChatMessage.tsx";
 import { ChatInput } from "../features/chat/ChatInput.tsx";
 import { LoadingDots } from "../components/LoadingDots.tsx";
-import { ErrorCard } from "../components/ErrorCard.tsx";
-import { Trash2, AlertCircle, RefreshCw, X } from "lucide-react";
+import { Trash2 } from "lucide-react";
 
 interface StudyChatScreenProps {
   profile: StudentProfile;

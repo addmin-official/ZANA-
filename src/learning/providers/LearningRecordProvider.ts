@@ -4,11 +4,8 @@ import {
   LearningEvent,
   AdaptiveRecommendation,
   MisconceptionState,
-  MisconceptionStatus,
   LearningSession,
-  ExerciseAttempt,
-  MasteryStatus,
-  DifficultyLevel
+  ExerciseAttempt
 } from "../domain/MasteryTypes.ts";
 
 export interface LearningRecordProvider {
@@ -27,11 +24,6 @@ export interface LearningRecordProvider {
 
 // Helper to access Node's fs module safely without breaking browser or Cloudflare environments
 const getFs = () => {
-  if (typeof window === "undefined" && typeof require !== "undefined") {
-    try {
-      return require("fs");
-    } catch (e) {}
-  }
   return null;
 };
 
@@ -39,11 +31,11 @@ const getFs = () => {
 // In-Memory Implementation (Server-side/Tests fallback)
 // =========================================================================
 export class InMemoryLearningRecordProvider implements LearningRecordProvider {
-  private profiles = new Map<string, StudentMasteryProfile>();
-  private events = new Map<string, LearningEvent[]>();
-  private sessions = new Map<string, LearningSession>();
-  private attempts = new Map<string, ExerciseAttempt[]>();
-  private recommendations = new Map<string, AdaptiveRecommendation[]>();
+  public profiles = new Map<string, StudentMasteryProfile>();
+  public events = new Map<string, LearningEvent[]>();
+  public sessions = new Map<string, LearningSession>();
+  public attempts = new Map<string, ExerciseAttempt[]>();
+  public recommendations = new Map<string, AdaptiveRecommendation[]>();
 
   public async getStudentMasteryProfile(studentId: string): Promise<StudentMasteryProfile> {
     let profile = this.profiles.get(studentId);
@@ -282,10 +274,10 @@ export class LocalStorageLearningRecordProvider implements LearningRecordProvide
 export class PersistentLearningRecordProvider implements LearningRecordProvider {
   private memoryStore = new InMemoryLearningRecordProvider();
   private filePath = "learning_records_db.json";
-  private cloudflareKv: any = null;
+  private cloudflareKv: unknown = null;
   private mode: "production" | "development" | "test";
 
-  constructor(kvInstance?: any, forceMode?: "production" | "development" | "test") {
+  constructor(kvInstance?: unknown, forceMode?: "production" | "development" | "test") {
     if (kvInstance) {
       this.cloudflareKv = kvInstance;
     }
@@ -332,22 +324,22 @@ export class PersistentLearningRecordProvider implements LearningRecordProvider 
             // Rehydrate memoryStore
             if (data.profiles) {
               for (const [k, v] of Object.entries(data.profiles)) {
-                (this.memoryStore as any).profiles.set(k, v as any);
+                this.memoryStore.profiles.set(k, v as StudentMasteryProfile);
               }
             }
             if (data.events) {
               for (const [k, v] of Object.entries(data.events)) {
-                (this.memoryStore as any).events.set(k, v as any);
+                this.memoryStore.events.set(k, v as LearningEvent[]);
               }
             }
             if (data.attempts) {
               for (const [k, v] of Object.entries(data.attempts)) {
-                (this.memoryStore as any).attempts.set(k, v as any);
+                this.memoryStore.attempts.set(k, v as ExerciseAttempt[]);
               }
             }
             if (data.recommendations) {
               for (const [k, v] of Object.entries(data.recommendations)) {
-                (this.memoryStore as any).recommendations.set(k, v as any);
+                this.memoryStore.recommendations.set(k, v as AdaptiveRecommendation[]);
               }
             }
           }

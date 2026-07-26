@@ -5,8 +5,6 @@ import {
   PersonalLearningPlanEngine,
   NextBestActionEngine,
   StudyTaskPrioritizer,
-  PrerequisitePlanner,
-  ReviewScheduler,
   PersistentLearningPlanProvider,
   InMemoryLearningPlanProvider,
   StudyTaskStatus,

@@ -1,9 +1,11 @@
 import { useState, FormEvent } from "react";
 import { StudentProfile } from "../services/storage.ts";
+import { SubjectKey } from "../features/student/studentTypes.ts";
 import { ZanaCard } from "../components/ZanaCard.tsx";
 import { ZanaButton } from "../components/ZanaButton.tsx";
 import { GRADES_LIST, SUBJECTS_DATA, LEVELS_LIST } from "../data/subjects.ts";
-import { Settings, User, Trash2, ListRestart, AlertTriangle, ShieldCheck, CheckCircle2, Award, Brain, Target, AlertCircle } from "lucide-react";
+import { Settings, Trash2, AlertTriangle, CheckCircle2, Award, Brain, Target, AlertCircle } from "lucide-react";
+import { ConceptMasteryState } from "../learning/domain/MasteryTypes.ts";
 import { useStudentMastery } from "../learning/hooks/useStudentMastery.ts";
 
 interface ProfileScreenProps {
@@ -132,7 +134,7 @@ export function ProfileScreen({ profile, onUpdateProfile, onResetAll }: ProfileS
                   </div>
                 ) : (
                   <div className="space-y-2.5 max-h-[220px] overflow-y-auto pr-1">
-                    {Object.values(masteryProfile?.conceptMasteries || {}).map((c: any) => {
+                    {Object.values(masteryProfile?.conceptMasteries || {}).map((c: ConceptMasteryState) => {
                       const statusKurdish =
                         c.status === "NOT_STARTED" ? "دەست پێنەکراوە" :
                         c.status === "INTRODUCED" ? "ناسێندراو" :
@@ -203,7 +205,7 @@ export function ProfileScreen({ profile, onUpdateProfile, onResetAll }: ProfileS
             </label>
             <select
               value={grade}
-              onChange={(e) => setGrade(e.target.value as any)}
+              onChange={(e) => setGrade(e.target.value)}
               className="w-full font-sans text-sm min-h-[48px] px-3 rounded-xl border border-slate-200 bg-white text-right"
               style={{ direction: "rtl" }}
             >
@@ -222,7 +224,7 @@ export function ProfileScreen({ profile, onUpdateProfile, onResetAll }: ProfileS
             </label>
             <select
               value={subject}
-              onChange={(e) => setSubject(e.target.value as any)}
+              onChange={(e) => setSubject(e.target.value as SubjectKey)}
               className="w-full font-sans text-sm min-h-[48px] px-3 rounded-xl border border-slate-200 bg-white text-right"
               style={{ direction: "rtl" }}
             >
@@ -241,7 +243,7 @@ export function ProfileScreen({ profile, onUpdateProfile, onResetAll }: ProfileS
             </label>
             <select
               value={level}
-              onChange={(e) => setLevel(e.target.value as any)}
+              onChange={(e) => setLevel(e.target.value)}
               className="w-full font-sans text-sm min-h-[48px] px-3 rounded-xl border border-slate-200 bg-white text-right"
               style={{ direction: "rtl" }}
             >
