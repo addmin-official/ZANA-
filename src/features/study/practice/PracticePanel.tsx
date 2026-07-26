@@ -1,22 +1,21 @@
 import { useState } from "react";
-import { StudentProfile } from "../../student/studentTypes.ts";
-import { CurriculumIntelligenceSnapshot } from "../../../curriculum/types.ts";
-import { SessionSnapshot } from "../../../session/types.ts";
-import { usePracticeMode } from "./usePracticeMode.ts";
-import { PracticeQuestion, PracticeAttempt } from "./practiceTypes.ts";
-import { ZanaButton } from "../../../components/ZanaButton.tsx";
 import { motion } from "motion/react";
 import {
-  Award,
   AlertTriangle,
-  ArrowRight,
+  Award,
   BookOpen,
+  Check,
   CheckCircle,
   Info,
-  Check,
+  RotateCcw,
   X,
-  RotateCcw
 } from "lucide-react";
+import { ZanaButton } from "../../../components/ZanaButton.tsx";
+import { CurriculumIntelligenceSnapshot } from "../../../curriculum/types.ts";
+import { SessionSnapshot } from "../../../session/types.ts";
+import { StudentProfile } from "../../student/studentTypes.ts";
+import { PracticeAttempt, PracticeQuestion } from "./practiceTypes.ts";
+import { usePracticeMode } from "./usePracticeMode.ts";
 
 interface PracticePanelProps {
   studentProfile: StudentProfile;
@@ -26,326 +25,296 @@ interface PracticePanelProps {
   onConceptCompleted?: () => void;
 }
 
-export function PracticePanel({
+export function PracticePanel(props: PracticePanelProps) {
+  const conceptKey = props.sessionSnapshot.currentSession?.currentNodeId ?? "no-active-concept";
+  return <PracticePanelContent key={conceptKey} {...props} />;
+}
+
+function PracticePanelContent({
   studentProfile,
   curriculumSnapshot,
   sessionSnapshot,
-  onNavigate: _onNavigate,
-  onConceptCompleted
+  onConceptCompleted,
 }: PracticePanelProps) {
   const {
     snapshot,
     submitAnswer,
     resetPractice,
     isCompleted,
-    error
+    error,
   } = usePracticeMode({
     studentProfile,
     curriculumSnapshot,
-    sessionSnapshot
+    sessionSnapshot,
   });
 
-  // Keep track of the current selected choice or short-answer inputs per question
   const [selectedChoices, setSelectedChoices] = useState<Record<string, string>>({});
   const [shortAnswers, setShortAnswers] = useState<Record<string, string>>({});
 
-  // Reset local form states when the concept shifts or reset is clicked
-  const [prevResetKey, setPrevResetKey] = useState(`${snapshot?.conceptTitle}_${snapshot?.attempts.length}`);
-  const currentResetKey = `${snapshot?.conceptTitle}_${snapshot?.attempts.length}`;
-  if (currentResetKey !== prevResetKey) {
-    setPrevResetKey(currentResetKey);
+  const resetAll = () => {
+    resetPractice();
     setSelectedChoices({});
     setShortAnswers({});
-  }
+  };
 
   if (error || !snapshot) {
     return (
-      <div className="bg-rose-50 border border-rose-100 rounded-2xl p-6 text-center space-y-4" dir="rtl">
-        <AlertTriangle className="w-10 h-10 text-rose-500 mx-auto" />
-        <p className="font-sans text-sm font-bold text-rose-800">{error || "هێڵکارییەکانی ڕاهێنان بارنەکران."}</p>
-        <ZanaButton variant="secondary" onClick={resetPractice}>
-          دووبارە هەوڵبدەرەوە
+      <div
+        className="space-y-4 rounded-2xl border border-rose-100 bg-rose-50 p-6 text-center"
+        dir="rtl"
+        role="alert"
+      >
+        <AlertTriangle className="mx-auto h-10 w-10 text-rose-500" aria-hidden="true" />
+        <p className="font-sans text-sm font-bold text-rose-800">
+          {error ?? "ڕاهێنانەکە بارنەکرا. تکایە دووبارە هەوڵ بدەرەوە."}
+        </p>
+        <ZanaButton variant="secondary" onClick={resetAll}>
+          دووبارە هەوڵ بدەرەوە
         </ZanaButton>
       </div>
     );
   }
 
   const { questions, attempts, completionPercentage, feedbackMessage } = snapshot;
-
-  const correctAttempts = attempts.filter(a => a.isCorrect);
-  const correctCount = correctAttempts.length;
-  const attemptsMap = new Map<string, PracticeAttempt>(attempts.map(a => [a.questionId, a]));
-
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    show: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.08
-      }
-    }
-  };
-
-  const itemVariants = {
-    hidden: { opacity: 0, y: 15 },
-    show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 100 } }
-  };
+  const correctCount = attempts.filter((attempt) => attempt.isCorrect).length;
+  const attemptsMap = new Map<string, PracticeAttempt>(
+    attempts.map((attempt) => [attempt.questionId, attempt]),
+  );
+  const score = questions.length > 0
+    ? Math.round((correctCount / questions.length) * 100)
+    : 0;
 
   return (
-    <div className="space-y-5 text-right select-none" dir="rtl">
-      {/* 1. COMPACT CONTEXT HEADER */}
-      <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-xs space-y-3">
+    <div className="space-y-5 text-right" dir="rtl">
+      <section className="space-y-3 rounded-2xl border border-slate-100 bg-white p-4 shadow-xs">
         <div>
-          <span className="font-sans text-[10px] font-black text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-md">
+          <span className="rounded-md bg-emerald-50 px-2.5 py-1 font-sans text-[10px] font-black text-emerald-700">
             ڕاهێنانی ژمارەیی
           </span>
-          <h2 className="font-sans font-black text-lg text-slate-950 mt-2.5 leading-snug">
+          <h2 className="mt-2.5 font-sans text-lg font-black leading-snug text-slate-950">
             {snapshot.conceptTitle}
           </h2>
-          <p className="font-sans text-xs font-medium text-slate-500 mt-1 leading-snug">
+          <p className="mt-1 font-sans text-xs font-medium leading-snug text-slate-500">
             تەوەرەکانی {snapshot.lessonTitle}
           </p>
         </div>
 
-        {/* Dynamic warning if active */}
-        {snapshot.warnings.map((warn, index) => (
-          <div key={index} className="bg-amber-50 border border-amber-100 rounded-xl p-3 flex items-start gap-2 text-right">
-            <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-            <p className="font-sans text-[11px] text-amber-800 font-medium leading-relaxed">{warn}</p>
+        {snapshot.warnings.map((warning) => (
+          <div
+            key={warning}
+            className="flex items-start gap-2 rounded-xl border border-amber-100 bg-amber-50 p-3"
+          >
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" aria-hidden="true" />
+            <p className="font-sans text-[11px] font-medium leading-relaxed text-amber-900">
+              {warning}
+            </p>
           </div>
         ))}
 
-        {/* Progress Tracker Widget */}
-        <div className="pt-2 border-t border-slate-100 space-y-2">
-          <div className="flex items-center justify-between text-xs">
+        <div className="space-y-2 border-t border-slate-100 pt-2">
+          <div className="flex items-center justify-between gap-3 text-xs">
             <span className="font-sans font-bold text-slate-700">دۆخی چارەسەرکردن</span>
-            <span className="font-sans font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">
-              {attempts.length} لە {questions.length} چارەسەر کراوە
+            <span className="rounded-md bg-emerald-50 px-2 py-0.5 font-sans font-black text-emerald-700">
+              {attempts.length} لە {questions.length}
             </span>
           </div>
-
-          <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+          <div
+            className="h-2 w-full overflow-hidden rounded-full bg-slate-100"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={completionPercentage}
+            aria-label="ڕێژەی تەواوبوونی ڕاهێنان"
+          >
             <div
-              className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+              className="h-full rounded-full bg-emerald-500 transition-[width] duration-500"
               style={{ width: `${completionPercentage}%` }}
-            ></div>
+            />
           </div>
-
-          <p className="font-sans text-[11px] font-medium text-slate-500 italic mt-1 leading-relaxed">
+          <p className="font-sans text-[11px] font-medium leading-relaxed text-slate-500">
             {feedbackMessage}
           </p>
         </div>
-      </div>
+      </section>
 
-      {/* 2. QUESTIONS WORKSPACE */}
       <motion.div
-        variants={containerVariants}
-        initial="hidden"
-        animate="show"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
         className="space-y-4"
       >
-        {questions.map((question: PracticeQuestion) => {
+        {questions.map((question: PracticeQuestion, index: number) => {
           const attempt = attemptsMap.get(question.id);
-          const isAnswered = !!attempt;
-          const isCorrect = attempt?.isCorrect || false;
+          const isAnswered = attempt !== undefined;
+          const isCorrect = attempt?.isCorrect === true;
+          const selectedAnswer = question.type === "short_answer"
+            ? shortAnswers[question.id]
+            : selectedChoices[question.id];
 
           return (
-            <motion.div
+            <motion.section
               key={question.id}
-              variants={itemVariants}
-              className={`bg-white border rounded-2xl p-4 shadow-2xs space-y-3.5 transition-all duration-300 ${
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              className={`space-y-3.5 rounded-2xl border p-4 shadow-xs ${
                 isAnswered
                   ? isCorrect
-                    ? "border-emerald-200 bg-emerald-50/5"
-                    : "border-red-200 bg-rose-50/5"
-                  : "border-slate-100"
+                    ? "border-emerald-200 bg-emerald-50/40"
+                    : "border-rose-200 bg-rose-50/40"
+                  : "border-slate-100 bg-white"
               }`}
             >
-              {/* Question Index & Difficulty */}
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-3">
                 <span className="font-sans text-[10px] font-black text-slate-400">
-                  پرسیاری {idx + 1}
+                  پرسیاری {index + 1}
                 </span>
-                <span className="font-sans text-[10px] font-bold text-slate-500 bg-slate-50 border border-slate-100 px-2 py-0.5 rounded-md">
+                <span className="rounded-md border border-slate-100 bg-slate-50 px-2 py-0.5 font-sans text-[10px] font-bold text-slate-600">
                   {question.difficultyLabel}
                 </span>
               </div>
 
-              {/* Prompt */}
-              <p className="font-sans font-black text-sm text-slate-900 leading-relaxed whitespace-pre-wrap">
+              <p className="whitespace-pre-wrap font-sans text-sm font-black leading-relaxed text-slate-900">
                 {question.prompt}
               </p>
 
-              {/* ANSWER INPUT AREA */}
               {!isAnswered ? (
-                <div className="space-y-3 pt-1">
-                  {/* MULTIPLE CHOICE / STEP BY STEP */}
-                  {(question.type === "multiple_choice" || question.type === "step_by_step") && question.choices && (
+                <div className="space-y-3">
+                  {(question.type === "multiple_choice" || question.type === "step_by_step") && question.choices ? (
                     <div className="grid grid-cols-1 gap-2">
                       {question.choices.map((choice) => {
                         const isSelected = selectedChoices[question.id] === choice;
                         return (
                           <button
                             key={choice}
-                            onClick={() => setSelectedChoices(prev => ({ ...prev, [question.id]: choice }))}
-                            className={`w-full p-3 text-right rounded-xl font-sans text-xs font-semibold border transition-all duration-200 cursor-pointer flex items-center justify-between min-h-[44px] ${
+                            type="button"
+                            aria-pressed={isSelected}
+                            onClick={() => {
+                              setSelectedChoices((current) => ({
+                                ...current,
+                                [question.id]: choice,
+                              }));
+                            }}
+                            className={`flex min-h-11 w-full items-center justify-between rounded-xl border p-3 text-right font-sans text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                               isSelected
-                                ? "bg-blue-600 border-blue-600 text-white shadow-xs"
-                                : "bg-white border-slate-100 hover:bg-slate-50 text-slate-700"
+                                ? "border-blue-600 bg-blue-600 text-white"
+                                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                             }`}
                           >
                             <span>{choice}</span>
-                            <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
-                              isSelected ? "border-white bg-white" : "border-slate-200 bg-white"
-                            }`}>
-                              {isSelected && <div className="w-2 h-2 rounded-full bg-blue-600" />}
-                            </div>
+                            <span
+                              className={`flex h-4 w-4 items-center justify-center rounded-full border ${
+                                isSelected ? "border-white bg-white" : "border-slate-300"
+                              }`}
+                              aria-hidden="true"
+                            >
+                              {isSelected ? <span className="h-2 w-2 rounded-full bg-blue-600" /> : null}
+                            </span>
                           </button>
                         );
                       })}
                     </div>
-                  )}
+                  ) : null}
 
-                  {/* SHORT ANSWER */}
-                  {question.type === "short_answer" && (
-                    <div className="space-y-1.5">
-                      <input
-                        type="text"
-                        placeholder="وەڵامەکەت لێرە بنووسە..."
-                        value={shortAnswers[question.id] || ""}
-                        onChange={(e) => setShortAnswers(prev => ({ ...prev, [question.id]: e.target.value }))}
-                        className="w-full p-3 border border-slate-200 rounded-xl font-sans text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-right"
-                        style={{ minHeight: "44px" }}
-                      />
-                    </div>
-                  )}
-
-                  {/* Submit Answer Button */}
-                  <div className="pt-1.5">
-                    <button
-                      onClick={() => {
-                        const ans = question.type === "short_answer"
-                          ? shortAnswers[question.id]
-                          : selectedChoices[question.id];
-                        if (!ans) return;
-                        submitAnswer(question.id, ans);
+                  {question.type === "short_answer" ? (
+                    <input
+                      type="text"
+                      aria-label={`وەڵامی پرسیاری ${index + 1}`}
+                      placeholder="وەڵامەکەت لێرە بنووسە..."
+                      value={shortAnswers[question.id] ?? ""}
+                      onChange={(event) => {
+                        setShortAnswers((current) => ({
+                          ...current,
+                          [question.id]: event.target.value,
+                        }));
                       }}
-                      disabled={
-                        question.type === "short_answer"
-                          ? !(shortAnswers[question.id]?.trim())
-                          : !selectedChoices[question.id]
-                      }
-                      className="w-full py-2 bg-slate-900 hover:bg-slate-950 text-white font-sans text-xs font-black rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-1.5"
-                      style={{ minHeight: "44px" }}
-                    >
-                      <CheckCircle className="w-4 h-4" />
-                      <span>وردبینیی وەڵام</span>
-                    </button>
-                  </div>
+                      className="min-h-11 w-full rounded-xl border border-slate-200 p-3 text-right font-sans text-xs focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  ) : null}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const answer = selectedAnswer?.trim();
+                      if (answer) submitAnswer(question.id, answer);
+                    }}
+                    disabled={!selectedAnswer?.trim()}
+                    className="flex min-h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 font-sans text-xs font-black text-white transition-colors hover:bg-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <CheckCircle className="h-4 w-4" aria-hidden="true" />
+                    وردبینیی وەڵام
+                  </button>
                 </div>
               ) : (
-                /* ANSWERED STATE FEEDBACK */
-                <div className="space-y-3 pt-1">
-                  {/* Selected Choice / Answer Banner */}
-                  <div className={`p-3 rounded-xl border flex items-center justify-between text-xs font-sans ${
+                <div className="space-y-3">
+                  <div className={`flex items-center justify-between gap-3 rounded-xl border p-3 font-sans text-xs ${
                     isCorrect
-                      ? "bg-emerald-50 border-emerald-100 text-emerald-950"
-                      : "bg-red-50 border-red-100 text-red-950"
+                      ? "border-emerald-100 bg-emerald-50 text-emerald-950"
+                      : "border-rose-100 bg-rose-50 text-rose-950"
                   }`}>
-                    <div className="flex items-center gap-2">
-                      <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
-                        isCorrect ? "bg-emerald-500 text-white" : "bg-red-500 text-white"
+                    <span className="flex items-center gap-2 font-bold">
+                      <span className={`flex h-5 w-5 items-center justify-center rounded-full text-white ${
+                        isCorrect ? "bg-emerald-500" : "bg-rose-500"
                       }`}>
-                        {isCorrect ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
-                      </div>
-                      <span className="font-bold">وەڵامەکەت: {attempt.studentAnswer}</span>
-                    </div>
-                    <span className="font-black text-[10px]">{isCorrect ? "ڕاستە" : "هەڵەیە"}</span>
+                        {isCorrect
+                          ? <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                          : <X className="h-3.5 w-3.5" aria-hidden="true" />}
+                      </span>
+                      وەڵامەکەت: {attempt.studentAnswer}
+                    </span>
+                    <span className="font-black">{isCorrect ? "ڕاستە" : "هەڵەیە"}</span>
                   </div>
 
-                  {/* Explanation Block */}
-                  <div className="bg-slate-50 border border-slate-100/50 p-3.5 rounded-xl space-y-2.5">
+                  <div className="space-y-2 rounded-xl border border-slate-100 bg-slate-50 p-3.5">
                     <div className="flex items-center gap-1.5 text-slate-700">
-                      <BookOpen className="w-4 h-4 text-blue-500" />
-                      <span className="font-sans text-[11px] font-black">ڕوونکردنەوەی فێربوون و یاساکان:</span>
+                      <BookOpen className="h-4 w-4 text-blue-500" aria-hidden="true" />
+                      <span className="font-sans text-[11px] font-black">ڕوونکردنەوە</span>
                     </div>
-                    <p className="font-sans text-xs text-slate-600 leading-relaxed font-medium">
+                    <p className="font-sans text-xs font-medium leading-relaxed text-slate-600">
                       {question.explanation}
                     </p>
                   </div>
                 </div>
               )}
-            </motion.div>
+            </motion.section>
           );
         })}
       </motion.div>
 
-      {/* 3. COMPLETION / RETRY MODAL CARD */}
-      {attempts.length === questions.length && (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className={`border rounded-2xl p-6 text-center space-y-5 shadow-md ${
-            isCompleted
-              ? "bg-emerald-50 border-emerald-200"
-              : "bg-amber-50 border-amber-200"
-          }`}
-        >
-          <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center mx-auto shadow-sm">
-            {isCompleted ? (
-              <Award className="w-6 h-6 text-emerald-500 animate-bounce" />
-            ) : (
-              <AlertTriangle className="w-6 h-6 text-amber-500" />
-            )}
+      {questions.length > 0 && attempts.length === questions.length ? (
+        <section className={`space-y-5 rounded-2xl border p-6 text-center shadow-md ${
+          isCompleted
+            ? "border-emerald-200 bg-emerald-50"
+            : "border-amber-200 bg-amber-50"
+        }`}>
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-white shadow-sm">
+            {isCompleted
+              ? <Award className="h-6 w-6 text-emerald-500" aria-hidden="true" />
+              : <AlertTriangle className="h-6 w-6 text-amber-500" aria-hidden="true" />}
           </div>
-
-          <div className="space-y-2.5">
-            <h3 className="font-sans font-black text-base text-slate-900">
-              {isCompleted ? "پیرۆزە! چەمکەکە بە سەرکەوتوویی تێپەڕێنرا" : "پێویستت بە دووبارەکردنەوەیە"}
+          <div className="space-y-2">
+            <h3 className="font-sans text-base font-black text-slate-900">
+              {isCompleted ? "پیرۆزە! ڕاهێنانەکەت سەرکەوتوو بوو" : "پێویستە دووبارە هەوڵ بدەیتەوە"}
             </h3>
-            <p className="font-sans text-xs font-semibold text-slate-600 leading-relaxed max-w-md mx-auto">
-              {isCompleted
-                ? `تۆ توانیت بە نمرەی گونجاو (%${Math.round((correctCount / questions.length) * 100)}) سەرجەم پرسیارەکانی ئەم بەشە تێپەڕێنیت و ئامادەی بۆ هەنگاوی داهاتوو.`
-                : `تۆ %${Math.round((correctCount / questions.length) * 100)}ی پرسیارەکانت بە دروستی چارەسەر کردووە. پێویستە بەلایەنی کەمەوە %٧٠ ی وەڵامەکانت ڕاست بێت بۆ ناساندنی تەواوبوونی چەمکەکە.`}
+            <p className="font-sans text-xs font-semibold leading-relaxed text-slate-600">
+              ڕێژەی وەڵامی ڕاستت %{score} بوو. بۆ سەرکەوتن پێویستە لانیکەم %٧٠ بێت.
             </p>
           </div>
-
-          <div className="flex flex-col sm:flex-row gap-2.5 max-w-sm mx-auto">
-            {!isCompleted ? (
+          <div className="mx-auto flex max-w-sm flex-col gap-2.5 sm:flex-row">
+            {isCompleted ? (
               <ZanaButton
-                variant="warning"
+                variant="success"
                 fullWidth
-                onClick={resetPractice}
-                className="text-xs font-black flex items-center justify-center gap-1.5"
+                onClick={() => onConceptCompleted?.()}
               >
-                <RotateCcw className="w-4 h-4" />
-                <span>دووبارە تاقیکردنەوە</span>
+                بەردەوامبوون
               </ZanaButton>
-            ) : (
-              <>
-                <ZanaButton
-                  variant="success"
-                  fullWidth
-                  onClick={onConceptCompleted}
-                  className="text-xs font-black flex items-center justify-center gap-1.5"
-                >
-                  <span>ناساندنی تەواوبوون و بەردەوامبوون</span>
-                  <ArrowRight className="w-4 h-4 rotate-180" />
-                </ZanaButton>
-                <ZanaButton
-                  variant="outline"
-                  fullWidth
-                  onClick={resetPractice}
-                  className="text-xs font-black flex items-center justify-center gap-1.5"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                  <span>سەرلەنوێ ڕاهێنانکردنەوە</span>
-                </ZanaButton>
-              </>
-            )}
+            ) : null}
+            <ZanaButton variant="outline" fullWidth onClick={resetAll}>
+              <RotateCcw className="h-4 w-4" aria-hidden="true" />
+              سەرلەنوێ ڕاهێنانکردنەوە
+            </ZanaButton>
           </div>
-        </motion.div>
-      )}
+        </section>
+      ) : null}
     </div>
   );
 }
