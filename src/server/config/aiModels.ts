@@ -57,7 +57,6 @@ export function normalizeModel(
     cleaned.includes("/") ||
     cleaned.includes("..") ||
     /\s/.test(cleaned) ||
-    // eslint-disable-next-line no-control-regex
     /[\x00-\x1F\x7F]/.test(cleaned) ||
     !/^[a-zA-Z0-9_.-]+$/.test(cleaned);
 

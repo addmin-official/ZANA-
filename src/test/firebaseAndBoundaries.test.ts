@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { isFirebaseConfigured } from "../services/firebaseConfig.ts";
 import { createStudentProfile, migrateStudentProfile } from "../features/student/studentStorage.ts";
 import { AdaptiveLearningEngine } from "../learning/engine/AdaptiveLearningEngine.ts";
@@ -167,3 +168,19 @@ test("Guest vs Authenticated Boundaries - 6. Reconnect prefers authoritative ser
   assert.strictEqual(activeData.level, "advanced");
   assert.strictEqual(activeData.source, "server-authoritative");
 });
+
+test("Architecture Guard - Forbidden Firebase deployments blocked", () => {
+  // 1. Ensure firebase.json does not configure hosting or functions
+  if (fs.existsSync("firebase.json")) {
+    const firebaseJson = JSON.parse(fs.readFileSync("firebase.json", "utf-8"));
+    assert.strictEqual("hosting" in firebaseJson, false, "Firebase Hosting configuration forbidden");
+    assert.strictEqual("functions" in firebaseJson, false, "Firebase Functions configuration forbidden");
+  }
+
+  // 2. Ensure wrangler.jsonc or wrangler.json contains ASSETS binding
+  if (fs.existsSync("wrangler.jsonc")) {
+    const wranglerContent = fs.readFileSync("wrangler.jsonc", "utf-8");
+    assert.ok(wranglerContent.includes("assets"), "Cloudflare ASSETS binding required in wrangler.jsonc");
+  }
+});
+

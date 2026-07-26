@@ -305,8 +305,13 @@ export class PersistentLearningRecordProvider implements LearningRecordProvider 
       }
     }
 
-    if (this.mode === "production" && !this.cloudflareKv) {
-      console.warn("Persistent Cloudflare KV binding missing; using in-memory store fallback.");
+    if (this.mode === "production") {
+      // Production must only use a configured persistent Cloudflare binding and fail closed if it's missing
+      if (!this.cloudflareKv) {
+        throw new Error(
+          "CRITICAL CONFIGURATION ERROR: Persistent Cloudflare KV binding (LEARNING_RECORDS_KV) is missing in production environment. ZANA is failing closed."
+        );
+      }
     } else if (this.mode === "development") {
       this.loadFromLocalFile();
     }
@@ -400,6 +405,10 @@ export class PersistentLearningRecordProvider implements LearningRecordProvider 
   // Core Database Methods
   // =========================================================================
   public async getStudentMasteryProfile(studentId: string): Promise<StudentMasteryProfile> {
+    if (this.mode === "production" && !this.cloudflareKv) {
+      throw new Error("Missing production persistence binding.");
+    }
+
     if (this.cloudflareKv) {
       const key = this.getProfileKey(studentId);
       const val = await this.cloudflareKv.get(key);
@@ -420,6 +429,9 @@ export class PersistentLearningRecordProvider implements LearningRecordProvider 
       };
     }
 
+    if (this.mode === "production") {
+      throw new Error("Silent fallback to local files or memory is forbidden in production!");
+    }
     return this.memoryStore.getStudentMasteryProfile(studentId);
   }
 

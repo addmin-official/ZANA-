@@ -88,7 +88,10 @@ export function migrateStudentProfile(raw: unknown): StudentProfile {
     }
   }
 
-  // Local storage MUST NEVER grant or preserve authority. All migrated local profiles are guest-local.
+  const authoritative = typeof (rawObj as any).authoritative === "boolean" ? (rawObj as any).authoritative : false;
+  const source = typeof (rawObj as any).source === "string" ? (rawObj as any).source : "guest-local";
+  const isStale = typeof (rawObj as any).isStale === "boolean" ? (rawObj as any).isStale : undefined;
+
   const migrated: StudentProfile = {
     id,
     name,
@@ -99,13 +102,21 @@ export function migrateStudentProfile(raw: unknown): StudentProfile {
     onboardingCompleted,
     createdAt,
     updatedAt,
-    authoritative: false,
-    source: "guest-local",
+    authoritative,
+    source,
+    isStale,
   };
 
   if (isBrowser) {
     try {
-      window.localStorage.setItem(PROFILE_KEY, JSON.stringify(migrated));
+      // Local storage cannot preserve authoritative=true. Store downgraded version in localStorage.
+      const storageProfile = {
+        ...migrated,
+        authoritative: false,
+        source: "guest-local" as const,
+        isStale: migrated.authoritative || migrated.source === "server-authoritative" ? true : migrated.isStale,
+      };
+      window.localStorage.setItem(PROFILE_KEY, JSON.stringify(storageProfile));
     } catch (e) {
       console.error("Error saving migrated profile to localStorage:", e);
     }
@@ -120,7 +131,16 @@ export function getStudentProfile(): StudentProfile | null {
     const data = window.localStorage.getItem(PROFILE_KEY);
     if (!data) return null;
     const raw = JSON.parse(data);
-    return migrateStudentProfile(raw);
+    const profile = migrateStudentProfile(raw);
+    if (profile.authoritative || profile.source === "server-authoritative") {
+      return {
+        ...profile,
+        authoritative: false,
+        source: "guest-local",
+        isStale: true,
+      };
+    }
+    return profile;
   } catch (error) {
     console.error("Error reading student profile from localStorage:", error);
     return null;

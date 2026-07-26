@@ -122,7 +122,10 @@ export function parseChatRequest(body: unknown): ChatRequest {
     });
   }
 
-  const profileObj = isRecord(body.profile) ? body.profile : {};
+  if (!isRecord(body.profile)) {
+    throw new Error("داواکارییەکە کەموکوڕی تێدایە.");
+  }
+  const profileObj = body.profile;
   const profile: StudentProfileContext = {
     name: typeof profileObj.name === "string" ? profileObj.name.slice(0, 100) : undefined,
     grade: typeof profileObj.grade === "string" ? profileObj.grade.slice(0, 20) : undefined,
@@ -212,7 +215,10 @@ export function parseAskRequest(body: unknown): AskRequest {
     });
   }
 
-  const contextObj = isRecord(body.context) ? body.context : {};
+  if (!isRecord(body.context)) {
+    throw new Error("داواکارییەکە کەموکوڕی تێدایە.");
+  }
+  const contextObj = body.context;
   const context = {
     studentName: typeof contextObj.studentName === "string" ? contextObj.studentName.slice(0, 100) : undefined,
     grade: typeof contextObj.grade === "string" ? contextObj.grade.slice(0, 20) : undefined,
