@@ -24,8 +24,20 @@ if (!source.includes(originalHelper)) {
   throw new Error("Unable to normalize the strict Worker patch helper");
 }
 
+let executableSource = source.replace(originalHelper, normalizedHelper);
+const planningLabelIndex = executableSource.indexOf('"planning preferences parsing"');
+if (planningLabelIndex < 0) {
+  throw new Error("Unable to locate the optional planning patch section");
+}
+const planningStart = executableSource.lastIndexOf("worker = replaceOnce(", planningLabelIndex);
+const finalWrite = executableSource.indexOf("write(workerPath, worker);", planningLabelIndex);
+if (planningStart < 0 || finalWrite < 0) {
+  throw new Error("Unable to isolate the verified Worker route patches");
+}
+executableSource = executableSource.slice(0, planningStart) + executableSource.slice(finalWrite);
+
 const temporaryPath = path.resolve(".tmp-apply-strict-worker-fix.mjs");
-fs.writeFileSync(temporaryPath, source.replace(originalHelper, normalizedHelper), "utf8");
+fs.writeFileSync(temporaryPath, executableSource, "utf8");
 try {
   await import(`${pathToFileURL(temporaryPath).href}?run=${Date.now()}`);
 } finally {
