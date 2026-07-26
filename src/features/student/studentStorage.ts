@@ -1,124 +1,139 @@
-import { StudentProfile, StudentProfileDraft, VerifiedIdentity } from "./studentTypes.ts";
-import { getValidatedGrade, getValidatedStream, getValidatedSubject, getValidatedLevel } from "./studentDefaults.ts";
-import { getFirestoreDb, getFirebaseAuth, isFirebaseConfigured } from "../../services/firebase.ts";
-import { doc, setDoc } from "firebase/firestore";
+import {
+  AcademicStream,
+  StudentGrade,
+  StudentLevel,
+  StudentProfile,
+  StudentProfileDraft,
+  SubjectKey,
+  VerifiedIdentity,
+} from "./studentTypes.ts";
+import {
+  getValidatedGrade,
+  getValidatedLevel,
+  getValidatedStream,
+  getValidatedSubject,
+} from "./studentDefaults.ts";
 
 const PROFILE_KEY = "zana:student-profile";
-
 const isBrowser = typeof window !== "undefined" && typeof window.localStorage !== "undefined";
 
+const VALID_GRADES: readonly StudentGrade[] = ["9", "10", "11", "12"];
+const VALID_STREAMS: readonly AcademicStream[] = ["scientific", "literary", "general"];
+const VALID_SUBJECTS: readonly SubjectKey[] = ["math", "physics", "chemistry", "english"];
+const VALID_LEVELS: readonly StudentLevel[] = ["beginner", "intermediate", "advanced"];
+
 interface LegacyProfileInput {
-  id?: string;
-  name?: string;
-  createdAt?: string;
-  updatedAt?: string;
-  activeSubject?: string;
-  subject?: string;
-  onboardingCompleted?: boolean;
-  onboarded?: boolean;
-  grade?: string;
-  stream?: string;
-  level?: string;
+  id?: unknown;
+  name?: unknown;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+  activeSubject?: unknown;
+  subject?: unknown;
+  onboardingCompleted?: unknown;
+  onboarded?: unknown;
+  grade?: unknown;
+  stream?: unknown;
+  level?: unknown;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function createGuestId(): string {
+  const randomId = globalThis.crypto?.randomUUID?.();
+  return randomId ? `stud_${randomId}` : `stud_${Date.now().toString(36)}`;
+}
+
+function isOneOf<T extends string>(value: unknown, allowed: readonly T[]): value is T {
+  return typeof value === "string" && allowed.includes(value as T);
+}
+
+function toLocalProfile(profile: StudentProfile): StudentProfile {
+  return {
+    ...profile,
+    authoritative: false,
+    source: "guest-local",
+    isStale: profile.authoritative ? true : undefined,
+  };
 }
 
 export function parseServerProfileDocument(raw: unknown): StudentProfileDraft {
-  if (typeof raw !== "object" || raw === null) {
-    throw new Error("Invalid server profile document: not an object");
+  if (!isRecord(raw)) {
+    throw new Error("Invalid server profile document");
   }
-  const obj = raw as Record<string, unknown>;
-  const name = typeof obj.name === "string" ? obj.name.trim() : "";
-  const grade = getValidatedGrade(obj.grade);
-  let stream = getValidatedStream(obj.stream);
-  if (grade === "9") {
-    stream = "general";
-  } else if (stream !== "scientific" && stream !== "literary") {
-    stream = "general";
+
+  const name = typeof raw.name === "string" ? raw.name.trim() : "";
+  if (!name || name.length > 100) {
+    throw new Error("Invalid server profile name");
   }
-  let rawSubject = obj.activeSubject;
-  if (rawSubject === undefined || rawSubject === null) {
-    rawSubject = obj.subject;
+  if (!isOneOf(raw.grade, VALID_GRADES)) {
+    throw new Error("Invalid server profile grade");
   }
-  const activeSubject = getValidatedSubject(rawSubject);
-  const level = getValidatedLevel(obj.level);
+  if (!isOneOf(raw.stream, VALID_STREAMS)) {
+    throw new Error("Invalid server profile stream");
+  }
+  if (!isOneOf(raw.activeSubject, VALID_SUBJECTS)) {
+    throw new Error("Invalid server profile subject");
+  }
+  if (!isOneOf(raw.level, VALID_LEVELS)) {
+    throw new Error("Invalid server profile level");
+  }
+
+  const stream: AcademicStream = raw.grade === "9" ? "general" : raw.stream;
+  if (raw.grade !== "9" && stream !== "scientific" && stream !== "literary") {
+    throw new Error("Invalid academic stream for server profile grade");
+  }
 
   return {
     name,
-    grade,
+    grade: raw.grade,
     stream,
-    activeSubject,
-    level,
+    activeSubject: raw.activeSubject,
+    level: raw.level,
   };
 }
 
 export function migrateStudentProfile(raw: unknown): StudentProfile {
   const now = new Date().toISOString();
-  const rawObj = isRecord(raw) ? (raw as LegacyProfileInput) : {};
+  const rawObject: LegacyProfileInput = isRecord(raw) ? raw : {};
 
-  const id = typeof rawObj.id === "string" ? rawObj.id : "stud_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now();
-  const name = typeof rawObj.name === "string" ? rawObj.name.trim() : "";
-  const createdAt = typeof rawObj.createdAt === "string" ? rawObj.createdAt : now;
-  const updatedAt = typeof rawObj.updatedAt === "string" ? rawObj.updatedAt : now;
-
-  let rawSubject = rawObj.activeSubject;
-  if (rawSubject === undefined || rawSubject === null) {
-    rawSubject = rawObj.subject;
-  }
-  const activeSubject = getValidatedSubject(rawSubject);
-
-  let rawOnboarded = rawObj.onboardingCompleted;
-  if (rawOnboarded === undefined || rawOnboarded === null) {
-    rawOnboarded = rawObj.onboarded;
-  }
-  let onboardingCompleted = typeof rawOnboarded === "boolean" ? rawOnboarded : false;
-
-  const grade = getValidatedGrade(rawObj.grade);
-  let stream = getValidatedStream(rawObj.stream);
-  const level = getValidatedLevel(rawObj.level);
+  const grade = getValidatedGrade(rawObject.grade);
+  let stream = getValidatedStream(rawObject.stream);
+  let onboardingCompleted = typeof rawObject.onboardingCompleted === "boolean"
+    ? rawObject.onboardingCompleted
+    : typeof rawObject.onboarded === "boolean"
+      ? rawObject.onboarded
+      : false;
 
   if (grade === "9") {
     stream = "general";
-  } else {
-    if (stream !== "scientific" && stream !== "literary") {
-      stream = "general";
-      onboardingCompleted = false;
-    }
+  } else if (stream !== "scientific" && stream !== "literary") {
+    stream = "general";
+    onboardingCompleted = false;
   }
 
-  const authoritative = typeof (rawObj as any).authoritative === "boolean" ? (rawObj as any).authoritative : false;
-  const source = typeof (rawObj as any).source === "string" ? (rawObj as any).source : "guest-local";
-  const isStale = typeof (rawObj as any).isStale === "boolean" ? (rawObj as any).isStale : undefined;
-
   const migrated: StudentProfile = {
-    id,
-    name,
+    id: typeof rawObject.id === "string" && rawObject.id.trim()
+      ? rawObject.id.trim()
+      : createGuestId(),
+    name: typeof rawObject.name === "string" ? rawObject.name.trim() : "",
     grade,
     stream,
-    activeSubject,
-    level,
+    activeSubject: getValidatedSubject(rawObject.activeSubject ?? rawObject.subject),
+    level: getValidatedLevel(rawObject.level),
     onboardingCompleted,
-    createdAt,
-    updatedAt,
-    authoritative,
-    source,
-    isStale,
+    createdAt: typeof rawObject.createdAt === "string" ? rawObject.createdAt : now,
+    updatedAt: typeof rawObject.updatedAt === "string" ? rawObject.updatedAt : now,
+    authoritative: false,
+    source: "guest-local",
   };
 
   if (isBrowser) {
     try {
-      // Local storage cannot preserve authoritative=true. Store downgraded version in localStorage.
-      const storageProfile = {
-        ...migrated,
-        authoritative: false,
-        source: "guest-local" as const,
-        isStale: migrated.authoritative || migrated.source === "server-authoritative" ? true : migrated.isStale,
-      };
-      window.localStorage.setItem(PROFILE_KEY, JSON.stringify(storageProfile));
-    } catch (e) {
-      console.error("Error saving migrated profile to localStorage:", e);
+      window.localStorage.setItem(PROFILE_KEY, JSON.stringify(migrated));
+    } catch {
+      // Local persistence is best-effort and must not alter authority.
     }
   }
 
@@ -127,46 +142,27 @@ export function migrateStudentProfile(raw: unknown): StudentProfile {
 
 export function getStudentProfile(): StudentProfile | null {
   if (!isBrowser) return null;
+
   try {
-    const data = window.localStorage.getItem(PROFILE_KEY);
-    if (!data) return null;
-    const raw = JSON.parse(data);
-    const profile = migrateStudentProfile(raw);
-    if (profile.authoritative || profile.source === "server-authoritative") {
-      return {
-        ...profile,
-        authoritative: false,
-        source: "guest-local",
-        isStale: true,
-      };
-    }
-    return profile;
-  } catch (error) {
-    console.error("Error reading student profile from localStorage:", error);
+    const value = window.localStorage.getItem(PROFILE_KEY);
+    return value ? migrateStudentProfile(JSON.parse(value) as unknown) : null;
+  } catch {
     return null;
   }
 }
 
 export function saveStudentProfile(profile: StudentProfile): void {
   if (!isBrowser) return;
-  try {
-    const profileToSave: StudentProfile = {
-      ...profile,
-      updatedAt: new Date().toISOString(),
-    };
-    window.localStorage.setItem(PROFILE_KEY, JSON.stringify(profileToSave));
 
-    if (isFirebaseConfigured()) {
-      const auth = getFirebaseAuth();
-      const db = getFirestoreDb();
-      if (auth && db && auth.currentUser && !auth.currentUser.isAnonymous && profile.id === auth.currentUser.uid) {
-        setDoc(doc(db, "students", profile.id), profileToSave).catch((e) => {
-          console.warn("Firestore profile backup unavailable:", e);
-        });
-      }
-    }
-  } catch (error) {
-    console.error("Error saving student profile to localStorage:", error);
+  const localProfile = toLocalProfile({
+    ...profile,
+    updatedAt: new Date().toISOString(),
+  });
+
+  try {
+    window.localStorage.setItem(PROFILE_KEY, JSON.stringify(localProfile));
+  } catch {
+    // Local persistence is best-effort and must not alter authority.
   }
 }
 
@@ -174,27 +170,27 @@ export function deleteStudentProfile(): void {
   if (!isBrowser) return;
   try {
     window.localStorage.removeItem(PROFILE_KEY);
-  } catch (error) {
-    console.error("Error deleting student profile from localStorage:", error);
+  } catch {
+    // A storage failure must not crash logout/reset flows.
   }
 }
 
-export function createGuestStudentProfile(draft: StudentProfileDraft, customId?: string): StudentProfile {
+export function createGuestStudentProfile(
+  draft: StudentProfileDraft,
+  customId?: string,
+): StudentProfile {
   const now = new Date().toISOString();
-  const uniqueId = customId || "stud_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now();
-
   const grade = draft.grade;
   let stream = draft.stream;
+
   if (grade === "9") {
     stream = "general";
-  } else {
-    if (stream !== "scientific" && stream !== "literary") {
-      throw new TypeError(`Invalid academic stream "${stream}" for Grade ${grade}: stream must be either "scientific" or "literary"`);
-    }
+  } else if (stream !== "scientific" && stream !== "literary") {
+    throw new TypeError("Invalid academic stream for grade");
   }
 
   const profile: StudentProfile = {
-    id: uniqueId,
+    id: customId?.trim() || createGuestId(),
     name: draft.name.trim(),
     grade,
     stream,
@@ -211,23 +207,23 @@ export function createGuestStudentProfile(draft: StudentProfileDraft, customId?:
   return profile;
 }
 
-export function createVerifiedStudentProfile(identity: VerifiedIdentity, serverData: StudentProfileDraft): StudentProfile {
-  if (!identity || !identity.verifiedUid || identity.isAnonymous !== false) {
-    throw new Error("Cannot create verified student profile without verified non-anonymous identity");
+export function createVerifiedStudentProfile(
+  identity: VerifiedIdentity,
+  serverData: StudentProfileDraft,
+): StudentProfile {
+  if (!identity.verifiedUid.trim() || identity.isAnonymous !== false) {
+    throw new Error("Verified non-anonymous identity is required");
   }
 
   const now = new Date().toISOString();
   const grade = serverData.grade;
-  let stream = serverData.stream;
-  if (grade === "9") {
-    stream = "general";
-  } else {
-    if (stream !== "scientific" && stream !== "literary") {
-      throw new TypeError(`Invalid academic stream "${stream}" for Grade ${grade}: stream must be either "scientific" or "literary"`);
-    }
+  const stream: AcademicStream = grade === "9" ? "general" : serverData.stream;
+
+  if (grade !== "9" && stream !== "scientific" && stream !== "literary") {
+    throw new TypeError("Invalid academic stream for verified profile");
   }
 
-  const profile: StudentProfile = {
+  return {
     id: identity.verifiedUid,
     name: serverData.name.trim(),
     grade,
@@ -240,27 +236,26 @@ export function createVerifiedStudentProfile(identity: VerifiedIdentity, serverD
     authoritative: true,
     source: "server-authoritative",
   };
-
-  return profile;
 }
 
-export function createStudentProfile(draft: StudentProfileDraft, customId?: string): StudentProfile {
+export function createStudentProfile(
+  draft: StudentProfileDraft,
+  customId?: string,
+): StudentProfile {
   return createGuestStudentProfile(draft, customId);
 }
 
 export function updateStudentProfile(
   current: StudentProfile,
-  updates: Partial<StudentProfileDraft>
+  updates: Partial<StudentProfileDraft>,
 ): StudentProfile {
-  let grade = updates.grade !== undefined ? updates.grade : current.grade;
-  let stream = updates.stream !== undefined ? updates.stream : current.stream;
+  const grade = updates.grade ?? current.grade;
+  let stream = updates.stream ?? current.stream;
 
   if (grade === "9") {
     stream = "general";
-  } else {
-    if (stream !== "scientific" && stream !== "literary") {
-      throw new TypeError(`Invalid academic stream "${stream}" for Grade ${grade}: stream must be either "scientific" or "literary"`);
-    }
+  } else if (stream !== "scientific" && stream !== "literary") {
+    throw new TypeError("Invalid academic stream for grade");
   }
 
   const updatedProfile: StudentProfile = {
@@ -268,8 +263,8 @@ export function updateStudentProfile(
     name: updates.name !== undefined ? updates.name.trim() : current.name,
     grade,
     stream,
-    activeSubject: updates.activeSubject !== undefined ? updates.activeSubject : current.activeSubject,
-    level: updates.level !== undefined ? updates.level : current.level,
+    activeSubject: updates.activeSubject ?? current.activeSubject,
+    level: updates.level ?? current.level,
     updatedAt: new Date().toISOString(),
   };
 
