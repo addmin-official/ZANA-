@@ -1,10 +1,11 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { Type } from "@google/genai";
 import { AssessmentQuestion, QuestionSource, QuestionType, GenerationReviewStatus } from "../domain/AssessmentTypes.ts";
 import { DifficultyLevel } from "../../learning/domain/MasteryTypes.ts";
 import { QuestionBankProvider } from "../providers/QuestionBankProvider.ts";
 import { CurriculumRegistry } from "../../curriculum/registry/CurriculumRegistry.ts";
 import { ContentUsageGuard } from "../../curriculum/licensing/ContentUsageGuard.ts";
 import { getPrimaryModel } from "../../server/config/aiModels.ts";
+import { GeminiProvider } from "../../server/ai/GeminiProvider.ts";
 
 export class QuestionGenerator {
   /**
@@ -34,8 +35,6 @@ export class QuestionGenerator {
       }
     }
 
-    // Initialize client
-    const ai = new GoogleGenAI({ apiKey: key });
     const model = getPrimaryModel();
 
     const prompt = `
@@ -98,7 +97,8 @@ Ensure the output conforms exactly to the required JSON structure.
       required: ["promptKu", "explanationKu", "correctAnswer"]
     };
 
-    const response = await ai.models.generateContent({
+    const response = await GeminiProvider.generate({
+      apiKey: key,
       model,
       contents: prompt,
       config: {
@@ -106,7 +106,8 @@ Ensure the output conforms exactly to the required JSON structure.
         responseMimeType: "application/json",
         responseSchema,
         temperature: 0.3
-      }
+      },
+      pathname: "/api/generateQuestion"
     });
 
     const text = response.text;

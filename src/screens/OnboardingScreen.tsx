@@ -447,7 +447,7 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
                 </div>
                 <div className="flex justify-between items-center pt-3 py-1">
                   <span className="font-sans text-xs text-slate-400">ڕێڕەوی خوێندن</span>
-                  <span className="font-sans text-sm font-extrabold text-slate-800">{STREAM_LABELS[stream]}</span>
+                  <span className="font-sans text-sm font-extrabold text-slate-800">{stream ? STREAM_LABELS[stream as AcademicStream] : "گشتی"}</span>
                 </div>
                 <div className="flex justify-between items-center pt-3 py-1">
                   <span className="font-sans text-xs text-slate-400">بابەتی خوێندنی دەستپێک</span>

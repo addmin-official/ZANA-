@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { StudentProfile, StudentProfileDraft, StudentGrade, AcademicStream, SubjectKey, StudentLevel, VerifiedIdentity } from "./studentTypes.ts";
-import { getStudentProfile, deleteStudentProfile, createStudentProfile, createVerifiedStudentProfile, updateStudentProfile, saveStudentProfile } from "./studentStorage.ts";
+import { getStudentProfile, deleteStudentProfile, createStudentProfile, createVerifiedStudentProfile, updateStudentProfile, saveStudentProfile, parseServerProfileDocument } from "./studentStorage.ts";
 import { getValidatedGrade, getValidatedStream, getValidatedSubject, getValidatedLevel, sanitizeStudentName } from "./studentDefaults.ts";
 import { ZanaStorage } from "../../services/storage.ts";
 import { getFirestoreDb, getFirebaseAuth, isFirebaseConfigured } from "../../services/firebase.ts";
@@ -65,12 +65,14 @@ export function useStudentProfile() {
           const docSnap = await getDoc(docRef);
           if (docSnap.exists()) {
             const rawData = docSnap.data();
+            const serverDraft = parseServerProfileDocument(rawData);
             const identity: VerifiedIdentity = {
               verifiedUid: user.uid,
               isAnonymous: false,
               email: user.email,
             };
-            const cloudProfile = createVerifiedStudentProfile(identity, rawData as StudentProfileDraft);
+            const cloudProfile = createVerifiedStudentProfile(identity, serverDraft);
+            saveStudentProfile(cloudProfile);
             setProfileState(cloudProfile);
           } else {
             const saved = getStudentProfile();
@@ -80,9 +82,28 @@ export function useStudentProfile() {
                 isAnonymous: false,
                 email: user.email,
               };
-              const verifiedProfile = createVerifiedStudentProfile(identity, saved);
+              const draftToUpload: StudentProfileDraft = {
+                name: saved.name,
+                grade: saved.grade,
+                stream: saved.stream,
+                activeSubject: saved.activeSubject,
+                level: saved.level,
+              };
+              // Write only allowed profile fields to Firestore
+              await setDoc(docRef, {
+                id: user.uid,
+                name: draftToUpload.name,
+                grade: draftToUpload.grade,
+                stream: draftToUpload.stream,
+                activeSubject: draftToUpload.activeSubject,
+                level: draftToUpload.level,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              });
+              // Only after setDoc succeeds do we grant authority
+              const verifiedProfile = createVerifiedStudentProfile(identity, draftToUpload);
+              saveStudentProfile(verifiedProfile);
               setProfileState(verifiedProfile);
-              await setDoc(docRef, verifiedProfile);
             }
           }
         } catch (e) {

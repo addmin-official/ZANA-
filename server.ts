@@ -13,7 +13,7 @@ export {
   isRateLimited,
 } from "./src/server/app.ts";
 
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 async function bootstrap() {
   if (process.env.NODE_ENV !== "production") {

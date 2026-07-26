@@ -120,3 +120,8 @@ export function getClientSafeErrorMessage(category: SafeErrorCategory): string {
       return "کێشەیەکی ناوخۆیی لە ڕاژەکاردا ڕوویدا.";
   }
 }
+
+export function logMinimalError(context: string, category: SafeErrorCategory, error?: unknown): void {
+  const errStr = error !== undefined ? (error instanceof Error ? error.message : String(error)) : "N/A";
+  console.error(`[AI Error ${context}] Category: ${category}`, errStr);
+}

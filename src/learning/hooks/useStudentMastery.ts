@@ -33,11 +33,12 @@ export function useStudentMastery(studentId: string, onAuthFailure?: () => void)
     // Handle token expiration or token validation failure gracefully (401 response)
     if (response.status === 401) {
       console.warn("ZANA Auth token invalid/expired, attempting silent credential verification...");
-      AuthService.clearClientToken(studentId);
-      
       try {
         // Enforce token refresh and retry request
         token = await AuthService.getClientToken(studentId, true);
+        if (!token) {
+          throw new Error("No token returned on refresh");
+        }
         headers = {
           ...(options.headers as Record<string, string>),
           "Content-Type": "application/json",
@@ -46,7 +47,6 @@ export function useStudentMastery(studentId: string, onAuthFailure?: () => void)
         response = await fetch(url, { ...options, headers });
       } catch (refreshErr) {
         console.error("Cryptographic credential verification failed permanently:", refreshErr);
-        AuthService.clearClientToken(studentId);
         if (onAuthFailure) {
           onAuthFailure();
         }

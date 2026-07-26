@@ -2,10 +2,7 @@ export const AI_CONFIG = {
   apiBaseUrl: "https://generativelanguage.googleapis.com",
   primaryModel: "gemini-3.6-flash",
   visionModel: "gemini-3.6-flash",
-  defaultModel: "gemini-3.6-flash",
   timeoutMs: 30000,
-  maxRetries: 2,
-  retryableStatusCodes: [429, 500, 502, 503, 504],
   retryPolicy: {
     maxRetries: 2,
     baseBackoffMs: 300,
@@ -88,20 +85,26 @@ export function normalizeModel(
   return cleaned;
 }
 
-export function resolvePrimaryModel(env?: { GEMINI_PRIMARY_MODEL?: string }): string {
-  const envVal = env?.GEMINI_PRIMARY_MODEL || (typeof process !== "undefined" ? process.env?.GEMINI_PRIMARY_MODEL : undefined);
+export function resolvePrimaryModel(env?: { GEMINI_PRIMARY_MODEL?: string; AI_MODEL_PRIMARY?: string }): string {
+  const envVal =
+    env?.GEMINI_PRIMARY_MODEL ||
+    env?.AI_MODEL_PRIMARY ||
+    (typeof process !== "undefined" ? process.env?.GEMINI_PRIMARY_MODEL || process.env?.AI_MODEL_PRIMARY : undefined);
   return normalizeModel(envVal, AI_CONFIG.primaryModel);
 }
 
-export function resolveVisionModel(env?: { GEMINI_VISION_MODEL?: string }): string {
-  const envVal = env?.GEMINI_VISION_MODEL || (typeof process !== "undefined" ? process.env?.GEMINI_VISION_MODEL : undefined);
+export function resolveVisionModel(env?: { GEMINI_VISION_MODEL?: string; AI_MODEL_VISION?: string }): string {
+  const envVal =
+    env?.GEMINI_VISION_MODEL ||
+    env?.AI_MODEL_VISION ||
+    (typeof process !== "undefined" ? process.env?.GEMINI_VISION_MODEL || process.env?.AI_MODEL_VISION : undefined);
   return normalizeModel(envVal, AI_CONFIG.visionModel);
 }
 
-export function getPrimaryModel(env?: { GEMINI_PRIMARY_MODEL?: string }): string {
+export function getPrimaryModel(env?: { GEMINI_PRIMARY_MODEL?: string; AI_MODEL_PRIMARY?: string }): string {
   return resolvePrimaryModel(env);
 }
 
-export function getVisionModel(env?: { GEMINI_VISION_MODEL?: string }): string {
+export function getVisionModel(env?: { GEMINI_VISION_MODEL?: string; AI_MODEL_VISION?: string }): string {
   return resolveVisionModel(env);
 }

@@ -21,17 +21,17 @@ import { resolvePrimaryModel, resolveVisionModel } from "../config/aiModels.ts";
 import { Type } from "@google/genai";
 
 export class ProviderAdapter {
-  static async generate(params: ProviderGenerateParams): Promise<any> {
+  static async generate(params: ProviderGenerateParams): Promise<{ text: string }> {
     return GeminiProvider.generate(params);
   }
 
-  static async chat(apiKey: string, req: ChatRequest, env?: any): Promise<ChatResponse> {
-    const model = resolvePrimaryModel(env);
+  static async chat(apiKey: string, req: ChatRequest, env?: unknown): Promise<ChatResponse> {
+    const model = resolvePrimaryModel(env as any);
     const systemInstruction = buildSystemPrompt({
-      studentName: req.profile.name,
-      grade: req.profile.grade,
-      subject: req.profile.activeSubject,
-      level: req.profile.level,
+      studentName: req.profile.name || "قوتابی",
+      grade: req.profile.grade || "9",
+      subject: req.profile.activeSubject || "بیرکاری",
+      level: req.profile.level || "ناوەند",
       mode: "chat",
     });
 
@@ -49,20 +49,39 @@ export class ProviderAdapter {
       apiKey,
       model,
       contents,
-      config: { systemInstruction, temperature: 0.7 },
+      config: {
+        systemInstruction,
+        temperature: 0.7,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            text: { type: Type.STRING },
+            isEducational: { type: Type.BOOLEAN },
+          },
+          required: ["text", "isEducational"],
+        },
+      },
       pathname: "/api/chat",
     });
 
-    return validateChatResponse({ text: response.text });
+    let json: unknown = {};
+    try {
+      json = JSON.parse(response.text);
+    } catch {
+      json = { text: response.text, isEducational: true };
+    }
+
+    return validateChatResponse(json);
   }
 
-  static async assessment(apiKey: string, req: AssessmentRequest, env?: any): Promise<AssessmentResponse> {
-    const model = resolvePrimaryModel(env);
+  static async assessment(apiKey: string, req: AssessmentRequest, env?: unknown): Promise<AssessmentResponse> {
+    const model = resolvePrimaryModel(env as any);
     const systemInstruction = buildSystemPrompt({
-      studentName: req.profile.name,
-      grade: req.profile.grade,
-      subject: req.profile.activeSubject,
-      level: req.profile.level,
+      studentName: req.profile.name || "قوتابی",
+      grade: req.profile.grade || "9",
+      subject: req.profile.activeSubject || "بیرکاری",
+      level: req.profile.level || "ناوەند",
       mode: "assessment",
     });
 
@@ -82,7 +101,7 @@ export class ProviderAdapter {
 ${historySummary.join("\n")}
 
 کارەکانت بەپێی وەڵامەکان:
-١. ئەگەر لیستەکە خاڵییە و هیچ وەڵامێک نییە (پرسیاری یەکەم)، تکایە پرسیارێکی زۆر بەهێزی سەرەکی لەم بابەتەدا بۆ ئاستی ${req.profile.level} پێشکەش بکە لە 'question' و بە کورت دەستپێشخەری لە 'feedback' بنووسە.
+١. ئەگەر لیستەکە خاڵییە و هیچ وەڵامێک نییە (پرسیاری یەکەم)، تکایە پرسیارێکی زۆر بەهێزی سەرەکی لەم بابەتەدا بۆ ئاستی ${req.profile.level || "ناوەند"} پێشکەش بکە لە 'question' و بە کورت دەستپێشخەری لە 'feedback' بنووسە.
 ٢. ئەگەر قوتابی وەڵامی داوەتەوە، وەڵامەکەی دوایین بەراورد بکە بە دواین پرسیار. هەڵسەنگاندن بکە ئایا وەڵامەکە ڕاستە یان هەڵەیە (isCorrect=true/false).
 ٣. لێدوان و فیدباکی فێرکاریی و سوقراتی میهرەبانانە لە 'feedback' دابنێ بە کوردی سۆرانی.
 ٤. ئەگەر هێشتا نەگەیشتووینەتە پرسیاری کۆتایی (واتە currentQuestion کەمترە لە ٥)، پرسیارێکی نوێی زانستیی داهاتوو لە 'question' بنووسە.
@@ -116,24 +135,24 @@ ${historySummary.join("\n")}
       pathname: "/api/assessment",
     });
 
-    let json: any = {};
+    let json: unknown = {};
     try {
-      json = JSON.parse(response.text || "{}");
-    } catch (e) {
+      json = JSON.parse(response.text);
+    } catch {
       throw new Error("Invalid provider response: invalid JSON output");
     }
 
     return validateAssessmentResponse(json);
   }
 
-  static async report(apiKey: string, req: ReportRequest, env?: any): Promise<ReportResponse> {
-    const model = resolvePrimaryModel(env);
+  static async report(apiKey: string, req: ReportRequest, env?: unknown): Promise<ReportResponse> {
+    const model = resolvePrimaryModel(env as any);
     const systemInstruction = buildSystemPrompt({
-      studentName: req.profile.name,
-      grade: req.profile.grade,
-      subject: req.profile.activeSubject,
-      level: req.profile.level,
-      mode: "chat",
+      studentName: req.profile.name || "قوتابی",
+      grade: req.profile.grade || "9",
+      subject: req.profile.activeSubject || "بیرکاری",
+      level: req.profile.level || "ناوەند",
+      mode: "report",
     });
 
     const userPrompt = `
@@ -165,24 +184,26 @@ ${historySummary.join("\n")}
       pathname: "/api/report",
     });
 
-    let json: any = {};
+    let json: unknown = {};
     try {
-      json = JSON.parse(response.text || "{}");
-    } catch (e) {
+      json = JSON.parse(response.text);
+    } catch {
       throw new Error("Invalid provider response: invalid JSON output");
     }
 
     return validateReportResponse(json);
   }
 
-  static async ask(apiKey: string, req: AskRequest, env?: any): Promise<AskResponse> {
-    const model = resolvePrimaryModel(env);
+  static async ask(apiKey: string, req: AskRequest, env?: unknown): Promise<AskResponse> {
+    const model = resolvePrimaryModel(env as any);
     const systemInstruction = buildSystemPrompt({
-      studentName: req.context.studentName,
-      grade: req.context.grade,
-      subject: req.context.subject,
-      level: req.context.level,
-      mode: "chat",
+      studentName: req.context.studentName || "قوتابی",
+      grade: req.context.grade || "9",
+      subject: req.context.subject || "بیرکاری",
+      level: req.context.level || "ناوەند",
+      mode: "ask",
+      lessonTitle: req.context.lessonTitle,
+      conceptTitle: req.context.conceptTitle,
     });
 
     const contents = (req.history || []).map((msg) => ({
@@ -199,23 +220,45 @@ ${historySummary.join("\n")}
       apiKey,
       model,
       contents,
-      config: { systemInstruction, temperature: 0.7 },
+      config: {
+        systemInstruction,
+        temperature: 0.7,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            text: { type: Type.STRING },
+            isEducational: { type: Type.BOOLEAN },
+          },
+          required: ["text", "isEducational"],
+        },
+      },
       pathname: "/api/study/ask",
     });
 
-    return validateAskResponse({ text: response.text });
+    let json: unknown = {};
+    try {
+      json = JSON.parse(response.text);
+    } catch {
+      json = { text: response.text, isEducational: true };
+    }
+
+    return validateAskResponse(json);
   }
 
-  static async vision(apiKey: string, req: VisionRequest, env?: any): Promise<VisionResponse> {
-    const model = resolveVisionModel(env);
+  static async vision(apiKey: string, req: VisionRequest, env?: unknown): Promise<VisionResponse> {
+    const model = resolveVisionModel(env as any);
     const base64Data = Buffer.from(req.imageBytes).toString("base64");
 
     const systemInstruction = buildSystemPrompt({
       studentName: req.context.studentId || "قوتابی",
-      grade: req.context.grade,
-      subject: req.context.subject,
-      level: req.context.level,
+      grade: req.context.grade || "9",
+      stream: req.context.stream,
+      subject: req.context.subject || "بیرکاری",
+      level: req.context.level || "ناوەند",
       mode: "vision",
+      lessonTitle: req.context.lessonTitle,
+      conceptTitle: req.context.conceptTitle,
     });
 
     const contents = [
@@ -260,10 +303,10 @@ ${historySummary.join("\n")}
       pathname: "/api/study/vision",
     });
 
-    let json: any = {};
+    let json: unknown = {};
     try {
-      json = JSON.parse(response.text || "{}");
-    } catch (e) {
+      json = JSON.parse(response.text);
+    } catch {
       throw new Error("Invalid provider response: invalid JSON output");
     }
 

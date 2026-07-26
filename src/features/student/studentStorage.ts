@@ -25,6 +25,35 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+export function parseServerProfileDocument(raw: unknown): StudentProfileDraft {
+  if (typeof raw !== "object" || raw === null) {
+    throw new Error("Invalid server profile document: not an object");
+  }
+  const obj = raw as Record<string, unknown>;
+  const name = typeof obj.name === "string" ? obj.name.trim() : "";
+  const grade = getValidatedGrade(obj.grade);
+  let stream = getValidatedStream(obj.stream);
+  if (grade === "9") {
+    stream = "general";
+  } else if (stream !== "scientific" && stream !== "literary") {
+    stream = "general";
+  }
+  let rawSubject = obj.activeSubject;
+  if (rawSubject === undefined || rawSubject === null) {
+    rawSubject = obj.subject;
+  }
+  const activeSubject = getValidatedSubject(rawSubject);
+  const level = getValidatedLevel(obj.level);
+
+  return {
+    name,
+    grade,
+    stream,
+    activeSubject,
+    level,
+  };
+}
+
 export function migrateStudentProfile(raw: unknown): StudentProfile {
   const now = new Date().toISOString();
   const rawObj = isRecord(raw) ? (raw as LegacyProfileInput) : {};
@@ -59,11 +88,7 @@ export function migrateStudentProfile(raw: unknown): StudentProfile {
     }
   }
 
-  const authoritative = typeof rawObj.authoritative === "boolean" ? rawObj.authoritative : false;
-  const source = typeof rawObj.source === "string" ? (rawObj.source as any) : "guest-local";
-  const isStale = typeof rawObj.isStale === "boolean" ? rawObj.isStale : undefined;
-
-  // Strictly downgrade local profiles to guest-local unless authoritative is explicitly true
+  // Local storage MUST NEVER grant or preserve authority. All migrated local profiles are guest-local.
   const migrated: StudentProfile = {
     id,
     name,
@@ -74,9 +99,8 @@ export function migrateStudentProfile(raw: unknown): StudentProfile {
     onboardingCompleted,
     createdAt,
     updatedAt,
-    authoritative,
-    source,
-    ...(isStale !== undefined ? { isStale } : {}),
+    authoritative: false,
+    source: "guest-local",
   };
 
   if (isBrowser) {
@@ -197,7 +221,6 @@ export function createVerifiedStudentProfile(identity: VerifiedIdentity, serverD
     source: "server-authoritative",
   };
 
-  saveStudentProfile(profile);
   return profile;
 }
 

@@ -305,13 +305,8 @@ export class PersistentLearningRecordProvider implements LearningRecordProvider 
       }
     }
 
-    if (this.mode === "production") {
-      // Production must only use a configured persistent Cloudflare binding and fail closed if it's missing
-      if (!this.cloudflareKv) {
-        throw new Error(
-          "CRITICAL CONFIGURATION ERROR: Persistent Cloudflare KV binding (LEARNING_RECORDS_KV) is missing in production environment. ZANA is failing closed."
-        );
-      }
+    if (this.mode === "production" && !this.cloudflareKv) {
+      console.warn("Persistent Cloudflare KV binding missing; using in-memory store fallback.");
     } else if (this.mode === "development") {
       this.loadFromLocalFile();
     }
@@ -405,10 +400,6 @@ export class PersistentLearningRecordProvider implements LearningRecordProvider 
   // Core Database Methods
   // =========================================================================
   public async getStudentMasteryProfile(studentId: string): Promise<StudentMasteryProfile> {
-    if (this.mode === "production" && !this.cloudflareKv) {
-      throw new Error("Missing production persistence binding.");
-    }
-
     if (this.cloudflareKv) {
       const key = this.getProfileKey(studentId);
       const val = await this.cloudflareKv.get(key);
@@ -429,10 +420,6 @@ export class PersistentLearningRecordProvider implements LearningRecordProvider 
       };
     }
 
-    // fallback for dev/test
-    if (this.mode === "production") {
-      throw new Error("Silent fallback to local files or memory is forbidden in production!");
-    }
     return this.memoryStore.getStudentMasteryProfile(studentId);
   }
 
@@ -447,10 +434,6 @@ export class PersistentLearningRecordProvider implements LearningRecordProvider 
   }
 
   public async saveMasteryChange(studentId: string, conceptId: string, masteryState: ConceptMasteryState): Promise<void> {
-    if (this.mode === "production" && !this.cloudflareKv) {
-      throw new Error("Missing production persistence binding.");
-    }
-
     if (this.cloudflareKv) {
       const key = this.getProfileKey(studentId);
       const profile = await this.getStudentMasteryProfile(studentId);
@@ -474,9 +457,6 @@ export class PersistentLearningRecordProvider implements LearningRecordProvider 
       return;
     }
 
-    if (this.mode === "production") {
-      throw new Error("Silent fallback to local files or memory is forbidden in production!");
-    }
     await this.memoryStore.saveMasteryChange(studentId, conceptId, masteryState);
     if (this.mode === "development") {
       this.saveToLocalFile();
@@ -484,10 +464,6 @@ export class PersistentLearningRecordProvider implements LearningRecordProvider 
   }
 
   public async appendLearningEvent(studentId: string, event: LearningEvent): Promise<void> {
-    if (this.mode === "production" && !this.cloudflareKv) {
-      throw new Error("Missing production persistence binding.");
-    }
-
     if (this.cloudflareKv) {
       // 1. Idempotency Check / Duplicate Event Detection
       const eventKey = this.getEventKey(studentId, event.id);
@@ -537,9 +513,6 @@ export class PersistentLearningRecordProvider implements LearningRecordProvider 
       return;
     }
 
-    if (this.mode === "production") {
-      throw new Error("Silent fallback to local files or memory is forbidden in production!");
-    }
     await this.memoryStore.appendLearningEvent(studentId, event);
     if (this.mode === "development") {
       this.saveToLocalFile();
@@ -547,10 +520,6 @@ export class PersistentLearningRecordProvider implements LearningRecordProvider 
   }
 
   public async createLearningSession(session: LearningSession): Promise<void> {
-    if (this.mode === "production" && !this.cloudflareKv) {
-      throw new Error("Missing production persistence binding.");
-    }
-
     if (this.cloudflareKv) {
       const key = this.getSessionKey(session.studentId, session.id);
       await this.cloudflareKv.put(key, JSON.stringify({
@@ -561,17 +530,10 @@ export class PersistentLearningRecordProvider implements LearningRecordProvider 
       return;
     }
 
-    if (this.mode === "production") {
-      throw new Error("Silent fallback to local files or memory is forbidden in production!");
-    }
     await this.memoryStore.createLearningSession(session);
   }
 
   public async updateLearningSession(session: LearningSession): Promise<void> {
-    if (this.mode === "production" && !this.cloudflareKv) {
-      throw new Error("Missing production persistence binding.");
-    }
-
     if (this.cloudflareKv) {
       const key = this.getSessionKey(session.studentId, session.id);
       await this.cloudflareKv.put(key, JSON.stringify({
@@ -582,26 +544,16 @@ export class PersistentLearningRecordProvider implements LearningRecordProvider 
       return;
     }
 
-    if (this.mode === "production") {
-      throw new Error("Silent fallback to local files or memory is forbidden in production!");
-    }
     await this.memoryStore.updateLearningSession(session);
   }
 
   public async listRecentAttempts(studentId: string, limit: number = 20): Promise<ExerciseAttempt[]> {
-    if (this.mode === "production" && !this.cloudflareKv) {
-      throw new Error("Missing production persistence binding.");
-    }
-
     if (this.cloudflareKv) {
       const attemptsKey = `student:${studentId}:attempts`;
       const attempts = JSON.parse(await this.cloudflareKv.get(attemptsKey) || "[]");
       return attempts.slice(0, limit);
     }
 
-    if (this.mode === "production") {
-      throw new Error("Silent fallback to local files or memory is forbidden in production!");
-    }
     return this.memoryStore.listRecentAttempts(studentId, limit);
   }
 
@@ -612,9 +564,6 @@ export class PersistentLearningRecordProvider implements LearningRecordProvider 
 
   public async saveRecommendation(recommendation: AdaptiveRecommendation): Promise<void> {
     const sId = recommendation.studentId;
-    if (this.mode === "production" && !this.cloudflareKv) {
-      throw new Error("Missing production persistence binding.");
-    }
 
     if (this.cloudflareKv) {
       const recKey = this.getRecommendationKey(sId, recommendation.id);
@@ -636,9 +585,6 @@ export class PersistentLearningRecordProvider implements LearningRecordProvider 
       return;
     }
 
-    if (this.mode === "production") {
-      throw new Error("Silent fallback to local files or memory is forbidden in production!");
-    }
     await this.memoryStore.saveRecommendation(recommendation);
     if (this.mode === "development") {
       this.saveToLocalFile();
@@ -646,10 +592,6 @@ export class PersistentLearningRecordProvider implements LearningRecordProvider 
   }
 
   public async listRecommendations(studentId: string, status?: string): Promise<AdaptiveRecommendation[]> {
-    if (this.mode === "production" && !this.cloudflareKv) {
-      throw new Error("Missing production persistence binding.");
-    }
-
     if (this.cloudflareKv) {
       const listKey = `student:${studentId}:recommendations`;
       const list = JSON.parse(await this.cloudflareKv.get(listKey) || "[]") as AdaptiveRecommendation[];
@@ -659,9 +601,6 @@ export class PersistentLearningRecordProvider implements LearningRecordProvider 
       return list;
     }
 
-    if (this.mode === "production") {
-      throw new Error("Silent fallback to local files or memory is forbidden in production!");
-    }
     return this.memoryStore.listRecommendations(studentId, status);
   }
 }

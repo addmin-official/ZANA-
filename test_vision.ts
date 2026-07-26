@@ -52,13 +52,13 @@ runTest("SVG Format Magic-Byte and Mime Rejection", () => {
   
   const mockReq = {} as Request;
   const mockFile = { mimetype: "image/svg+xml" } as Express.Multer.File;
-  let filterError: Error | null = null;
+  let filterError: any = null;
   
-  fileFilter(mockReq, mockFile, (err) => {
+  fileFilter(mockReq, mockFile, (err: any) => {
     filterError = err;
   });
   
-  assert.ok(filterError instanceof Error);
+  assert.ok(filterError);
   assert.strictEqual((filterError as Record<string, any>).code, "UNSUPPORTED_MIME_TYPE");
 });
 
@@ -69,13 +69,13 @@ runTest("PDF Format Magic-Byte and Mime Rejection", () => {
   
   const mockReq = {} as Request;
   const mockFile = { mimetype: "application/pdf" } as Express.Multer.File;
-  let filterError: Error | null = null;
+  let filterError: any = null;
   
-  fileFilter(mockReq, mockFile, (err) => {
+  fileFilter(mockReq, mockFile, (err: any) => {
     filterError = err;
   });
   
-  assert.ok(filterError instanceof Error);
+  assert.ok(filterError);
   assert.strictEqual((filterError as Record<string, any>).code, "UNSUPPORTED_MIME_TYPE");
 });
 

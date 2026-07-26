@@ -1,4 +1,5 @@
 import firebaseConfig from "./firebaseConfig.ts";
+import { getFirebaseAuth } from "./firebase.ts";
 
 export interface VerifiedTokenClaims {
   uid: string;
@@ -23,56 +24,25 @@ let cachedJwks: { keys: JWKKey[] } | null = null;
 let jwksCacheExp = 0;
 
 export class AuthService {
-  private static tokenKey = "zana_firebase_id_token";
-
-  public static getClientToken(_studentId?: string, _forceRefresh?: boolean): string | null {
-    if (typeof window === "undefined") return null;
-    return localStorage.getItem(this.tokenKey) || localStorage.getItem("firebase_id_token");
-  }
-
-  public static setClientToken(token: string, _studentId?: string, _option?: any): void {
-    if (typeof window === "undefined") return;
-    localStorage.setItem(this.tokenKey, token);
-  }
-
-  public static clearClientToken(_studentId?: string): void {
-    if (typeof window === "undefined") return;
-    localStorage.removeItem(this.tokenKey);
-    localStorage.removeItem("firebase_id_token");
-  }
-
-  public static signToken(uid: string, expiresInMs: number = 30 * 24 * 60 * 60 * 1000): string {
-    const header = { alg: "HS256", typ: "JWT" };
-    const exp = Math.floor((Date.now() + expiresInMs) / 1000);
-    const iat = Math.floor(Date.now() / 1000);
-    const payload = { uid, sub: uid, exp, iat };
-    const h64 = this.toBase64Url(JSON.stringify(header));
-    const p64 = this.toBase64Url(JSON.stringify(payload));
-    const sig = this.toBase64Url(`mock-sig-${uid}-${exp}`);
-    return `${h64}.${p64}.${sig}`;
-  }
-
-  public static verifyToken(token: string): { uid: string; exp: number } {
-    if (!token || typeof token !== "string") throw new Error("Invalid token");
-    const parts = token.split(".");
-    if (parts.length !== 3) throw new Error("Invalid token structure");
-    if (token.endsWith("modified")) throw new Error("Invalid token signature");
-    const payload = JSON.parse(this.fromBase64Url(parts[1]));
-    const nowInSecs = Math.floor(Date.now() / 1000);
-    if (payload.exp && nowInSecs > payload.exp) throw new Error("Token has expired");
-    return { uid: payload.uid || payload.sub, exp: payload.exp * 1000 };
-  }
-
-  private static toBase64Url(str: string): string {
-    if (typeof Buffer !== "undefined") {
-      return Buffer.from(str).toString("base64url");
+  /**
+   * Retrieves a real Firebase ID Token from the current non-anonymous user.
+   * Never stores tokens in localStorage or persistent custom caches.
+   */
+  public static async getClientToken(_studentId?: string, forceRefresh: boolean = false): Promise<string | null> {
+    const auth = getFirebaseAuth();
+    if (!auth || !auth.currentUser || auth.currentUser.isAnonymous) {
+      return null;
     }
-    return btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    try {
+      return await auth.currentUser.getIdToken(forceRefresh);
+    } catch (e) {
+      console.warn("Failed to retrieve Firebase ID token:", e);
+      return null;
+    }
   }
 
   /**
-   * Cryptographically validates a Firebase ID token.
-   * Uses Google's public JWKs and Web Crypto API.
+   * Cryptographically validates a Firebase ID token using Google's public JWKs and Web Crypto API.
    */
   public static async verifyFirebaseIdToken(
     idToken: string | null,
@@ -89,8 +59,8 @@ export class AuthService {
 
     const [headerStr, payloadStr, signatureStr] = parts;
 
-    let header: any;
-    let payload: any;
+    let header: Record<string, unknown>;
+    let payload: Record<string, unknown>;
     try {
       header = JSON.parse(this.fromBase64Url(headerStr));
       payload = JSON.parse(this.fromBase64Url(payloadStr));
@@ -98,20 +68,20 @@ export class AuthService {
       throw new Error("Failed to parse Firebase token structure");
     }
 
-    if (header.alg !== "RS256" || !header.kid) {
+    if (header.alg !== "RS256" || typeof header.kid !== "string" || !header.kid.trim()) {
       throw new Error("Invalid token header algorithm or missing key ID (kid)");
     }
 
     const nowInSecs = Math.floor(Date.now() / 1000);
-    if (!payload.exp || nowInSecs > payload.exp) {
+    if (typeof payload.exp !== "number" || nowInSecs > payload.exp) {
       throw new Error("Firebase ID token has expired");
     }
 
-    if (!payload.iat || payload.iat > nowInSecs) {
+    if (typeof payload.iat !== "number" || payload.iat > nowInSecs) {
       throw new Error("Firebase ID token issued in the future");
     }
 
-    if (payload.auth_time && payload.auth_time > nowInSecs) {
+    if (typeof payload.auth_time === "number" && payload.auth_time > nowInSecs) {
       throw new Error("Firebase ID token auth_time in the future");
     }
 
@@ -140,12 +110,12 @@ export class AuthService {
     if (isTest) {
       return {
         uid: payload.sub,
-        email: payload.email,
-        aud: payload.aud,
-        iss: payload.iss,
+        email: typeof payload.email === "string" ? payload.email : undefined,
+        aud: String(payload.aud),
+        iss: String(payload.iss),
         exp: payload.exp,
         iat: payload.iat,
-        auth_time: payload.auth_time,
+        auth_time: typeof payload.auth_time === "number" ? payload.auth_time : undefined,
       };
     }
 
@@ -153,7 +123,7 @@ export class AuthService {
     const jwks = await this.getGoogleJwks();
     const jwk = jwks.keys.find((key) => key.kid === header.kid);
     if (!jwk) {
-      // Refresh cache once if key not found
+      // Refresh cache once if kid not found
       cachedJwks = null;
       const refreshedJwks = await this.getGoogleJwks();
       const refreshedJwk = refreshedJwks.keys.find((key) => key.kid === header.kid);
@@ -171,7 +141,7 @@ export class AuthService {
     payloadStr: string,
     signatureStr: string,
     jwk: JWKKey,
-    payload: any
+    payload: Record<string, unknown>
   ): Promise<VerifiedTokenClaims> {
     const cryptoApi = typeof crypto !== "undefined" && crypto.subtle ? crypto : (globalThis as any).crypto;
     if (!cryptoApi || !cryptoApi.subtle) {
@@ -196,13 +166,13 @@ export class AuthService {
     }
 
     return {
-      uid: payload.sub,
-      email: payload.email,
-      aud: payload.aud,
-      iss: payload.iss,
-      exp: payload.exp,
-      iat: payload.iat,
-      auth_time: payload.auth_time,
+      uid: String(payload.sub),
+      email: typeof payload.email === "string" ? payload.email : undefined,
+      aud: String(payload.aud),
+      iss: String(payload.iss),
+      exp: Number(payload.exp),
+      iat: Number(payload.iat),
+      auth_time: typeof payload.auth_time === "number" ? payload.auth_time : undefined,
     };
   }
 
@@ -216,6 +186,28 @@ export class AuthService {
       throw new Error(`Failed to fetch Google JWKs: HTTP ${res.status}`);
     }
 
+    const json: unknown = await res.json();
+    if (!json || typeof json !== "object" || !Array.isArray((json as Record<string, unknown>).keys)) {
+      throw new Error("Invalid Google JWK response shape");
+    }
+
+    const keys = (json as { keys: unknown[] }).keys.filter((k): k is JWKKey => {
+      if (!k || typeof k !== "object") return false;
+      const keyObj = k as Record<string, unknown>;
+      return (
+        typeof keyObj.kty === "string" &&
+        typeof keyObj.alg === "string" &&
+        typeof keyObj.use === "string" &&
+        typeof keyObj.kid === "string" &&
+        typeof keyObj.n === "string" &&
+        typeof keyObj.e === "string"
+      );
+    });
+
+    if (keys.length === 0) {
+      throw new Error("Google JWK set contains no valid RS256 keys");
+    }
+
     const cacheControl = res.headers.get("cache-control") || "";
     let maxAge = 3600;
     const match = cacheControl.match(/max-age=(\d+)/);
@@ -223,7 +215,7 @@ export class AuthService {
       maxAge = parseInt(match[1], 10);
     }
 
-    cachedJwks = (await res.json()) as { keys: JWKKey[] };
+    cachedJwks = { keys };
     jwksCacheExp = Date.now() + maxAge * 1000;
     return cachedJwks;
   }

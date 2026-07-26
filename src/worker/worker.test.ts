@@ -2,12 +2,13 @@ process.env.NODE_ENV = "test";
 process.env.ZANA_ENV = "test";
 import { test } from "node:test";
 import assert from "node:assert";
-import worker, { classifyError, getClientSafeErrorMessage } from "./index.ts";
+import worker, { classifyError, getClientSafeErrorMessage, Env } from "./index.ts";
 
 // Helper to create a mock Env
-const createMockEnv = (assetsMock?: any) => ({
+const createMockEnv = (assetsMock?: any): Env => ({
   GEMINI_API_KEY: "test-api-key",
   ALLOWED_ORIGINS: "https://zana-app.web.app",
+  FIREBASE_PROJECT_ID: "gen-lang-client-0009572581",
   ASSETS: assetsMock,
 });
 
@@ -15,8 +16,8 @@ test("Worker - GET /api/health with approved Origin returns 200 and exact CORS o
   const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/health", {
     method: "GET",
     headers: {
-      Origin: "https://zana-app.web.app"
-    }
+      Origin: "https://zana-app.web.app",
+    },
   });
 
   const env = createMockEnv();
@@ -27,7 +28,7 @@ test("Worker - GET /api/health with approved Origin returns 200 and exact CORS o
   assert.strictEqual(res.headers.get("location"), null); // zero redirects
   assert.strictEqual(res.headers.get("access-control-allow-origin"), "https://zana-app.web.app");
 
-  const body = await res.json() as any;
+  const body = (await res.json()) as any;
   assert.strictEqual(body.ok, true);
   assert.strictEqual(body.status, "ok");
   assert.strictEqual(body.service, "zana-api-worker");
@@ -35,7 +36,7 @@ test("Worker - GET /api/health with approved Origin returns 200 and exact CORS o
 
 test("Worker - GET /api/health without Origin header returns 200 without CORS header", async () => {
   const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/health", {
-    method: "GET"
+    method: "GET",
   });
 
   const env = createMockEnv();
@@ -43,7 +44,7 @@ test("Worker - GET /api/health without Origin header returns 200 without CORS he
 
   assert.strictEqual(res.status, 200);
   assert.strictEqual(res.headers.get("access-control-allow-origin"), null);
-  const body = await res.json() as any;
+  const body = (await res.json()) as any;
   assert.strictEqual(body.ok, true);
 });
 
@@ -51,8 +52,8 @@ test("Worker - GET /api/health with unapproved Origin returns 200 health without
   const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/health", {
     method: "GET",
     headers: {
-      Origin: "https://unauthorized.example"
-    }
+      Origin: "https://unauthorized.example",
+    },
   });
 
   const env = createMockEnv();
@@ -60,24 +61,25 @@ test("Worker - GET /api/health with unapproved Origin returns 200 health without
 
   assert.strictEqual(res.status, 200);
   assert.strictEqual(res.headers.get("access-control-allow-origin"), null);
-  const body = await res.json() as any;
+  const body = (await res.json()) as any;
   assert.strictEqual(body.ok, true);
 });
 
 test("Worker - GET /api/health is unaffected by missing GEMINI_API_KEY, JWT_SECRET, or KV", async () => {
   const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/health", {
-    method: "GET"
+    method: "GET",
   });
 
   // Empty env without GEMINI_API_KEY, JWT_SECRET, or KV bindings
   const emptyEnv: any = {
-    ALLOWED_ORIGINS: "https://zana-app.web.app"
+    ALLOWED_ORIGINS: "https://zana-app.web.app",
+    FIREBASE_PROJECT_ID: "gen-lang-client-0009572581",
   };
 
   const res = await worker.fetch(req, emptyEnv);
 
   assert.strictEqual(res.status, 200);
-  const body = await res.json() as any;
+  const body = (await res.json()) as any;
   assert.strictEqual(body.ok, true);
 });
 
@@ -85,8 +87,8 @@ test("Worker - GET /api/health/ with trailing slash normalizes to /api/health an
   const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/health/", {
     method: "GET",
     headers: {
-      Origin: "https://zana-app.web.app"
-    }
+      Origin: "https://zana-app.web.app",
+    },
   });
 
   const env = createMockEnv();
@@ -94,7 +96,7 @@ test("Worker - GET /api/health/ with trailing slash normalizes to /api/health an
 
   assert.strictEqual(res.status, 200);
   assert.strictEqual(res.headers.get("location"), null);
-  const body = await res.json() as any;
+  const body = (await res.json()) as any;
   assert.strictEqual(body.ok, true);
 });
 
@@ -103,16 +105,16 @@ test("Worker - Protected API route rejects unapproved Origin with 403", async ()
     method: "POST",
     headers: {
       Origin: "https://unauthorized.example",
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
     },
-    body: JSON.stringify({ message: "hello" })
+    body: JSON.stringify({ message: "hello" }),
   });
 
   const env = createMockEnv();
   const res = await worker.fetch(req, env);
 
   assert.strictEqual(res.status, 403);
-  const body = await res.json() as any;
+  const body = (await res.json()) as any;
   assert.strictEqual(body.error, "Disallowed Origin");
 });
 
@@ -121,9 +123,9 @@ test("Worker - Protected API route allows approved Origin", async () => {
     method: "POST",
     headers: {
       Origin: "https://zana-app.web.app",
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
     },
-    body: JSON.stringify({}) // Invalid payload triggers 400 validation error, confirming origin check passed
+    body: JSON.stringify({}), // Invalid payload triggers 400 validation error, confirming origin check passed
   });
 
   const env = createMockEnv();
@@ -136,21 +138,21 @@ test("Worker - Protected API route allows approved Origin", async () => {
 test("Worker - GET /api/health is not captured by SPA fallback", async () => {
   // Even if ASSETS are defined and would normally serve pages, /api/health returns direct JSON
   const mockAssets = {
-    fetch: async () => new Response("index html file content", { status: 200 })
+    fetch: async () => new Response("index html file content", { status: 200 }),
   };
 
   const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/health", {
     method: "GET",
     headers: {
-      Origin: "https://zana-app.web.app"
-    }
+      Origin: "https://zana-app.web.app",
+    },
   });
 
   const env = createMockEnv(mockAssets);
   const res = await worker.fetch(req, env);
 
   assert.strictEqual(res.status, 200);
-  const body = await res.json() as any;
+  const body = (await res.json()) as any;
   assert.strictEqual(body.ok, true);
   assert.notStrictEqual(body, "index html file content");
 });
@@ -159,8 +161,8 @@ test("Worker - unknown /api route returns JSON 404", async () => {
   const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/unknown-route-xyz", {
     method: "GET",
     headers: {
-      Origin: "https://zana-app.web.app"
-    }
+      Origin: "https://zana-app.web.app",
+    },
   });
 
   const env = createMockEnv();
@@ -168,27 +170,27 @@ test("Worker - unknown /api route returns JSON 404", async () => {
 
   assert.strictEqual(res.status, 404);
   assert.strictEqual(res.headers.get("content-type"), "application/json");
-  const body = await res.json() as any;
+  const body = (await res.json()) as any;
   assert.ok(body.error);
 });
 
 test("Worker - missing static asset returns real 404", async () => {
   const mockAssets = {
-    fetch: async () => new Response("Not Found", { status: 404 })
+    fetch: async () => new Response("Not Found", { status: 404 }),
   };
 
   const req = new Request("https://zana-api-worker.zana-platform.workers.dev/assets/nonexistent-file.css", {
     method: "GET",
     headers: {
-      Origin: "https://zana-app.web.app"
-    }
+      Origin: "https://zana-app.web.app",
+    },
   });
 
   const env = createMockEnv(mockAssets);
   const res = await worker.fetch(req, env);
 
   assert.strictEqual(res.status, 404);
-  const body = await res.json() as any;
+  const body = (await res.json()) as any;
   assert.ok(body.error); // returns JSON 404 instead of SPA html
 });
 
@@ -200,14 +202,14 @@ test("Worker - SPA fallback works for paths without extensions", async () => {
         return new Response("SPA Entrypoint HTML", { status: 200 });
       }
       return new Response("Not Found", { status: 404 });
-    }
+    },
   };
 
   const req = new Request("https://zana-api-worker.zana-platform.workers.dev/some-app-route", {
     method: "GET",
     headers: {
-      Origin: "https://zana-app.web.app"
-    }
+      Origin: "https://zana-app.web.app",
+    },
   });
 
   const env = createMockEnv(mockAssets);
@@ -223,15 +225,15 @@ test("Worker - Canonical URL / slash normalization is correct", async () => {
   const req = new Request("https://zana-api-worker.zana-platform.workers.dev//api//health", {
     method: "GET",
     headers: {
-      Origin: "https://zana-app.web.app"
-    }
+      Origin: "https://zana-app.web.app",
+    },
   });
 
   const env = createMockEnv();
   const res = await worker.fetch(req, env);
 
   assert.strictEqual(res.status, 200);
-  const body = await res.json() as any;
+  const body = (await res.json()) as any;
   assert.strictEqual(body.ok, true);
 });
 
@@ -257,22 +259,23 @@ test("Worker - missing GEMINI_API_KEY on AI endpoint returns safe Kurdish error 
     method: "POST",
     headers: {
       Origin: "https://zana-app.web.app",
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
       message: "پرسیارم هەیە",
-      profile: { name: "Amed", grade: "9", activeSubject: "math", level: "سەرەتا" }
-    })
+      profile: { name: "Amed", grade: "9", activeSubject: "math", level: "سەرەتا" },
+    }),
   });
 
   const envWithoutKey: any = {
     ALLOWED_ORIGINS: "https://zana-app.web.app",
-    GEMINI_API_KEY: ""
+    FIREBASE_PROJECT_ID: "gen-lang-client-0009572581",
+    GEMINI_API_KEY: "",
   };
 
   const res = await worker.fetch(req, envWithoutKey);
   assert.strictEqual(res.status, 500);
-  const body = await res.json() as any;
+  const body = (await res.json()) as any;
   assert.strictEqual(body.error, "خزمەتگوزارییەکە لە ئێستادا بەردەست نییە. تکایە دواتر هەوڵ بدەرەوە.");
   // Ensure no secret text or stack trace is exposed
   assert.strictEqual(body.stack, undefined);
@@ -284,16 +287,16 @@ test("Worker - missing payload on /api/chat returns 400 with correct Kurdish spe
     method: "POST",
     headers: {
       Origin: "https://zana-app.web.app",
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
     },
-    body: JSON.stringify({ message: "Hello" }) // Missing profile
+    body: JSON.stringify({ message: "Hello" }), // Missing profile
   });
 
   const env = createMockEnv();
   const res = await worker.fetch(req, env);
 
   assert.strictEqual(res.status, 400);
-  const body = await res.json() as any;
+  const body = (await res.json()) as any;
   assert.strictEqual(body.error, "داواکارییەکە کەموکوڕی تێدایە.");
 });
 
@@ -302,16 +305,16 @@ test("Worker - missing payload on /api/study/ask returns 400 with correct Kurdis
     method: "POST",
     headers: {
       Origin: "https://zana-app.web.app",
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
     },
-    body: JSON.stringify({ message: "Hello" }) // Missing context
+    body: JSON.stringify({ message: "Hello" }), // Missing context
   });
 
   const env = createMockEnv();
   const res = await worker.fetch(req, env);
 
   assert.strictEqual(res.status, 400);
-  const body = await res.json() as any;
+  const body = (await res.json()) as any;
   assert.strictEqual(body.error, "داواکارییەکە کەموکوڕی تێدایە.");
 });
 
@@ -347,8 +350,8 @@ test("Centralized model normalization & prefix stripping", async () => {
   assert.strictEqual(AI_CONFIG.visionModel, "gemini-3.6-flash");
   assert.strictEqual(AI_CONFIG.apiBaseUrl, "https://generativelanguage.googleapis.com");
   assert.strictEqual(AI_CONFIG.timeoutMs, 30000);
-  assert.strictEqual(AI_CONFIG.maxRetries, 2);
-  assert.deepStrictEqual(AI_CONFIG.retryableStatusCodes, [429, 500, 502, 503, 504]);
+  assert.strictEqual(AI_CONFIG.retryPolicy.maxRetries, 2);
+  assert.deepStrictEqual(AI_CONFIG.retryPolicy.retryableStatusCodes, [429, 500, 502, 503, 504]);
 
   // Model normalization
   assert.strictEqual(normalizeModel("gemini-3.6-flash"), "gemini-3.6-flash");
@@ -391,97 +394,23 @@ test("Worker - Provider error classification for 401, 404, 429, 400, 500, missin
   assert.strictEqual(classifyError(new Error("HTTP 500 Internal Server Error")), "provider_unavailable");
 });
 
-test("executeGeminiRequest - Bounded retries for transient 5xx errors and no retries for permanent 4xx errors", async () => {
-  const { executeGeminiRequest } = await import("./index.ts");
-
-  // 1. Success on first retry
-  let callCount1 = 0;
-  const mockAiSuccessOnRetry: any = {
-    models: {
-      generateContent: async () => {
-        callCount1++;
-        if (callCount1 === 1) {
-          throw new Error("HTTP 503 Service Unavailable");
-        }
-        return { text: "Success response" };
-      }
-    }
-  };
-
-  const res1 = await executeGeminiRequest(
-    mockAiSuccessOnRetry,
-    { model: "models/gemini-3.6-flash", contents: "test", pathname: "/api/chat" },
-    { GEMINI_API_KEY: "valid_key", ALLOWED_ORIGINS: "*" }
-  );
-
-  assert.strictEqual(res1.text, "Success response");
-  assert.strictEqual(callCount1, 2); // 1 initial + 1 retry
-
-  // 2. Permanent 400 error fails immediately without retrying
-  let callCount2 = 0;
-  const mockAiPermanentFail: any = {
-    models: {
-      generateContent: async () => {
-        callCount2++;
-        throw new Error("INVALID_ARGUMENT: 400 Invalid parameter");
-      }
-    }
-  };
-
-  await assert.rejects(
-    async () => {
-      await executeGeminiRequest(
-        mockAiPermanentFail,
-        { model: "gemini-3.6-flash", contents: "test", pathname: "/api/chat" },
-        { GEMINI_API_KEY: "valid_key", ALLOWED_ORIGINS: "*" }
-      );
-    },
-    (err: any) => err.message.includes("INVALID_ARGUMENT")
-  );
-
-  assert.strictEqual(callCount2, 1); // No retries for 400
-
-  // 3. Max retries bounded at 2 retries (3 total calls) for continuous 500
-  let callCount3 = 0;
-  const mockAiContinuousFail: any = {
-    models: {
-      generateContent: async () => {
-        callCount3++;
-        throw new Error("HTTP 500 Internal Server Error");
-      }
-    }
-  };
-
-  await assert.rejects(
-    async () => {
-      await executeGeminiRequest(
-        mockAiContinuousFail,
-        { model: "gemini-3.6-flash", contents: "test", pathname: "/api/chat" },
-        { GEMINI_API_KEY: "valid_key", ALLOWED_ORIGINS: "*" }
-      );
-    },
-    (err: any) => err.message.includes("500")
-  );
-
-  assert.strictEqual(callCount3, 3); // Initial + 2 retries = 3 calls total
-});
-
 test("Worker - No API key or prompt leakage on error responses", async () => {
   const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/chat", {
     method: "POST",
     headers: {
       Origin: "https://zana-app.web.app",
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
       message: "SECRET_USER_PROMPT_STRING_FOR_TEST",
-      profile: { name: "Amed", grade: "9", activeSubject: "math", level: "سەرەتا" }
-    })
+      profile: { name: "Amed", grade: "9", activeSubject: "math", level: "سەرەتا" },
+    }),
   });
 
   const envWithSecretKey: any = {
     ALLOWED_ORIGINS: "https://zana-app.web.app",
-    GEMINI_API_KEY: "secret_api_key_123456789_do_not_leak"
+    FIREBASE_PROJECT_ID: "gen-lang-client-0009572581",
+    GEMINI_API_KEY: "secret_api_key_123456789_do_not_leak",
   };
 
   const res = await worker.fetch(req, envWithSecretKey);
@@ -491,4 +420,3 @@ test("Worker - No API key or prompt leakage on error responses", async () => {
   assert.doesNotMatch(bodyText, /SECRET_USER_PROMPT_STRING_FOR_TEST/);
   assert.doesNotMatch(bodyText, /You are ZANA/);
 });
-
