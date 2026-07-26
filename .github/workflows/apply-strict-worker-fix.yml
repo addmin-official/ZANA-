@@ -6,6 +6,7 @@ on:
       - fix/zana-finalization-lockdown
     paths:
       - scripts/apply-strict-worker-fix.mjs
+      - scripts/run-strict-worker-fix.mjs
       - .github/workflows/apply-strict-worker-fix.yml
 
 permissions:
@@ -21,8 +22,8 @@ jobs:
           ref: fix/zana-finalization-lockdown
           fetch-depth: 0
 
-      - name: Apply strict source patch
-        run: node scripts/apply-strict-worker-fix.mjs
+      - name: Apply verified strict source patch
+        run: node scripts/run-strict-worker-fix.mjs
 
       - name: Validate patch formatting
         run: git diff --check
