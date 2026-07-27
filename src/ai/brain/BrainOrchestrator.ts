@@ -31,7 +31,7 @@ export class BrainOrchestrator {
     // 1. Normalize student context, supporting both top-level and nested stream parameters
     const normalizedContext: StudentContext = this.contextEngine.normalizeStudentContext({
       ...input.studentContext,
-      stream: (input.stream || (input.studentContext && input.studentContext.stream)) as any
+      stream: (input.stream || (input.studentContext && input.studentContext.stream)) as StudentContext["stream"]
     });
 
     // 2. Evaluate request safety and educational limits

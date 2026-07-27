@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { AssessmentState } from "./assessmentTypes.ts";
 import { ZanaStorage, StudentProfile } from "../../services/storage.ts";
 import { ZanaApiClient } from "../../services/apiClient.ts";
@@ -37,8 +37,9 @@ export function useAssessment(profile: StudentProfile, onProfileUpdate: (profile
 
       ZanaStorage.saveAssessment(newState);
       setAssessment(newState);
-    } catch (err: any) {
-      setError(err.message || "نەتوانرا تاقیکردنەوەکە دەستپێبکرێت.");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "نەتوانرا تاقیکردنەوەکە دەستپێبکرێت.";
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -71,7 +72,7 @@ export function useAssessment(profile: StudentProfile, onProfileUpdate: (profile
       const updatedFeedbacks = [...assessment.feedbacks, res.feedback];
       const updatedCorrectAnswers = [...assessment.correctAnswers, res.isCorrect];
 
-      let computedFinalLevel: string | null = null;
+      let computedFinalLevel: "beginner" | "intermediate" | "advanced" | null = null;
       if (isLastQuestion) {
         // Calculate the score
         const correctCount = updatedCorrectAnswers.filter(Boolean).length;
@@ -86,7 +87,7 @@ export function useAssessment(profile: StudentProfile, onProfileUpdate: (profile
         // Save progress to storage
         ZanaStorage.incrementQuestions(5);
         // Also update student profile level if the diagnostic suggests a change
-        onProfileUpdate({ level: computedFinalLevel as any });
+        onProfileUpdate({ level: computedFinalLevel });
       }
 
       const finalState: AssessmentState = {
@@ -102,8 +103,9 @@ export function useAssessment(profile: StudentProfile, onProfileUpdate: (profile
 
       ZanaStorage.saveAssessment(finalState);
       setAssessment(finalState);
-    } catch (err: any) {
-      setError(err.message || "هەڵەیەک ڕوویدا لە کاتی ناردنی وەڵامەکە.");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "هەڵەیەک ڕوویدا لە کاتی ناردنی وەڵامەکە.";
+      setError(msg);
     } finally {
       setLoading(false);
     }

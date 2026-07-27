@@ -78,7 +78,7 @@ export interface AssessmentSession {
     | "review_weakness"
     | "practice_more"
     | "advance_next_lesson";
-  blueprint?: any; // For Phase 16 real backend attempt
+  blueprint?: Record<string, unknown>; // For Phase 16 real backend attempt
   authoritative?: boolean;
 }
 

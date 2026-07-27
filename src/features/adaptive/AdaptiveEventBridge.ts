@@ -5,6 +5,16 @@ import { DomainEventStore } from "../../domain/DomainEventStore.ts";
 import { StudentIntelligenceEngine } from "../../intelligence/StudentIntelligenceEngine.ts";
 import { learningSessionEngineInstance } from "../../session/LearningSessionEngine.ts";
 
+interface SessionEngineContainer {
+  sessionEngine?: {
+    addToReviewQueue?: (conceptId: string) => void;
+    completeNode?: (conceptId: string) => void;
+    removeFromReviewQueue?: (conceptId: string) => void;
+    removeFromPracticeQueue?: (conceptId: string) => void;
+    addToPracticeQueue?: (conceptId: string) => void;
+  };
+}
+
 export class AdaptiveEventBridge {
   /**
    * Propagates adaptive assessment results back into:
@@ -58,9 +68,9 @@ export class AdaptiveEventBridge {
         // We can cast learningSessionEngineInstance as any to call sessionEngine methods if needed, 
         // or add helper delegators, but wait: we can just modify the active session object in the sessionEngine state.
         // Let's call the proper addToReviewQueue on the sessionEngine directly or via any.
-        const lseAny = learningSessionEngineInstance as any;
-        if (lseAny.sessionEngine && typeof lseAny.sessionEngine.addToReviewQueue === "function") {
-          lseAny.sessionEngine.addToReviewQueue(conceptId);
+        const lseObj = learningSessionEngineInstance as unknown as SessionEngineContainer;
+        if (lseObj.sessionEngine && typeof lseObj.sessionEngine.addToReviewQueue === "function") {
+          lseObj.sessionEngine.addToReviewQueue(conceptId);
         }
       }
     });
@@ -135,25 +145,25 @@ export class AdaptiveEventBridge {
         sipEngine.recordExerciseAttempt(conceptId, label, true);
 
         // Update LSE completed list and queues
-        const lseAny = learningSessionEngineInstance as any;
-        if (lseAny.sessionEngine) {
-          if (typeof lseAny.sessionEngine.completeNode === "function") {
-            lseAny.sessionEngine.completeNode(conceptId);
+        const lseObj = learningSessionEngineInstance as unknown as SessionEngineContainer;
+        if (lseObj.sessionEngine) {
+          if (typeof lseObj.sessionEngine.completeNode === "function") {
+            lseObj.sessionEngine.completeNode(conceptId);
           }
-          if (typeof lseAny.sessionEngine.removeFromReviewQueue === "function") {
-            lseAny.sessionEngine.removeFromReviewQueue(conceptId);
+          if (typeof lseObj.sessionEngine.removeFromReviewQueue === "function") {
+            lseObj.sessionEngine.removeFromReviewQueue(conceptId);
           }
-          if (typeof lseAny.sessionEngine.removeFromPracticeQueue === "function") {
-            lseAny.sessionEngine.removeFromPracticeQueue(conceptId);
+          if (typeof lseObj.sessionEngine.removeFromPracticeQueue === "function") {
+            lseObj.sessionEngine.removeFromPracticeQueue(conceptId);
           }
         }
       } else {
         // Score < 80, strong concepts are put into practiceQueue for further reinforcing
         sipEngine.recordExerciseAttempt(conceptId, label, true);
 
-        const lseAny = learningSessionEngineInstance as any;
-        if (lseAny.sessionEngine && typeof lseAny.sessionEngine.addToPracticeQueue === "function") {
-          lseAny.sessionEngine.addToPracticeQueue(conceptId);
+        const lseObj = learningSessionEngineInstance as unknown as SessionEngineContainer;
+        if (lseObj.sessionEngine && typeof lseObj.sessionEngine.addToPracticeQueue === "function") {
+          lseObj.sessionEngine.addToPracticeQueue(conceptId);
         }
       }
     });

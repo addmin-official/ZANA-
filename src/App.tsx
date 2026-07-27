@@ -49,8 +49,10 @@ export default function App() {
           profile={profile}
           onProfileUpdate={updateProfile}
           onNavigate={(tab) => {
-            setIsAssessmentMode(false);
-            setActiveTab(tab as NavTab);
+            handleFinishAssessment();
+            if (tab !== "daily") {
+              setActiveTab(tab as NavTab);
+            }
           }}
         />
       );
@@ -98,7 +100,7 @@ export default function App() {
           />
         );
       default:
-        return <DailySparkScreen profile={profile} onNavigate={(tab) => setActiveTab(tab as any)} onStartAssessment={handleStartAssessment} />;
+        return <DailySparkScreen profile={profile} onNavigate={(tab) => setActiveTab(tab as NavTab)} onStartAssessment={handleStartAssessment} />;
     }
   };
 

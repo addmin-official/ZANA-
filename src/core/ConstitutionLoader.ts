@@ -1,4 +1,4 @@
-import { Constitution, ConstitutionRule } from "../types/constitution.ts";
+import { ConstitutionRule } from "../types/constitution.ts";
 import { ConstitutionRegistry } from "./ConstitutionRegistry.ts";
 
 export class ConstitutionLoader {

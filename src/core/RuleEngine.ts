@@ -1,4 +1,4 @@
-import { ConstitutionRule, RuleSeverity } from "../types/constitution.ts";
+import { RuleSeverity } from "../types/constitution.ts";
 import { ConstitutionLoader } from "./ConstitutionLoader.ts";
 
 export interface RuleViolation {
@@ -64,7 +64,7 @@ export class RuleEngine {
   /**
    * Sanitizes text prompts or responses to ensure they do not violate safety or curriculum constraints
    */
-  public validateTextContent(text: string, subject: string): ValidationReport {
+  public validateTextContent(text: string, _subject: string): ValidationReport {
     const activeRules = this.loader.loadActiveRules();
     const violations: RuleViolation[] = [];
 

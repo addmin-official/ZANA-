@@ -2,7 +2,7 @@ import { CurriculumProvider } from "./CurriculumProvider.ts";
 import { Curriculum, Grade, Subject, Unit, CurriculumLesson } from "../domain/CurriculumTypes.ts";
 
 export class EmptyCurriculumProvider implements CurriculumProvider {
-  public async getCurriculum(id: string): Promise<Curriculum | undefined> {
+  public async getCurriculum(_id: string): Promise<Curriculum | undefined> {
     return undefined;
   }
 
@@ -14,28 +14,28 @@ export class EmptyCurriculumProvider implements CurriculumProvider {
     return [];
   }
 
-  public async listUnits(curriculumId: string, grade: string, subject: string): Promise<Unit[]> {
+  public async listUnits(_curriculumId: string, _grade: string, _subject: string): Promise<Unit[]> {
     return [];
   }
 
-  public async listLessons(unitId: string): Promise<CurriculumLesson[]> {
+  public async listLessons(_unitId: string): Promise<CurriculumLesson[]> {
     return [];
   }
 
-  public async getLesson(id: string): Promise<CurriculumLesson | undefined> {
+  public async getLesson(_id: string): Promise<CurriculumLesson | undefined> {
     return undefined;
   }
 
-  public async searchLessons(query: string, limit?: number): Promise<CurriculumLesson[]> {
+  public async searchLessons(_query: string, _limit?: number): Promise<CurriculumLesson[]> {
     return [];
   }
 
   public async retrieveContext(
-    grade: string,
-    subject: string,
-    lessonTitle?: string,
-    conceptTitle?: string,
-    query?: string
+    _grade: string,
+    _subject: string,
+    _lessonTitle?: string,
+    _conceptTitle?: string,
+    _query?: string
   ): Promise<CurriculumLesson[]> {
     return [];
   }

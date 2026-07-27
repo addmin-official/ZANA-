@@ -1,4 +1,4 @@
-import { AssessmentAttempt, AssessmentResult, AssessmentStatus } from "../domain/AssessmentTypes.ts";
+import { AssessmentAttempt, AssessmentResult } from "../domain/AssessmentTypes.ts";
 
 export interface AssessmentRecordProvider {
   saveAttempt(attempt: AssessmentAttempt): Promise<void>;
@@ -8,12 +8,22 @@ export interface AssessmentRecordProvider {
   getResult(attemptId: string): Promise<AssessmentResult | null>;
 }
 
+export interface AssessmentKVStore {
+  get(key: string): Promise<string | null>;
+  put(key: string, value: string): Promise<void>;
+}
+
 // Helper to access Node's fs module safely without breaking browser or Cloudflare environments
 const getFs = () => {
-  if (typeof window === "undefined" && typeof require !== "undefined") {
+  if (typeof window === "undefined") {
     try {
-      return require("fs");
-    } catch (e) {}
+      const nodeRequire = (globalThis as unknown as { require?: (moduleName: string) => unknown }).require;
+      if (typeof nodeRequire === "function") {
+        return nodeRequire("fs") as typeof import("fs");
+      }
+    } catch {
+      // Empty catch
+    }
   }
   return null;
 };
@@ -22,8 +32,8 @@ const getFs = () => {
 // In-Memory Implementation
 // =========================================================================
 export class InMemoryAssessmentRecordProvider implements AssessmentRecordProvider {
-  private attempts: Map<string, AssessmentAttempt> = new Map();
-  private results: Map<string, AssessmentResult> = new Map();
+  public attempts: Map<string, AssessmentAttempt> = new Map();
+  public results: Map<string, AssessmentResult> = new Map();
 
   public async saveAttempt(attempt: AssessmentAttempt): Promise<void> {
     this.attempts.set(attempt.id, JSON.parse(JSON.stringify(attempt)));
@@ -115,10 +125,10 @@ export class LocalStorageAssessmentRecordProvider implements AssessmentRecordPro
 export class PersistentAssessmentRecordProvider implements AssessmentRecordProvider {
   private memoryStore = new InMemoryAssessmentRecordProvider();
   private filePath = "assessment_records_db.json";
-  private cloudflareKv: any = null;
+  private cloudflareKv: AssessmentKVStore | null = null;
   private mode: "production" | "development" | "test";
 
-  constructor(kvInstance?: any, forceMode?: "production" | "development" | "test") {
+  constructor(kvInstance?: AssessmentKVStore, forceMode?: "production" | "development" | "test") {
     if (kvInstance) {
       this.cloudflareKv = kvInstance;
     }
@@ -155,16 +165,16 @@ export class PersistentAssessmentRecordProvider implements AssessmentRecordProvi
       try {
         if (fs.existsSync(this.filePath)) {
           const raw = fs.readFileSync(this.filePath, "utf-8");
-          const data = JSON.parse(raw);
+          const data = JSON.parse(raw) as { attempts?: Record<string, AssessmentAttempt>; results?: Record<string, AssessmentResult> } | null;
           if (data && typeof data === "object") {
             if (data.attempts) {
               for (const [k, v] of Object.entries(data.attempts)) {
-                (this.memoryStore as any).attempts.set(k, v);
+                this.memoryStore.attempts.set(k, v);
               }
             }
             if (data.results) {
               for (const [k, v] of Object.entries(data.results)) {
-                (this.memoryStore as any).results.set(k, v);
+                this.memoryStore.results.set(k, v);
               }
             }
           }
@@ -181,8 +191,8 @@ export class PersistentAssessmentRecordProvider implements AssessmentRecordProvi
     if (fs) {
       try {
         const data = {
-          attempts: Object.fromEntries((this.memoryStore as any).attempts),
-          results: Object.fromEntries((this.memoryStore as any).results)
+          attempts: Object.fromEntries(this.memoryStore.attempts),
+          results: Object.fromEntries(this.memoryStore.results)
         };
         fs.writeFileSync(this.filePath, JSON.stringify(data, null, 2), "utf-8");
       } catch (e) {

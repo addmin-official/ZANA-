@@ -5,7 +5,7 @@ interface ZanaButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: "primary" | "secondary" | "success" | "warning" | "destructive" | "outline";
   fullWidth?: boolean;
   className?: string;
-  onClick?: any;
+  onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void;
   type?: "submit" | "button" | "reset";
   disabled?: boolean;
 }

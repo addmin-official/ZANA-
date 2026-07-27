@@ -14,7 +14,6 @@ import {
   ArrowLeft,
   RefreshCw,
   ChevronRight,
-  Send,
   BrainCircuit,
   Check,
   TrendingUp,
@@ -52,7 +51,7 @@ export function AssessmentIntelligencePanel({
   const [selectedChoices, setSelectedChoices] = useState<string[]>([]);
   const [trueFalseValue, setTrueFalseValue] = useState<boolean | null>(null);
   const [numericValue, setNumericValue] = useState<string>("");
-  const [orderedItems, setOrderedItems] = useState<any[]>([]);
+  const [orderedItems, setOrderedItems] = useState<Array<{ id: string; textKu?: string; [key: string]: unknown }>>([]);
   const [matchingAnswers, setMatchingAnswers] = useState<Record<string, string>>({});
 
   const [feedback, setFeedback] = useState<{ isCorrect: boolean; text: string } | null>(null);
@@ -62,16 +61,24 @@ export function AssessmentIntelligencePanel({
 
   // Sync state on question transition
   useEffect(() => {
+    let active = true;
     if (currentQuestion) {
-      setTypedAnswer("");
-      setSelectedChoice(null);
-      setSelectedChoices([]);
-      setTrueFalseValue(null);
-      setNumericValue("");
-      setOrderedItems(currentQuestion.options || []);
-      setMatchingAnswers({});
+      void (async () => {
+        await Promise.resolve();
+        if (!active) return;
+        setTypedAnswer("");
+        setSelectedChoice(null);
+        setSelectedChoices([]);
+        setTrueFalseValue(null);
+        setNumericValue("");
+        setOrderedItems((currentQuestion.options as Array<{ id: string; textKu?: string; [key: string]: unknown }>) || []);
+        setMatchingAnswers({});
+      })();
     }
-  }, [currentQuestion?.id]);
+    return () => {
+      active = false;
+    };
+  }, [currentQuestion]);
 
   const activeSubjectKu = useMemo(() => {
     switch (studentProfile.activeSubject) {

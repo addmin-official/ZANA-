@@ -8,7 +8,7 @@ export class PartialCreditEngine {
     type: QuestionType,
     correctDef: CorrectAnswerDefinition,
     submission: AnswerSubmission,
-    optionsCount: number = 4
+    _optionsCount: number = 4
   ): { score: number; reasonCodes: string[] } {
     const reasonCodes: string[] = [];
 

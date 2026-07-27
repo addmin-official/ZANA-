@@ -2,7 +2,7 @@ import assert from "node:assert";
 import { test } from "node:test";
 
 // Import modules to test
-import { validateCurriculumLesson, validateUnit } from "./domain/CurriculumValidation.ts";
+import { validateCurriculumLesson } from "./domain/CurriculumValidation.ts";
 import { EmptyCurriculumProvider } from "./providers/EmptyCurriculumProvider.ts";
 import { LicensedCurriculumProvider } from "./providers/LicensedCurriculumProvider.ts";
 import { LicensePolicyEngine } from "./licensing/LicensePolicyEngine.ts";

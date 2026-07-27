@@ -1,5 +1,5 @@
 import { useState, FormEvent, useRef, useEffect } from "react";
-import { Send, AlertCircle } from "lucide-react";
+import { Send } from "lucide-react";
 
 interface ChatInputProps {
   onSendMessage: (text: string) => void;

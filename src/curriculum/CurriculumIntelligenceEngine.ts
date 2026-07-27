@@ -3,7 +3,6 @@ import {
   CurriculumStream,
   CurriculumSubject,
   CurriculumNode,
-  FormulaNode,
   CurriculumIntelligenceSnapshot,
   CurriculumContext
 } from "./types.ts";

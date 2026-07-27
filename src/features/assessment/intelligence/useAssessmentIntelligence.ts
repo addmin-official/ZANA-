@@ -5,8 +5,7 @@ import {
   AssessmentSnapshot,
   AssessmentMode,
   AssessmentQuestion,
-  AssessmentAnswer,
-  QuestionOption
+  AssessmentAnswer
 } from "./assessmentTypes.ts";
 import { AssessmentStateEngine } from "./AssessmentStateEngine.ts";
 import { generateAssessmentRecommendation } from "./AssessmentRecommendationEngine.ts";
@@ -45,8 +44,8 @@ export function useAssessmentIntelligence(
     }
   }, [session, storageKey]);
 
-  // Build SIP, CIP snapshots for lookups
-  const { sipSnapshot, cipSnapshot, lseSnapshot } = useMemo(() => {
+  // Build CIP, LSE snapshots for lookups
+  const { cipSnapshot, lseSnapshot } = useMemo(() => {
     try {
       const sipEngine = StudentIntelligenceEngine.getInstance(profile);
       const sip = sipEngine.getSnapshot();
@@ -111,7 +110,7 @@ export function useAssessmentIntelligence(
                 explanation: "", // hidden until answer is submitted and graded
                 conceptId: firstQuestion.conceptId,
                 lessonId: firstQuestion.lessonId,
-                difficulty: firstQuestion.difficulty.toLowerCase() as any,
+                difficulty: (firstQuestion.difficulty?.toLowerCase() || "medium") as "easy" | "medium" | "hard",
                 source: "ZANA_ORIGINAL"
               };
 
@@ -155,8 +154,9 @@ export function useAssessmentIntelligence(
         }
 
         // Graceful Client-Side/Offline Fallback matching Heuristic quiz rules
-        const activeNode = (lseSnapshot as any)?.activeNode;
-        const activeLesson = (lseSnapshot as any)?.activeLesson;
+        const lseObj = lseSnapshot as unknown as { activeNode?: { id: string; title: string }; activeLesson?: { id: string; title: string } };
+        const activeNode = lseObj?.activeNode;
+        const activeLesson = lseObj?.activeLesson;
 
         const newSession = AssessmentStateEngine.startAssessment({
           studentId,
@@ -256,7 +256,7 @@ export function useAssessmentIntelligence(
 
             if (response.ok) {
               const data = await response.json();
-              const { attempt, gradedAttempt, isFinished, nextQuestion } = data;
+              const { gradedAttempt, isFinished, nextQuestion } = data;
 
               const gradedQ = gradedAttempt.questionAttempts[currentQuestion.id];
               const isCorrect = gradedQ?.isCorrect || false;
@@ -287,7 +287,7 @@ export function useAssessmentIntelligence(
                   explanation: "",
                   conceptId: nextQuestion.conceptId,
                   lessonId: nextQuestion.lessonId,
-                  difficulty: nextQuestion.difficulty.toLowerCase() as any,
+                  difficulty: (nextQuestion.difficulty?.toLowerCase() || "medium") as "easy" | "medium" | "hard",
                   source: "ZANA_ORIGINAL"
                 };
                 updatedQuestions.push(mappedNext);
@@ -307,9 +307,10 @@ export function useAssessmentIntelligence(
               const errBody = await response.json().catch(() => ({}));
               throw new Error(errBody.error || "کێشەیەک لە تۆمارکردنی وەڵامەکەدا ڕوویدا لەسەر پێشکەشکار.");
             }
-          } catch (apiErr: any) {
+          } catch (apiErr: unknown) {
             console.error("Server connection failed during submit:", apiErr);
-            setError(apiErr.message || "کێشەی پەیوەندی بە پێشکەشکارەوە هەیە.");
+            const msg = apiErr instanceof Error ? apiErr.message : "کێشەی پەیوەندی بە پێشکەشکارەوە هەیە.";
+            setError(msg);
             setIsLoading(false);
             return { isCorrect: false, feedback: "کێشەی پەیوەندی هەیە لەگەڵ پێشکەشکار. تکایە هێڵەکەت بپشکنە و دووبارە هەوڵبدەرەوە." };
           }
@@ -434,9 +435,10 @@ export function useAssessmentIntelligence(
               const errBody = await response.json().catch(() => ({}));
               throw new Error(errBody.error || "تۆمارکردنی ئەنجامەکە لەسەر پێشکەشکار سەرکەوتوو نەبوو.");
             }
-          } catch (apiErr: any) {
+          } catch (apiErr: unknown) {
             console.error("Server connection failed during finish:", apiErr);
-            setError(apiErr.message || "کێشەی پەیوەندی بە پێشکەشکارەوە هەیە.");
+            const msg = apiErr instanceof Error ? apiErr.message : "کێشەی پەیوەندی بە پێشکەشکارەوە هەیە.";
+            setError(msg);
             setIsLoading(false);
             return;
           }
@@ -491,7 +493,6 @@ export function useAssessmentIntelligence(
           }
         }
 
-        const rec = generateAssessmentRecommendation(completed.scorePercentage);
         if (completed.mode === "diagnostic" && completed.authoritative !== false && studentId !== "default-guest") {
           let newLevel: "beginner" | "intermediate" | "advanced" = "intermediate";
           if (completed.scorePercentage >= 80) {
@@ -539,17 +540,20 @@ export function useAssessmentIntelligence(
     if (session.completed) {
       const rec = generateAssessmentRecommendation(session.scorePercentage);
 
+      type CIPGraphContainer = { graph?: { nodes?: Array<{ id: string; title: string }> } };
+      const cipNodes = (cipSnapshot as unknown as CIPGraphContainer)?.graph?.nodes;
+
       const weakAreas = session.weakConceptIds.map(id => {
-        if (cipSnapshot && (cipSnapshot as any).graph && (cipSnapshot as any).graph.nodes) {
-          const node = (cipSnapshot as any).graph.nodes.find((n: any) => n.id === id);
+        if (cipNodes) {
+          const node = cipNodes.find(n => n.id === id);
           if (node) return node.title;
         }
         return id;
       });
 
       const strongAreas = session.strongConceptIds.map(id => {
-        if (cipSnapshot && (cipSnapshot as any).graph && (cipSnapshot as any).graph.nodes) {
-          const node = (cipSnapshot as any).graph.nodes.find((n: any) => n.id === id);
+        if (cipNodes) {
+          const node = cipNodes.find(n => n.id === id);
           if (node) return node.title;
         }
         return id;

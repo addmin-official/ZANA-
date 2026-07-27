@@ -1,5 +1,4 @@
 import {
-  Assessment,
   AssessmentBlueprint,
   AssessmentAttempt,
   AnswerSubmission,
@@ -9,7 +8,8 @@ import {
   AssessmentType,
   ScoreBreakdown,
   AssessmentRecommendation,
-  PublicQuestion
+  PublicQuestion,
+  QuestionType
 } from "../domain/AssessmentTypes.ts";
 import { AssessmentRecordProvider } from "../providers/AssessmentRecordProvider.ts";
 import { QuestionBankProvider } from "../providers/QuestionBankProvider.ts";
@@ -325,7 +325,7 @@ export class AssessmentService {
       passed,
       byDifficulty,
       byConcept,
-      byQuestionType: byQuestionType as any
+      byQuestionType: byQuestionType as Record<QuestionType, { scored: number; max: number; count: number }>
     };
 
     // Diagnostic strengths and weaknesses

@@ -4,7 +4,7 @@ export type EventHandler<T extends DomainEvent = DomainEvent> = (event: T) => vo
 
 export class DomainEventBus {
   private static instance: DomainEventBus;
-  private handlers: Map<DomainEventType | "*", Set<EventHandler<any>>> = new Map();
+  private handlers: Map<DomainEventType | "*", Set<EventHandler<DomainEvent>>> = new Map();
 
   private constructor() {}
 

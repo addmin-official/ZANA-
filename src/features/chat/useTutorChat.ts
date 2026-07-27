@@ -7,40 +7,47 @@ export function useTutorChat(profile: StudentProfile) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load chat messages whenever profile's current subject changes
   useEffect(() => {
+    let active = true;
     if (profile.onboardingCompleted && profile.activeSubject) {
-      const saved = ZanaStorage.getChatMessages(profile.activeSubject);
-      
-      // If there are no messages, insert a warm educational welcome greeting from Zana
-      if (saved.length === 0) {
-        const welcomeMessage: ChatMessage = {
-          id: "welcome",
-          sender: "zana",
-          text: `بەخێربێیت قوتابی خۆشەویست **${profile.name}**! من مامۆستا **زانا**م. 
+      void (async () => {
+        await Promise.resolve();
+        if (!active) return;
+        const saved = ZanaStorage.getChatMessages(profile.activeSubject);
+        
+        // If there are no messages, insert a warm educational welcome greeting from Zana
+        if (saved.length === 0) {
+          const welcomeMessage: ChatMessage = {
+            id: "welcome",
+            sender: "zana",
+            text: `بەخێربێیت قوتابی خۆشەویست **${profile.name}**! من مامۆستا **زانا**م. 
 خۆشحاڵم کە ئەمڕۆ بەیەکەوە پڕۆگرامی **${
-            profile.activeSubject === "math"
-              ? "بیرکاری"
-              : profile.activeSubject === "physics"
-              ? "فیزیا"
-              : profile.activeSubject === "chemistry"
-              ? "کیمیا"
-              : "ئینگلیزی"
-          }**ی پۆلی **${profile.grade}** دەخوێنین.
+              profile.activeSubject === "math"
+                ? "بیرکاری"
+                : profile.activeSubject === "physics"
+                ? "فیزیا"
+                : profile.activeSubject === "chemistry"
+                ? "کیمیا"
+                : "ئینگلیزی"
+            }**ی پۆلی **${profile.grade}** دەخوێنین.
 
 ئاستی خوێندنی تۆم بۆ دیاریکراوە وەک ئاستی **${profile.level}**. هەر چەمک، هاوکێشە یان یاسایەک هەیە کە لێی تێناگەیت، تەنها لێم بپرسە؛ هەنگاو بە هەنگاو و بە نموونەوە شیکاری دەکەین. 
 
 ئامادەی دەستپێ بکەین؟ پرسیارەکەت بنووسە.`,
-          timestamp: new Date().toLocaleTimeString("ku-IQ", { hour: "2-digit", minute: "2-digit" }),
-          isEducational: true
-        };
-        ZanaStorage.saveChatMessages(profile.activeSubject, [welcomeMessage]);
-        setMessages([welcomeMessage]);
-      } else {
-        setMessages(saved);
-      }
-      setError(null);
+            timestamp: new Date().toLocaleTimeString("ku-IQ", { hour: "2-digit", minute: "2-digit" }),
+            isEducational: true
+          };
+          ZanaStorage.saveChatMessages(profile.activeSubject, [welcomeMessage]);
+          setMessages([welcomeMessage]);
+        } else {
+          setMessages(saved);
+        }
+        setError(null);
+      })();
     }
+    return () => {
+      active = false;
+    };
   }, [profile.activeSubject, profile.grade, profile.name, profile.level, profile.onboardingCompleted]);
 
   const sendMessage = async (text: string) => {
@@ -76,8 +83,9 @@ export function useTutorChat(profile: StudentProfile) {
       const finalMessages = [...updatedMessages, zanaMsg];
       setMessages(finalMessages);
       ZanaStorage.saveChatMessages(profile.activeSubject, finalMessages);
-    } catch (err: any) {
-      setError(err.message || "کێشەیەک لە پەیوەندیکردن بە سێرڤەر ڕوویدا.");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "کێشەیەک لە پەیوەندیکردن بە سێرڤەر ڕوویدا.";
+      setError(msg);
     } finally {
       setLoading(false);
     }

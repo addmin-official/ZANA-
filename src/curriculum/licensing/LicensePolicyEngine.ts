@@ -1,4 +1,4 @@
-import { ContentLicense, UsageDecision, DecisionType } from "./ContentLicense.ts";
+import { ContentLicense, UsageDecision } from "./ContentLicense.ts";
 
 export class LicensePolicyEngine {
   private static instance: LicensePolicyEngine | null = null;

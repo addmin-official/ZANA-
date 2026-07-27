@@ -1,4 +1,4 @@
-import { AssessmentQuestion, AssessmentQuestionType } from "./assessmentTypes.ts";
+import { AssessmentQuestion } from "./assessmentTypes.ts";
 
 export interface QuestionEngineInput {
   studentId: string;

@@ -1,6 +1,5 @@
 import {
   AssessmentSession,
-  AssessmentQuestion,
   AssessmentAnswer,
   AssessmentMode,
 } from "./assessmentTypes.ts";

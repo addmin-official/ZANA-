@@ -1,4 +1,4 @@
-import { AssessmentQuestion, QuestionSource, QuestionType, GenerationReviewStatus, PublicQuestion } from "../domain/AssessmentTypes.ts";
+import { AssessmentQuestion, QuestionSource, QuestionType, GenerationReviewStatus, PublicQuestion, CorrectAnswerDefinition } from "../domain/AssessmentTypes.ts";
 import { DifficultyLevel } from "../../learning/domain/MasteryTypes.ts";
 
 export interface QuestionBankFilter {
@@ -14,7 +14,7 @@ export interface QuestionBankFilter {
 export class QuestionBankProvider {
   private static instance: QuestionBankProvider | null = null;
   private questions: Map<string, AssessmentQuestion> = new Map();
-  private answerKeys: Map<string, any> = new Map(); // Secure answer key store mapped by questionId
+  private answerKeys: Map<string, CorrectAnswerDefinition> = new Map(); // Secure answer key store mapped by questionId
 
   private constructor() {
     this.seedCuratedQuestions();
@@ -30,7 +30,7 @@ export class QuestionBankProvider {
   /**
    * Adds an approved question to the bank.
    */
-  public addQuestion(question: AssessmentQuestion, correctAnswer: any): void {
+  public addQuestion(question: AssessmentQuestion, correctAnswer: CorrectAnswerDefinition): void {
     this.questions.set(question.id, question);
     this.answerKeys.set(question.id, correctAnswer);
   }
@@ -45,7 +45,7 @@ export class QuestionBankProvider {
   /**
    * Retrieves the secure answer key for a question.
    */
-  public getAnswerKey(id: string): any | undefined {
+  public getAnswerKey(id: string): CorrectAnswerDefinition | undefined {
     return this.answerKeys.get(id);
   }
 
