@@ -8,7 +8,9 @@ import { doc, getDoc, setDoc } from "firebase/firestore";
 import { signInAnonymously, onAuthStateChanged } from "firebase/auth";
 
 export function useStudentProfile() {
-  const [isOfflineFallback, setIsOfflineFallback] = useState(false);
+  const [isOfflineFallback, setIsOfflineFallback] = useState<boolean>(
+    () => !isFirebaseConfigured() || !getFirebaseAuth() || !getFirestoreDb()
+  );
   const [authError, setAuthError] = useState<string | null>(null);
 
   const [profile, setProfileState] = useState<StudentProfile>(() => {
@@ -32,7 +34,6 @@ export function useStudentProfile() {
 
   useEffect(() => {
     if (!isFirebaseConfigured()) {
-      setIsOfflineFallback(true);
       return;
     }
 
@@ -40,7 +41,6 @@ export function useStudentProfile() {
     const db = getFirestoreDb();
 
     if (!auth || !db) {
-      setIsOfflineFallback(true);
       return;
     }
 

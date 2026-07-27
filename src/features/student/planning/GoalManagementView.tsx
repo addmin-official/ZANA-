@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { LearningGoal, StudentLearningPreferences, LearningGoalType } from "../../../planning/domain/LearningPlanTypes.ts";
-import { Target, Sliders, Save, Plus, Check } from "lucide-react";
+import { LearningGoal, StudentLearningPreferences } from "../../../planning/domain/LearningPlanTypes.ts";
+import { Target, Sliders, Save, Check } from "lucide-react";
 
 interface GoalManagementViewProps {
   goal: LearningGoal | null;
@@ -14,7 +14,7 @@ export const GoalManagementView: React.FC<GoalManagementViewProps> = ({
   goal,
   preferences,
   onSavePreferences,
-  onSaveGoal,
+  onSaveGoal: _onSaveGoal,
   isSaving
 }) => {
   const [weeklyMins, setWeeklyMins] = useState<number>(preferences?.weeklyGoalMinutes || 180);

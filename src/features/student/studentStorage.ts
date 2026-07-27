@@ -88,9 +88,10 @@ export function migrateStudentProfile(raw: unknown): StudentProfile {
     }
   }
 
-  const authoritative = typeof (rawObj as any).authoritative === "boolean" ? (rawObj as any).authoritative : false;
-  const source = typeof (rawObj as any).source === "string" ? (rawObj as any).source : "guest-local";
-  const isStale = typeof (rawObj as any).isStale === "boolean" ? (rawObj as any).isStale : undefined;
+  const rawRecord = rawObj as Record<string, unknown>;
+  const authoritative = typeof rawRecord.authoritative === "boolean" ? rawRecord.authoritative : false;
+  const source = typeof rawRecord.source === "string" ? rawRecord.source : "guest-local";
+  const isStale = typeof rawRecord.isStale === "boolean" ? rawRecord.isStale : undefined;
 
   const migrated: StudentProfile = {
     id,

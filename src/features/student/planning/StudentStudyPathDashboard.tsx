@@ -11,7 +11,7 @@ import {
 import { TodayPlanView } from "./TodayPlanView.tsx";
 import { WeeklyPlanView } from "./WeeklyPlanView.tsx";
 import { GoalManagementView } from "./GoalManagementView.tsx";
-import { Calendar, Compass, Target, BarChart3, RefreshCw } from "lucide-react";
+import { Calendar, Compass, Target } from "lucide-react";
 import { AuthService } from "../../../services/authService.ts";
 
 export interface StudentStudyPathDashboardProps {
@@ -23,7 +23,7 @@ export interface StudentStudyPathDashboardProps {
 export const StudentStudyPathDashboard: React.FC<StudentStudyPathDashboardProps> = ({
   studentId,
   authToken,
-  onNavigateToTask
+  onNavigateToTask: _onNavigateToTask
 }) => {
   const [activeTab, setActiveTab] = useState<"today" | "week" | "goals">("today");
 
@@ -32,12 +32,12 @@ export const StudentStudyPathDashboard: React.FC<StudentStudyPathDashboardProps>
   const [activeGoal, setActiveGoal] = useState<LearningGoal | null>(null);
   const [preferences, setPreferences] = useState<StudentLearningPreferences | null>(null);
   const [nextBestAction, setNextBestAction] = useState<NextBestAction | null>(null);
-  const [progress, setProgress] = useState<PlanProgress | null>(null);
+  const [_progress, setProgress] = useState<PlanProgress | null>(null);
 
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isRebalancing, setIsRebalancing] = useState<boolean>(false);
 
-  const fetchHeaders = async (): Promise<Record<string, string>> => {
+  const fetchHeaders = useCallback(async (): Promise<Record<string, string>> => {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     try {
       const token = authToken || (await AuthService.getClientToken(studentId));
@@ -48,10 +48,9 @@ export const StudentStudyPathDashboard: React.FC<StudentStudyPathDashboardProps>
       console.warn("Could not retrieve client auth token for planning dashboard:", e);
     }
     return headers;
-  };
+  }, [authToken, studentId]);
 
-  const loadData = async () => {
-    setIsLoading(true);
+  const loadData = useCallback(async () => {
     try {
       const headers = await fetchHeaders();
       const [todayRes, weekRes, goalRes, prefsRes, nextActionRes, progressRes] = await Promise.all([
@@ -74,11 +73,20 @@ export const StudentStudyPathDashboard: React.FC<StudentStudyPathDashboardProps>
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [fetchHeaders]);
 
   useEffect(() => {
-    loadData();
-  }, [studentId, authToken]);
+    let active = true;
+    void (async () => {
+      await Promise.resolve();
+      if (active) {
+        await loadData();
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [loadData]);
 
   const handleStartTask = async (taskId: string) => {
     try {
@@ -223,7 +231,7 @@ export const StudentStudyPathDashboard: React.FC<StudentStudyPathDashboardProps>
           onSkipTask={handleSkipTask}
           onExecuteNextAction={(action) => {
             if (action.taskId) {
-              handleStartTask(action.taskId);
+              void handleStartTask(action.taskId);
             }
           }}
           isLoading={isLoading}

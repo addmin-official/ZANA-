@@ -3,7 +3,7 @@ import { classifyError, getClientSafeErrorMessage, type SafeErrorCategory } from
 export { classifyError, getClientSafeErrorMessage, type SafeErrorCategory };
 import { PersistentLearningRecordProvider } from "../learning/providers/LearningRecordProvider.ts";
 import { AdaptiveLearningEngine } from "../learning/engine/AdaptiveLearningEngine.ts";
-import { DifficultyLevel, MisconceptionStatus } from "../learning/domain/MasteryTypes.ts";
+import { DifficultyLevel, MisconceptionStatus, LearningEvent, LearningEventType, ExerciseAttempt, LearningSession } from "../learning/domain/MasteryTypes.ts";
 import { CurriculumRegistry } from "../curriculum/registry/CurriculumRegistry.ts";
 import { AuthService } from "../services/authService.ts";
 import {
@@ -24,6 +24,7 @@ import {
   AssessmentBlueprint,
   AssessmentType,
   QuestionType,
+  AnswerSubmission,
 } from "../assessment/index.ts";
 import {
   PersistentLearningPlanProvider,
@@ -159,6 +160,200 @@ function getCorsHeaders(origin: string | null, env: Env): Headers {
   headers.set("X-XSS-Protection", "1; mode=block");
 
   return headers;
+}
+
+// 3. REUSABLE NARROW PARSERS FOR WORKER INPUT VALIDATION
+export function parseJsonObject(data: unknown, errorMessage = "داواکارییەکە کەموکوڕی تێدایە."): Record<string, unknown> {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error(errorMessage);
+  }
+  return data as Record<string, unknown>;
+}
+
+export function requireString(value: unknown, name: string, errorMessage?: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(errorMessage || `${name} پێویستە و دەبێت دەق بێت.`);
+  }
+  return value.trim();
+}
+
+export function optionalString(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === "string") return value.trim();
+  return undefined;
+}
+
+export function requireBoolean(value: unknown, name: string, errorMessage?: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new Error(errorMessage || `${name} پێویستە و دەبێت بڵیان (تڕوو/فۆڵس) بێت.`);
+  }
+  return value;
+}
+
+export function optionalBoolean(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  return undefined;
+}
+
+export function requireFiniteNumber(value: unknown, name: string, errorMessage?: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(errorMessage || `${name} پێویستە و دەبێت ژمارەیەکی دیاریکراو بێت.`);
+  }
+  return value;
+}
+
+export function optionalFiniteNumber(value: unknown): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  return undefined;
+}
+
+export function parseLearningEventType(value: unknown): LearningEventType {
+  const validTypes: LearningEventType[] = [
+    "EXERCISE_ATTEMPT",
+    "LESSON_VIEW",
+    "SESSION_START",
+    "SESSION_END",
+    "RECOMMENDATION_DECISION",
+  ];
+  if (typeof value === "string" && validTypes.includes(value as LearningEventType)) {
+    return value as LearningEventType;
+  }
+  throw new Error("جۆری ڕووداوی فێربوون نادروستە.");
+}
+
+export function parseDifficultyLevel(value: unknown): DifficultyLevel {
+  if (typeof value === "string") {
+    if (Object.values(DifficultyLevel).includes(value as DifficultyLevel)) {
+      return value as DifficultyLevel;
+    }
+  }
+  if (typeof value === "number") {
+    if (value === 1) return DifficultyLevel.EASY;
+    if (value === 2) return DifficultyLevel.STANDARD;
+    if (value === 3) return DifficultyLevel.CHALLENGING;
+  }
+  return DifficultyLevel.EASY;
+}
+
+export function parseAssessmentBlueprint(value: unknown): AssessmentBlueprint {
+  const obj = parseJsonObject(value, "دیزاینی تاقیکردنەوە (blueprint) کەموکوڕی تێدایە.");
+  const id = requireString(obj.id, "blueprint.id");
+  const curriculumId = requireString(obj.curriculumId, "blueprint.curriculumId");
+  const grade = requireString(obj.grade, "blueprint.grade");
+  const subjectId = requireString(obj.subjectId, "blueprint.subjectId");
+  const totalQuestions = requireFiniteNumber(obj.totalQuestions, "blueprint.totalQuestions");
+  const targetDurationSeconds = requireFiniteNumber(obj.targetDurationSeconds, "blueprint.targetDurationSeconds");
+  const passingThresholdPercentage = requireFiniteNumber(obj.passingThresholdPercentage, "blueprint.passingThresholdPercentage");
+
+  const type = (typeof obj.type === "string" && Object.values(AssessmentType).includes(obj.type as AssessmentType))
+    ? (obj.type as AssessmentType)
+    : AssessmentType.MASTERY_CHECK;
+
+  const unitId = optionalString(obj.unitId);
+  const lessonIds = Array.isArray(obj.lessonIds) ? obj.lessonIds.filter((x): x is string => typeof x === "string") : undefined;
+  const conceptIds = Array.isArray(obj.conceptIds) ? obj.conceptIds.filter((x): x is string => typeof x === "string") : undefined;
+  const skillIds = Array.isArray(obj.skillIds) ? obj.skillIds.filter((x): x is string => typeof x === "string") : undefined;
+  const learningObjectives = Array.isArray(obj.learningObjectives) ? obj.learningObjectives.filter((x): x is string => typeof x === "string") : [];
+  const masteryObjectives = Array.isArray(obj.masteryObjectives) ? obj.masteryObjectives.filter((x): x is string => typeof x === "string") : [];
+
+  const partialCreditPolicy = (obj.partialCreditPolicy === "lenient" || obj.partialCreditPolicy === "custom") ? obj.partialCreditPolicy : "strict";
+
+  const diffObj = (obj.difficultyDistribution && typeof obj.difficultyDistribution === "object") ? (obj.difficultyDistribution as Record<string, unknown>) : {};
+  const difficultyDistribution: Record<DifficultyLevel, number> = {
+    [DifficultyLevel.FOUNDATION]: Number(diffObj[DifficultyLevel.FOUNDATION]) || 0.1,
+    [DifficultyLevel.EASY]: Number(diffObj[DifficultyLevel.EASY]) || 0.2,
+    [DifficultyLevel.STANDARD]: Number(diffObj[DifficultyLevel.STANDARD]) || 0.4,
+    [DifficultyLevel.CHALLENGING]: Number(diffObj[DifficultyLevel.CHALLENGING]) || 0.2,
+    [DifficultyLevel.ADVANCED]: Number(diffObj[DifficultyLevel.ADVANCED]) || 0.1,
+  };
+
+  const typeObj = (obj.questionTypeDistribution && typeof obj.questionTypeDistribution === "object") ? (obj.questionTypeDistribution as Record<string, unknown>) : {};
+  const questionTypeDistribution: Record<QuestionType, number> = {
+    [QuestionType.MULTIPLE_CHOICE_SINGLE]: Number(typeObj[QuestionType.MULTIPLE_CHOICE_SINGLE]) || 0.6,
+    [QuestionType.MULTIPLE_CHOICE_MULTIPLE]: Number(typeObj[QuestionType.MULTIPLE_CHOICE_MULTIPLE]) || 0.1,
+    [QuestionType.TRUE_FALSE]: Number(typeObj[QuestionType.TRUE_FALSE]) || 0.1,
+    [QuestionType.SHORT_ANSWER]: Number(typeObj[QuestionType.SHORT_ANSWER]) || 0.1,
+    [QuestionType.NUMERIC]: Number(typeObj[QuestionType.NUMERIC]) || 0.1,
+    [QuestionType.ORDERING]: Number(typeObj[QuestionType.ORDERING]) || 0.0,
+    [QuestionType.MATCHING]: Number(typeObj[QuestionType.MATCHING]) || 0.0,
+  };
+
+  const retryObj = (obj.retryPolicy && typeof obj.retryPolicy === "object") ? (obj.retryPolicy as Record<string, unknown>) : {};
+  const retryPolicy = {
+    maxRetries: Number(retryObj.maxRetries) || 3,
+    cooldownSeconds: Number(retryObj.cooldownSeconds) || 0,
+  };
+
+  const randObj = (obj.randomizationRules && typeof obj.randomizationRules === "object") ? (obj.randomizationRules as Record<string, unknown>) : {};
+  const randomizationRules = {
+    shuffleQuestions: randObj.shuffleQuestions !== false,
+    shuffleOptions: randObj.shuffleOptions !== false,
+  };
+
+  return {
+    id,
+    type,
+    curriculumId,
+    grade,
+    subjectId,
+    unitId,
+    lessonIds,
+    conceptIds,
+    skillIds,
+    totalQuestions,
+    targetDurationSeconds,
+    difficultyDistribution,
+    questionTypeDistribution,
+    learningObjectives,
+    masteryObjectives,
+    passingThresholdPercentage,
+    partialCreditPolicy,
+    retryPolicy,
+    randomizationRules,
+  };
+}
+
+export function parseAnswerSubmission(value: unknown): AnswerSubmission {
+  const obj = parseJsonObject(value, "وەڵامی نێردراو (submission) کەموکوڕی تێدایە.");
+  const questionId = requireString(obj.questionId, "submission.questionId");
+  const responseTimeMs = requireFiniteNumber(obj.responseTimeMs, "submission.responseTimeMs");
+
+  const selectedOptionIds = Array.isArray(obj.selectedOptionIds)
+    ? obj.selectedOptionIds.filter((x): x is string => typeof x === "string")
+    : undefined;
+  const trueFalseValue = typeof obj.trueFalseValue === "boolean" ? obj.trueFalseValue : undefined;
+  const numericValue = optionalFiniteNumber(obj.numericValue);
+  const numericUnit = optionalString(obj.numericUnit);
+  const shortAnswerText = optionalString(obj.shortAnswerText);
+  const orderedIds = Array.isArray(obj.orderedIds)
+    ? obj.orderedIds.filter((x): x is string => typeof x === "string")
+    : undefined;
+
+  let matchingPairs: Record<string, string> | undefined = undefined;
+  if (obj.matchingPairs && typeof obj.matchingPairs === "object" && !Array.isArray(obj.matchingPairs)) {
+    matchingPairs = {};
+    for (const [k, v] of Object.entries(obj.matchingPairs)) {
+      if (typeof v === "string") matchingPairs[k] = v;
+    }
+  }
+
+  const hintUsed = optionalBoolean(obj.hintUsed);
+
+  return {
+    questionId,
+    selectedOptionIds,
+    trueFalseValue,
+    numericValue,
+    numericUnit,
+    shortAnswerText,
+    orderedIds,
+    matchingPairs,
+    responseTimeMs,
+    hintUsed,
+  };
 }
 
 async function getWorkerAuthenticatedStudentId(req: Request, env: Env): Promise<string> {
@@ -513,18 +708,29 @@ export default {
           return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
         }
 
-        const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-        const { type, data } = body;
-        if (!type) {
-          return new Response(JSON.stringify({ error: "زانیاری پێویست بۆ ناردنی ڕووداو بوونی نییە." }), { status: 400, headers: responseHeaders });
+        let bodyObj: Record<string, unknown>;
+        let type: LearningEventType;
+        try {
+          const raw = (await request.json().catch(() => ({}))) as unknown;
+          bodyObj = parseJsonObject(raw);
+          type = parseLearningEventType(bodyObj.type);
+        } catch (err: unknown) {
+          return new Response(
+            JSON.stringify({ error: (err as Error)?.message || "زانیاری پێویست بۆ ناردنی ڕووداو بوونی نییە." }),
+            { status: 400, headers: responseHeaders }
+          );
         }
 
-        const event = {
+        const data = (bodyObj.data && typeof bodyObj.data === "object" && !Array.isArray(bodyObj.data))
+          ? (bodyObj.data as Record<string, unknown>)
+          : {};
+
+        const event: LearningEvent = {
           id: "evt_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now(),
           studentId,
           timestamp: new Date().toISOString(),
           type,
-          data: data || {},
+          data,
         };
 
         const lp = new PersistentLearningRecordProvider(env.LEARNING_RECORDS_KV || env.ZANA_LEARNING_KV, "production");
@@ -542,33 +748,37 @@ export default {
           return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
         }
 
-        const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-        const {
-          conceptId,
-          isCorrect,
-          responseTimeMs,
-          difficulty: reqDifficulty,
-          questionText,
-          studentResponse,
-          misconceptionDetected,
-          hintUsed,
-          unreliableTiming,
-        } = body;
+        let conceptId: string;
+        let isCorrect: boolean;
+        let responseTimeMs: number;
+        let difficulty: DifficultyLevel;
+        let questionText: string;
+        let studentResponse: string;
+        let misconceptionDetected: string | undefined;
+        let hintUsed: boolean;
+        let unreliableTiming: boolean;
 
-        if (!conceptId || isCorrect === undefined) {
-          return new Response(JSON.stringify({ error: "زانیاری ناتەواو بۆ هەوڵدان لەسەر بابەت." }), { status: 400, headers: responseHeaders });
-        }
+        try {
+          const raw = (await request.json().catch(() => ({}))) as unknown;
+          const bodyObj = parseJsonObject(raw);
 
-        let difficulty: DifficultyLevel = DifficultyLevel.EASY;
-        if (reqDifficulty) {
-          if (Object.values(DifficultyLevel).includes(reqDifficulty as DifficultyLevel)) {
-            difficulty = reqDifficulty as DifficultyLevel;
-          } else {
-            const numDiff = Number(reqDifficulty);
-            if (numDiff === 1) difficulty = DifficultyLevel.EASY;
-            else if (numDiff === 2) difficulty = DifficultyLevel.STANDARD;
-            else if (numDiff === 3) difficulty = DifficultyLevel.CHALLENGING;
+          conceptId = requireString(bodyObj.conceptId, "conceptId", "زانیاری ناتەواو بۆ هەوڵدان لەسەر بابەت.");
+          isCorrect = requireBoolean(bodyObj.isCorrect, "isCorrect", "زانیاری ناتەواو بۆ هەوڵدان لەسەر بابەت.");
+          responseTimeMs = optionalFiniteNumber(bodyObj.responseTimeMs) ?? 5000;
+          if (responseTimeMs < 0) {
+            throw new Error("کاتی وەڵامدانەوە ناڕاستە.");
           }
+          difficulty = parseDifficultyLevel(bodyObj.difficulty);
+          questionText = optionalString(bodyObj.questionText) || "";
+          studentResponse = optionalString(bodyObj.studentResponse) || "";
+          misconceptionDetected = optionalString(bodyObj.misconceptionDetected);
+          hintUsed = optionalBoolean(bodyObj.hintUsed) ?? false;
+          unreliableTiming = optionalBoolean(bodyObj.unreliableTiming) ?? false;
+        } catch (err: unknown) {
+          return new Response(
+            JSON.stringify({ error: (err as Error)?.message || "زانیاری ناتەواو بۆ هەوڵدان لەسەر بابەت." }),
+            { status: 400, headers: responseHeaders }
+          );
         }
 
         const lp = new PersistentLearningRecordProvider(env.LEARNING_RECORDS_KV || env.ZANA_LEARNING_KV, "production");
@@ -577,23 +787,23 @@ export default {
 
         const newState = AdaptiveLearningEngine.calculateNewMastery(currentState, {
           isCorrect,
-          responseTimeMs: responseTimeMs || 5000,
+          responseTimeMs,
           difficulty,
-          hintUsed: !!hintUsed,
-          unreliableTiming: !!unreliableTiming,
+          hintUsed,
+          unreliableTiming,
         });
 
         await lp.saveMasteryChange(studentId, conceptId, newState);
 
-        const attempt = {
+        const attempt: ExerciseAttempt = {
           id: "att_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now(),
           studentId,
           conceptId,
           isCorrect,
-          responseTimeMs: responseTimeMs || 5000,
+          responseTimeMs,
           difficulty,
-          questionText: questionText || "",
-          studentResponse: studentResponse || "",
+          questionText,
+          studentResponse,
           misconceptionDetected,
           timestamp: new Date().toISOString(),
         };
@@ -633,12 +843,12 @@ export default {
 
         await lp.saveMasteryChange(studentId, conceptId, newState);
 
-        const event = {
+        const event: LearningEvent = {
           id: "evt_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now(),
           studentId,
           timestamp: new Date().toISOString(),
-          type: "EXERCISE_ATTEMPT" as const,
-          data: attempt,
+          type: "EXERCISE_ATTEMPT",
+          data: attempt as unknown as Record<string, unknown>,
         };
         await lp.appendLearningEvent(studentId, event);
 
@@ -684,7 +894,7 @@ export default {
           return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
         }
 
-        const session = {
+        const session: LearningSession = {
           id: "ses_" + Math.random().toString(36).substring(2, 11) + "_" + Date.now(),
           studentId,
           startTime: new Date().toISOString(),
@@ -710,16 +920,27 @@ export default {
         const parts = pathname.split("/");
         const sessionId = decodeURIComponent(parts[parts.length - 2]);
 
-        const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-        const { focusScore } = body;
+        let focusScore = 1.0;
+        try {
+          const raw = (await request.json().catch(() => ({}))) as unknown;
+          const bodyObj = parseJsonObject(raw);
+          if ("focusScore" in bodyObj && bodyObj.focusScore !== undefined) {
+            if (typeof bodyObj.focusScore !== "number" || !Number.isFinite(bodyObj.focusScore)) {
+              return new Response(JSON.stringify({ error: "نمرەی سەرنجدان (focusScore) ناڕاستە." }), { status: 400, headers: responseHeaders });
+            }
+            focusScore = bodyObj.focusScore;
+          }
+        } catch {
+          return new Response(JSON.stringify({ error: "داواکارییەکە کەموکوڕی تێدایە." }), { status: 400, headers: responseHeaders });
+        }
 
-        const session = {
+        const session: LearningSession = {
           id: sessionId,
           studentId,
           startTime: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
           endTime: new Date().toISOString(),
           events: [],
-          focusScore: focusScore !== undefined ? focusScore : 1.0,
+          focusScore,
         };
 
         const lp = new PersistentLearningRecordProvider(env.LEARNING_RECORDS_KV || env.ZANA_LEARNING_KV, "production");
@@ -736,11 +957,25 @@ export default {
           return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
         }
 
-        const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-        const { unitId, subjectId, type, titleKu, instructionsKu } = body;
+        let unitId: string;
+        let subjectId: string;
+        let typeStr: string | undefined;
+        let titleKu: string;
+        let instructionsKu: string;
 
-        if (!unitId || !subjectId) {
-          return new Response(JSON.stringify({ error: "زانیاری پێویست بۆ دەستپێکردنی تاقیکردنەوە بوونی نییە." }), { status: 400, headers: responseHeaders });
+        try {
+          const raw = (await request.json().catch(() => ({}))) as unknown;
+          const bodyObj = parseJsonObject(raw);
+          unitId = requireString(bodyObj.unitId, "unitId", "زانیاری پێویست بۆ دەستپێکردنی تاقیکردنەوە بوونی نییە.");
+          subjectId = requireString(bodyObj.subjectId, "subjectId", "زانیاری پێویست بۆ دەستپێکردنی تاقیکردنەوە بوونی نییە.");
+          typeStr = optionalString(bodyObj.type);
+          titleKu = optionalString(bodyObj.titleKu) || "تاقیکردنەوەی نوێ";
+          instructionsKu = optionalString(bodyObj.instructionsKu) || "تکایە بە وریاییەوە پرسیارەکان بخوێنەرەوە.";
+        } catch (err: unknown) {
+          return new Response(
+            JSON.stringify({ error: (err as Error)?.message || "زانیاری پێویست بۆ دەستپێکردنی تاقیکردنەوە بوونی نییە." }),
+            { status: 400, headers: responseHeaders }
+          );
         }
 
         const lp = new PersistentLearningRecordProvider(env.LEARNING_RECORDS_KV || env.ZANA_LEARNING_KV, "production");
@@ -763,15 +998,15 @@ export default {
         const avgMastery = count > 0 ? totalMastery / count : 0.0;
 
         const blueprint: AssessmentBlueprint = {
-          id: `bp_${unitId}_${type || "mastery_check"}_${Date.now()}`,
-          type: type === "MASTERY_CHECK" ? AssessmentType.MASTERY_CHECK : AssessmentType.DIAGNOSTIC,
+          id: `bp_${unitId}_${typeStr || "mastery_check"}_${Date.now()}`,
+          type: typeStr === "MASTERY_CHECK" ? AssessmentType.MASTERY_CHECK : AssessmentType.DIAGNOSTIC,
           curriculumId: "curriculum-zana-default",
           grade: "9",
           subjectId,
           unitId,
           conceptIds,
-          totalQuestions: type === "MASTERY_CHECK" ? 10 : 5,
-          targetDurationSeconds: type === "MASTERY_CHECK" ? 600 : 300,
+          totalQuestions: typeStr === "MASTERY_CHECK" ? 10 : 5,
+          targetDurationSeconds: typeStr === "MASTERY_CHECK" ? 600 : 300,
           difficultyDistribution: {
             [DifficultyLevel.FOUNDATION]: 0.1,
             [DifficultyLevel.EASY]: 0.2,
@@ -799,8 +1034,8 @@ export default {
         const { attempt, firstQuestion } = await service.startAssessment(
           studentId,
           blueprint,
-          titleKu || "تاقیکردنەوەی نوێ",
-          instructionsKu || "تکایە بە وریاییەوە پرسیارەکان بخوێنەرەوە.",
+          titleKu,
+          instructionsKu,
           avgMastery
         );
 
@@ -809,24 +1044,44 @@ export default {
 
       // POST /api/assessment/submit
       if (pathname === "/api/assessment/submit" && request.method === "POST") {
-        let _studentId: string;
+        let studentId: string;
         try {
-          _studentId = await getWorkerAuthenticatedStudentId(request, env);
+          studentId = await getWorkerAuthenticatedStudentId(request, env);
         } catch {
           return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
         }
 
-        const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-        const { attemptId, questionId, submission, blueprint } = body;
+        let attemptId: string;
+        let questionId: string;
+        let submission: AnswerSubmission;
+        let blueprint: AssessmentBlueprint;
 
-        if (!attemptId || !questionId || !submission || !blueprint) {
-          return new Response(JSON.stringify({ error: "ناردنی داواکارییەکە کەموکوڕی تێدایە." }), { status: 400, headers: responseHeaders });
+        try {
+          const raw = (await request.json().catch(() => ({}))) as unknown;
+          const bodyObj = parseJsonObject(raw);
+          attemptId = requireString(bodyObj.attemptId, "attemptId");
+          questionId = requireString(bodyObj.questionId, "questionId");
+          submission = parseAnswerSubmission(bodyObj.submission);
+          blueprint = parseAssessmentBlueprint(bodyObj.blueprint);
+        } catch (err: unknown) {
+          return new Response(
+            JSON.stringify({ error: (err as Error)?.message || "ناردنی داواکارییەکە کەموکوڕی تێدایە." }),
+            { status: 400, headers: responseHeaders }
+          );
         }
 
         const lp = new PersistentLearningRecordProvider(env.LEARNING_RECORDS_KV || env.ZANA_LEARNING_KV, "production");
         const ap = new PersistentAssessmentRecordProvider(env.LEARNING_RECORDS_KV || env.ZANA_LEARNING_KV, "production");
-        const service = new AssessmentService(ap);
 
+        const existingAttempt = await ap.getAttempt(attemptId);
+        if (!existingAttempt) {
+          return new Response(JSON.stringify({ error: "هەوڵدانی تاقیکردنەوە نەدۆزرایەوە." }), { status: 404, headers: responseHeaders });
+        }
+        if (existingAttempt.studentId !== studentId) {
+          return new Response(JSON.stringify({ error: "دەسەڵاتی پێویستت نییە بۆ ئەم تاقیکردنەوەیە." }), { status: 403, headers: responseHeaders });
+        }
+
+        const service = new AssessmentService(ap);
         const result = await service.submitAnswer(attemptId, questionId, submission, lp, blueprint);
 
         return new Response(JSON.stringify(result), { status: 200, headers: responseHeaders });
@@ -834,24 +1089,40 @@ export default {
 
       // POST /api/assessment/finish
       if (pathname === "/api/assessment/finish" && request.method === "POST") {
-        let _studentId: string;
+        let studentId: string;
         try {
-          _studentId = await getWorkerAuthenticatedStudentId(request, env);
+          studentId = await getWorkerAuthenticatedStudentId(request, env);
         } catch {
           return new Response(JSON.stringify({ error: "تکایە سەرەتا بچۆ ناو هەژمارەکەت." }), { status: 401, headers: responseHeaders });
         }
 
-        const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-        const { attemptId, blueprint } = body;
+        let attemptId: string;
+        let blueprint: AssessmentBlueprint;
 
-        if (!attemptId || !blueprint) {
-          return new Response(JSON.stringify({ error: "ناردنی داواکارییەکە کەموکوڕی تێدایە." }), { status: 400, headers: responseHeaders });
+        try {
+          const raw = (await request.json().catch(() => ({}))) as unknown;
+          const bodyObj = parseJsonObject(raw);
+          attemptId = requireString(bodyObj.attemptId, "attemptId");
+          blueprint = parseAssessmentBlueprint(bodyObj.blueprint);
+        } catch (err: unknown) {
+          return new Response(
+            JSON.stringify({ error: (err as Error)?.message || "ناردنی داواکارییەکە کەموکوڕی تێدایە." }),
+            { status: 400, headers: responseHeaders }
+          );
         }
 
         const lp = new PersistentLearningRecordProvider(env.LEARNING_RECORDS_KV || env.ZANA_LEARNING_KV, "production");
         const ap = new PersistentAssessmentRecordProvider(env.LEARNING_RECORDS_KV || env.ZANA_LEARNING_KV, "production");
-        const service = new AssessmentService(ap);
 
+        const existingAttempt = await ap.getAttempt(attemptId);
+        if (!existingAttempt) {
+          return new Response(JSON.stringify({ error: "هەوڵدانی تاقیکردنەوە نەدۆزرایەوە." }), { status: 404, headers: responseHeaders });
+        }
+        if (existingAttempt.studentId !== studentId) {
+          return new Response(JSON.stringify({ error: "دەسەڵاتی پێویستت نییە بۆ ئەم تاقیکردنەوەیە." }), { status: 403, headers: responseHeaders });
+        }
+
+        const service = new AssessmentService(ap);
         const result = await service.finishAssessment(attemptId, lp, blueprint);
 
         return new Response(JSON.stringify({ result }), { status: 200, headers: responseHeaders });

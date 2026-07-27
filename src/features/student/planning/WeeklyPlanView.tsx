@@ -1,6 +1,6 @@
 import React from "react";
 import { WeeklyStudyPlan, DailyStudyPlan } from "../../../planning/domain/LearningPlanTypes.ts";
-import { Calendar, Clock, RefreshCw, CheckCircle, Moon } from "lucide-react";
+import { Calendar, RefreshCw, Moon } from "lucide-react";
 
 interface WeeklyPlanViewProps {
   weekPlan: WeeklyStudyPlan | null;

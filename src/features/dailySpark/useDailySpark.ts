@@ -56,9 +56,18 @@ export function useDailySpark() {
   }, [profile]);
 
   useEffect(() => {
+    let active = true;
     if (profile) {
-      refreshDailySpark();
+      void (async () => {
+        await Promise.resolve();
+        if (active) {
+          await refreshDailySpark();
+        }
+      })();
     }
+    return () => {
+      active = false;
+    };
   }, [profile, refreshDailySpark]);
 
   return {

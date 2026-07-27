@@ -43,7 +43,7 @@ export class GeminiProvider {
         });
 
         const response = await Promise.race([fetchPromise, timeoutPromise]);
-        clearTimeout(timeoutId);
+        if (timeoutId !== null) clearTimeout(timeoutId);
 
         const text = response?.text;
         if (typeof text !== "string" || text.trim().length === 0) {
@@ -52,7 +52,7 @@ export class GeminiProvider {
 
         return { text: text.trim() };
       } catch (err: unknown) {
-        if (timeoutId) clearTimeout(timeoutId);
+        if (timeoutId !== null) clearTimeout(timeoutId);
         lastError = err;
         const category = classifyError(err);
 

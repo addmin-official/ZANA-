@@ -1,7 +1,7 @@
 import React from "react";
 import { DailyStudyPlan, StudyTask, StudyTaskStatus, NextBestAction } from "../../../planning/domain/LearningPlanTypes.ts";
 import { NextBestActionCard } from "./NextBestActionCard.tsx";
-import { CheckCircle2, Clock, Play, SkipForward, AlertCircle, Calendar, Sparkles, BookOpen } from "lucide-react";
+import { CheckCircle2, Clock, Play, Calendar, BookOpen } from "lucide-react";
 
 interface TodayPlanViewProps {
   todayPlan: DailyStudyPlan | null;
@@ -32,7 +32,6 @@ export const TodayPlanView: React.FC<TodayPlanViewProps> = ({
   }
 
   const tasks = todayPlan?.tasks || [];
-  const plannedMins = todayPlan?.plannedMinutes || 0;
   const completedMins = todayPlan?.completedMinutes || 0;
   const targetMins = todayPlan?.targetMinutes || 45;
   const progressPercent = Math.min(Math.round((completedMins / Math.max(targetMins, 1)) * 100), 100);

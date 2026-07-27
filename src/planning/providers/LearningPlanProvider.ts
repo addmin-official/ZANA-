@@ -41,12 +41,14 @@ export interface LearningPlanProvider {
   appendAnalyticsEvent(event: PlanningAnalyticsEvent): Promise<void>;
 }
 
+import { CloudflareKVBinding } from "../../learning/providers/LearningRecordProvider.ts";
+
 export class PersistentLearningPlanProvider implements LearningPlanProvider {
-  private kv: unknown;
+  private kv: CloudflareKVBinding | null;
   private envMode: "production" | "development" | "test";
 
   constructor(kvBinding?: unknown, envMode: "production" | "development" | "test" = "production") {
-    this.kv = kvBinding;
+    this.kv = (kvBinding as CloudflareKVBinding) || null;
     this.envMode = envMode;
 
     if (this.envMode === "production" && !this.kv) {
@@ -175,7 +177,7 @@ export class PersistentLearningPlanProvider implements LearningPlanProvider {
   }
 
   public async getReviewItems(studentId: string): Promise<ReviewItem[]> {
-    if (!this.kv) return [];
+    if (!this.kv || !this.kv.list) return [];
     const prefix = this.key(studentId, "review:");
     try {
       const listRes = await this.kv.list({ prefix });

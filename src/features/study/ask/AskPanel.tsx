@@ -6,8 +6,8 @@ import { Send, AlertCircle, RefreshCw, Trash2, HelpCircle, Sparkles } from "luci
 
 interface AskPanelProps {
   studentProfile: StudentProfile;
-  curriculumSnapshot: any;
-  sessionSnapshot: any;
+  curriculumSnapshot: unknown;
+  sessionSnapshot: unknown;
 }
 
 export function AskPanel({ studentProfile, curriculumSnapshot, sessionSnapshot }: AskPanelProps) {

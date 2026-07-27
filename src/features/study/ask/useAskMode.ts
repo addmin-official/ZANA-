@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { StudentProfile } from "../../student/studentTypes.ts";
-import { AskContext, AskMessage, AskSnapshot, SuggestedQuestion } from "./askTypes.ts";
+import { AskMessage, AskSnapshot, SuggestedQuestion } from "./askTypes.ts";
 import {
   buildAskContext,
   generateSuggestedQuestions,
@@ -14,8 +14,8 @@ import { domainEventBusInstance } from "../../../domain/DomainEventBus.ts";
 
 export function useAskMode(
   profile: StudentProfile,
-  cipSnapshot: any,
-  lseSnapshot: any
+  cipSnapshot: unknown,
+  lseSnapshot: unknown
 ) {
   // 1. Build context
   const context = buildAskContext(profile, cipSnapshot, lseSnapshot);
@@ -29,7 +29,9 @@ export function useAskMode(
   // Suggested questions
   const conceptTitle = context.conceptTitle || "چەمکی خوێندن";
   const lessonTitle = context.lessonTitle || "وانەی ئێستا";
-  const [suggestedQuestions, setSuggestedQuestions] = useState<SuggestedQuestion[]>([]);
+  const suggestedQuestions = useMemo<SuggestedQuestion[]>(() => {
+    return generateSuggestedQuestions(conceptTitle, lessonTitle);
+  }, [conceptTitle, lessonTitle]);
 
   // Keep a ref to the current session ID to sync when it changes
   const prevSessionIdRef = useRef<string>(sessionId);
@@ -44,12 +46,6 @@ export function useAskMode(
       setIsSending(false);
     }
   }, [sessionId]);
-
-  // Generate suggested questions
-  useEffect(() => {
-    const questions = generateSuggestedQuestions(conceptTitle, lessonTitle);
-    setSuggestedQuestions(questions);
-  }, [conceptTitle, lessonTitle]);
 
   // Save messages to history whenever they update
   useEffect(() => {
@@ -133,8 +129,9 @@ export function useAskMode(
         );
         return [...updated, newZanaMessage].slice(-20);
       });
-    } catch (apiErr: any) {
-      setError(apiErr.message || "کێشەیەک لە کاتی وەرگرتنی وەڵامی زانادا ڕوویدا.");
+    } catch (apiErr: unknown) {
+      const msg = apiErr instanceof Error ? apiErr.message : "کێشەیەک لە کاتی وەرگرتنی وەڵامی زانادا ڕوویدا.";
+      setError(msg);
       setMessages((prev) =>
         prev.map((m) =>
           m.id === studentMsgId ? { ...m, status: "failed" as const } : m

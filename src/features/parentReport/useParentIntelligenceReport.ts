@@ -77,7 +77,7 @@ export function useParentIntelligenceReport(passedProfile?: StudentProfile) {
       setSnapshot(reportSnapshot);
       safeSet(storageKey, reportSnapshot);
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to generate parent intelligence report:", err);
       setError("نەتوانرا لە ئێستادا ڕاپۆرتی زیرەکی بۆ دایک و باوک ئامادە بکرێت.");
     } finally {
@@ -86,10 +86,19 @@ export function useParentIntelligenceReport(passedProfile?: StudentProfile) {
   }, [profile, snapshot, storageKey]);
 
   useEffect(() => {
+    let active = true;
     if (profile?.onboardingCompleted) {
-      generateReport();
+      void (async () => {
+        await Promise.resolve();
+        if (active) {
+          await generateReport();
+        }
+      })();
     }
-  }, [profile?.onboardingCompleted, profile?.activeSubject, profile?.level]);
+    return () => {
+      active = false;
+    };
+  }, [profile?.onboardingCompleted, generateReport]);
 
   const printReport = useCallback(() => {
     window.print();

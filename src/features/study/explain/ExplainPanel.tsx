@@ -4,7 +4,6 @@ import { CurriculumIntelligenceSnapshot } from "../../../curriculum/types.ts";
 import { SessionSnapshot } from "../../../session/types.ts";
 import { useExplainMode } from "./useExplainMode.ts";
 import { ExplainSection } from "./explainTypes.ts";
-import { ZanaCard } from "../../../components/ZanaCard.tsx";
 import { ZanaButton } from "../../../components/ZanaButton.tsx";
 import { motion } from "motion/react";
 import {
@@ -14,7 +13,6 @@ import {
   AlertTriangle,
   Award,
   ArrowRight,
-  BookOpen,
   HelpCircle,
   CheckCircle,
   Lightbulb,
@@ -37,7 +35,7 @@ export function ExplainPanel({
   studentProfile,
   curriculumSnapshot,
   sessionSnapshot,
-  onNavigate,
+  onNavigate: _onNavigate,
   onNextStep
 }: ExplainPanelProps) {
   const { snapshot, isLoading, error } = useExplainMode({
@@ -47,15 +45,17 @@ export function ExplainPanel({
   });
 
   const [expandedSection, setExpandedSection] = useState<string>("sec_theory");
-  const [practiceAnswered, setPracticeAnswered] = useState<boolean>(false);
+  const [_practiceAnswered, setPracticeAnswered] = useState<boolean>(false);
   const [practiceRevealed, setPracticeRevealed] = useState<boolean>(false);
 
   // Reset states when the concept shifts
-  useEffect(() => {
+  const [prevConceptTitle, setPrevConceptTitle] = useState(snapshot?.conceptTitle);
+  if (snapshot?.conceptTitle !== prevConceptTitle) {
+    setPrevConceptTitle(snapshot?.conceptTitle);
     setExpandedSection("sec_theory");
     setPracticeAnswered(false);
     setPracticeRevealed(false);
-  }, [snapshot?.conceptTitle]);
+  }
 
   // Emit Domain Events LESSON_STARTED and CONCEPT_STARTED
   useEffect(() => {
@@ -82,7 +82,7 @@ export function ExplainPanel({
               stream: studentProfile.stream
             }
           );
-          eventBus.publish(lessonEvent);
+          void eventBus.publish(lessonEvent);
 
           // 2. Create and publish CONCEPT_STARTED event
           const conceptEvent = DomainEventFactory.createEvent(
@@ -101,13 +101,13 @@ export function ExplainPanel({
               stream: studentProfile.stream
             }
           );
-          eventBus.publish(conceptEvent);
+          void eventBus.publish(conceptEvent);
         }
       } catch (e) {
         console.warn("Domain event system could not publish start events:", e);
       }
     }
-  }, [snapshot?.conceptTitle, studentProfile.id, sessionSnapshot.currentSession?.currentNodeId]);
+  }, [snapshot, studentProfile, sessionSnapshot]);
 
   if (isLoading) {
     return (
@@ -183,7 +183,7 @@ export function ExplainPanel({
 
   const itemVariants = {
     hidden: { opacity: 0, y: 15 },
-    show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 100 } }
+    show: { opacity: 1, y: 0, transition: { type: "spring" as const, stiffness: 100 } }
   };
 
   return (
@@ -231,7 +231,7 @@ export function ExplainPanel({
 
       {/* 2. PEDAGOGICAL EXPANDABLE WORKSPACE */}
       <motion.div
-        variants={containerVariants as any}
+        variants={containerVariants}
         initial="hidden"
         animate="show"
         className="space-y-3"
@@ -244,7 +244,7 @@ export function ExplainPanel({
           return (
             <motion.div
               key={section.id}
-              variants={itemVariants as any}
+              variants={itemVariants}
               className={`border rounded-2xl overflow-hidden transition-all duration-300 shadow-xs ${blockStyles}`}
             >
               {/* Card Header */}

@@ -9,7 +9,8 @@ import {
   NextBestAction,
   PlanProgress,
   GoalStatus,
-  LearningGoalType
+  LearningGoalType,
+  PlanGenerationMode
 } from "../domain/LearningPlanTypes.ts";
 import { PlanningValidation } from "../domain/PlanningValidation.ts";
 import { PersonalLearningPlanEngine } from "../engine/PersonalLearningPlanEngine.ts";

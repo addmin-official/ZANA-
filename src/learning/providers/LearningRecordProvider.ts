@@ -8,6 +8,12 @@ import {
   ExerciseAttempt
 } from "../domain/MasteryTypes.ts";
 
+export interface CloudflareKVBinding {
+  get(key: string): Promise<string | null>;
+  put(key: string, value: string): Promise<void>;
+  list?(options?: { prefix?: string; limit?: number }): Promise<{ keys: { name: string }[] }>;
+}
+
 export interface LearningRecordProvider {
   getStudentMasteryProfile(studentId: string): Promise<StudentMasteryProfile>;
   getConceptMastery(studentId: string, conceptId: string): Promise<ConceptMasteryState | null>;
@@ -22,8 +28,14 @@ export interface LearningRecordProvider {
   listRecommendations(studentId: string, status?: string): Promise<AdaptiveRecommendation[]>;
 }
 
+interface LocalFs {
+  existsSync(p: string): boolean;
+  readFileSync(p: string, e: string): string;
+  writeFileSync(p: string, c: string, e: string): void;
+}
+
 // Helper to access Node's fs module safely without breaking browser or Cloudflare environments
-const getFs = () => {
+const getFs = (): LocalFs | null => {
   return null;
 };
 
@@ -82,7 +94,7 @@ export class InMemoryLearningRecordProvider implements LearningRecordProvider {
     this.events.set(studentId, list);
 
     if (event.type === "EXERCISE_ATTEMPT") {
-      const attemptData = event.data as ExerciseAttempt;
+      const attemptData = (event.data as unknown) as ExerciseAttempt;
       const atts = this.attempts.get(studentId) || [];
       atts.unshift(attemptData);
       this.attempts.set(studentId, atts);
@@ -216,7 +228,7 @@ export class LocalStorageLearningRecordProvider implements LearningRecordProvide
     this.safeSet(key, list);
 
     if (event.type === "EXERCISE_ATTEMPT") {
-      const attemptData = event.data as ExerciseAttempt;
+      const attemptData = (event.data as unknown) as ExerciseAttempt;
       const attsKey = this.getAttemptsKey(studentId);
       const atts = this.safeGet<ExerciseAttempt[]>(attsKey, []);
       atts.unshift(attemptData);
@@ -274,12 +286,12 @@ export class LocalStorageLearningRecordProvider implements LearningRecordProvide
 export class PersistentLearningRecordProvider implements LearningRecordProvider {
   private memoryStore = new InMemoryLearningRecordProvider();
   private filePath = "learning_records_db.json";
-  private cloudflareKv: unknown = null;
+  private cloudflareKv: CloudflareKVBinding | null = null;
   private mode: "production" | "development" | "test";
 
   constructor(kvInstance?: unknown, forceMode?: "production" | "development" | "test") {
     if (kvInstance) {
-      this.cloudflareKv = kvInstance;
+      this.cloudflareKv = kvInstance as CloudflareKVBinding;
     }
 
     // Determine environment mode explicitly
@@ -498,7 +510,7 @@ export class PersistentLearningRecordProvider implements LearningRecordProvider 
 
       // Handle attempts separately
       if (event.type === "EXERCISE_ATTEMPT") {
-        const attemptData = event.data as ExerciseAttempt;
+        const attemptData = (event.data as unknown) as ExerciseAttempt;
         const attemptKey = this.getAttemptKey(studentId, attemptData.id);
         const existingAttempt = await this.cloudflareKv.get(attemptKey);
         if (!existingAttempt) {

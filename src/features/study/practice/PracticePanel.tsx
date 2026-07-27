@@ -88,7 +88,7 @@ export function PracticePanel({
 
   const itemVariants = {
     hidden: { opacity: 0, y: 15 },
-    show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 100 } }
+    show: { opacity: 1, y: 0, transition: { type: "spring" as const, stiffness: 100 } }
   };
 
   return (
@@ -144,7 +144,7 @@ export function PracticePanel({
         animate="show"
         className="space-y-4"
       >
-        {questions.map((question: PracticeQuestion) => {
+        {questions.map((question: PracticeQuestion, idx: number) => {
           const attempt = attemptsMap.get(question.id);
           const isAnswered = !!attempt;
           const isCorrect = attempt?.isCorrect || false;

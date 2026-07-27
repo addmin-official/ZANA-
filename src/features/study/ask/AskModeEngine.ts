@@ -5,18 +5,21 @@ const HISTORY_KEY_PREFIX = "zana:ask-history:";
 
 export function buildAskContext(
   profile: StudentProfile,
-  cipSnapshot: any,
-  lseSnapshot: any
+  cipSnapshot: unknown,
+  lseSnapshot: unknown
 ): AskContext {
-  const session = lseSnapshot?.currentSession;
-  const currentNodeId = session?.currentNodeId || "12_sci_math_con1";
+  const cip = cipSnapshot as Record<string, unknown> | null | undefined;
+  const lse = lseSnapshot as Record<string, unknown> | null | undefined;
+  const currentSession = lse?.currentSession as Record<string, unknown> | null | undefined;
+  const currentNodeId = (currentSession?.currentNodeId as string) || "12_sci_math_con1";
   
-  const availableNodes = cipSnapshot?.resolution?.availableNodes || [];
-  const activeNode = availableNodes.find((n: any) => n.id === currentNodeId) || availableNodes[0];
-  const activeLesson = availableNodes.find((n: any) => n.id === session?.currentLessonId) || activeNode;
-  const activeChapter = availableNodes.find((n: any) => n.id === activeLesson?.parentId) || {
+  const resolution = cip?.resolution as Record<string, unknown> | null | undefined;
+  const availableNodes = (resolution?.availableNodes as Array<Record<string, unknown>>) || [];
+  const activeNode = availableNodes.find((n) => n.id === currentNodeId) || availableNodes[0];
+  const activeLesson = availableNodes.find((n) => n.id === currentSession?.currentLessonId) || activeNode;
+  const activeChapter = availableNodes.find((n) => n.id === activeLesson?.parentId) || {
     id: "chapter_fallback",
-    title: cipSnapshot?.resolution?.subjectLabel || "بەشی یەکەم"
+    title: (resolution?.subjectLabel as string) || "بەشی یەکەم"
   };
 
   return {

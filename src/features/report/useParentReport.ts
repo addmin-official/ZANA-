@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { ParentReport } from "./reportTypes.ts";
 import { ZanaStorage, StudentProfile } from "../../services/storage.ts";
 import { ZanaApiClient } from "../../services/apiClient.ts";
@@ -8,7 +8,7 @@ export function useParentReport(profile: StudentProfile) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadReport = async (forceRefresh = false) => {
+  const loadReport = useCallback(async (forceRefresh = false) => {
     if (!profile.onboardingCompleted) return;
 
     setError(null);
@@ -65,18 +65,28 @@ export function useParentReport(profile: StudentProfile) {
         weakAreas,
         recommendation: res.recommendation
       });
-    } catch (err: any) {
-      setError(err.message || "نەتوانرا ڕاپۆرتەکە دروست بکرێت لە ئێستادا.");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "نەتوانرا ڕاپۆرتەکە دروست بکرێت لە ئێستادا.";
+      setError(msg);
     } finally {
       setLoading(false);
     }
-  };
+  }, [profile]);
 
   useEffect(() => {
+    let active = true;
     if (profile.onboardingCompleted) {
-      loadReport();
+      void (async () => {
+        await Promise.resolve();
+        if (active) {
+          await loadReport();
+        }
+      })();
     }
-  }, [profile.onboardingCompleted, profile.activeSubject, profile.level]);
+    return () => {
+      active = false;
+    };
+  }, [profile.onboardingCompleted, loadReport]);
 
   return {
     report,

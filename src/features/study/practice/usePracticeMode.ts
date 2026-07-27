@@ -161,7 +161,7 @@ export function usePracticeMode({
       console.error("Error during answer submission:", err);
       setError("کێشەیەک لە پێشکەشکردنی وەڵامدا دروست بوو.");
     }
-  }, [snapshot, attempts, studentProfile, conceptId, sessionSnapshot.currentSession?.id]);
+  }, [snapshot, attempts, studentProfile, conceptId, sessionSnapshot.currentSession]);
 
   // Reset practice state
   const resetPractice = useCallback(() => {

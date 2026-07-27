@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { ProgressMetrics } from "./progressTypes.ts";
 import { ZanaStorage } from "../../services/storage.ts";
 

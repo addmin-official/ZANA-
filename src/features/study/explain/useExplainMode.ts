@@ -19,6 +19,8 @@ export function useExplainMode({
   const [forceKey, setForceKey] = useState(0);
 
   const { snapshot, error } = useMemo(() => {
+    // Reference forceKey to allow manual refresh
+    void forceKey;
     try {
       const snap = ExplainModeEngine.buildExplainSnapshot({
         studentProfile,

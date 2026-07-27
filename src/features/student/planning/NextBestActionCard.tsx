@@ -1,6 +1,6 @@
 import React from "react";
 import { NextBestAction } from "../../../planning/domain/LearningPlanTypes.ts";
-import { Sparkles, Clock, CheckCircle2, ArrowRight, Play, RefreshCw, AlertCircle } from "lucide-react";
+import { Sparkles, Clock, Play } from "lucide-react";
 
 interface NextBestActionCardProps {
   action: NextBestAction | null;

@@ -1,5 +1,5 @@
 import { StudentProfile } from "../../student/studentTypes.ts";
-import { CurriculumIntelligenceSnapshot, CurriculumNode } from "../../../curriculum/types.ts";
+import { CurriculumIntelligenceSnapshot } from "../../../curriculum/types.ts";
 import { SessionSnapshot } from "../../../session/types.ts";
 import { ExplainSnapshot, ExplainSection } from "./explainTypes.ts";
 import { DomainClock } from "../../../domain/DomainClock.ts";
