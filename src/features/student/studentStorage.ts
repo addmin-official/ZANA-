@@ -90,7 +90,7 @@ export function migrateStudentProfile(raw: unknown): StudentProfile {
 
   const rawRecord = rawObj as Record<string, unknown>;
   const authoritative = typeof rawRecord.authoritative === "boolean" ? rawRecord.authoritative : false;
-  const source = typeof rawRecord.source === "string" ? rawRecord.source : "guest-local";
+  const source: "guest-local" | "server-authoritative" = rawRecord.source === "server-authoritative" ? "server-authoritative" : "guest-local";
   const isStale = typeof rawRecord.isStale === "boolean" ? rawRecord.isStale : undefined;
 
   const migrated: StudentProfile = {

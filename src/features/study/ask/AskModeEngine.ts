@@ -28,14 +28,14 @@ export function buildAskContext(
     grade: profile.grade,
     stream: profile.stream,
     subject: profile.activeSubject,
-    chapterId: activeChapter?.id,
-    chapterTitle: activeChapter?.title,
-    lessonId: activeLesson?.id,
-    lessonTitle: activeLesson?.title,
-    conceptId: activeNode?.id,
-    conceptTitle: activeNode?.title,
+    chapterId: typeof activeChapter?.id === "string" ? activeChapter.id : undefined,
+    chapterTitle: typeof activeChapter?.title === "string" ? activeChapter.title : undefined,
+    lessonId: typeof activeLesson?.id === "string" ? activeLesson.id : undefined,
+    lessonTitle: typeof activeLesson?.title === "string" ? activeLesson.title : undefined,
+    conceptId: typeof activeNode?.id === "string" ? activeNode.id : undefined,
+    conceptTitle: typeof activeNode?.title === "string" ? activeNode.title : undefined,
     level: profile.level,
-    sessionId: session?.id || "session_fallback"
+    sessionId: typeof currentSession?.id === "string" ? currentSession.id : "session_fallback"
   };
 }
 
