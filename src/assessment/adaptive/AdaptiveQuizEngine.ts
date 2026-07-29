@@ -1,4 +1,4 @@
-import { AssessmentAttempt, AssessmentBlueprint, AssessmentQuestion, PublicQuestion, AssessmentStatus } from "../domain/AssessmentTypes.ts";
+import { AssessmentAttempt, AssessmentBlueprint, AssessmentQuestion, PublicQuestion } from "../domain/AssessmentTypes.ts";
 import { DifficultyLevel } from "../../learning/domain/MasteryTypes.ts";
 import { DifficultySelector } from "./DifficultySelector.ts";
 import { QuizTerminationPolicy } from "./QuizTerminationPolicy.ts";

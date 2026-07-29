@@ -25,6 +25,7 @@ import {
   AssessmentType,
   QuestionType,
   AnswerSubmission,
+  AssessmentKVStore,
 } from "../assessment/index.ts";
 import {
   PersistentLearningPlanProvider,
@@ -41,8 +42,8 @@ export interface Env {
   FIREBASE_PROJECT_ID: string;
   GEMINI_PRIMARY_MODEL?: string;
   GEMINI_VISION_MODEL?: string;
-  ZANA_LEARNING_KV?: unknown;
-  LEARNING_RECORDS_KV?: unknown;
+  ZANA_LEARNING_KV?: AssessmentKVStore;
+  LEARNING_RECORDS_KV?: AssessmentKVStore;
   ASSETS?: { fetch: (req: Request) => Promise<Response> };
 }
 
@@ -123,11 +124,8 @@ function isOriginAllowed(origin: string | null, env: Env): boolean {
   const allowed = [
     ...(env.ALLOWED_ORIGINS || "").split(","),
     "https://zana-api-worker.zana-platform.workers.dev",
-    "https://zana-app.web.app",
     "https://zana-official.web.app",
     "https://zana.krd",
-    "http://localhost:3000",
-    "http://localhost:5173",
   ]
     .map((o) => o.trim().toLowerCase().replace(/\/$/, ""))
     .filter(Boolean);

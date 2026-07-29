@@ -25,7 +25,7 @@ export class DomainEventBus {
     if (!this.handlers.has(eventType)) {
       this.handlers.set(eventType, new Set());
     }
-    this.handlers.get(eventType)!.add(handler);
+    this.handlers.get(eventType)!.add(handler as unknown as EventHandler<DomainEvent>);
   }
 
   /**
@@ -37,7 +37,7 @@ export class DomainEventBus {
   ): void {
     const set = this.handlers.get(eventType);
     if (set) {
-      set.delete(handler);
+      set.delete(handler as unknown as EventHandler<DomainEvent>);
       if (set.size === 0) {
         this.handlers.delete(eventType);
       }

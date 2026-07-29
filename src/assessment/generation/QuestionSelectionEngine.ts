@@ -1,4 +1,4 @@
-import { AssessmentQuestion, AssessmentBlueprint, QuestionType } from "../domain/AssessmentTypes.ts";
+import { AssessmentQuestion, AssessmentBlueprint } from "../domain/AssessmentTypes.ts";
 import { DifficultyLevel } from "../../learning/domain/MasteryTypes.ts";
 import { QuestionBankProvider } from "../providers/QuestionBankProvider.ts";
 
@@ -130,7 +130,7 @@ export class QuestionSelectionEngine {
     return targets;
   }
 
-  private static shuffleArray(array: any[]): void {
+  private static shuffleArray(array: unknown[]): void {
     for (let i = array.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [array[i], array[j]] = [array[j], array[i]];

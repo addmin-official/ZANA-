@@ -6,7 +6,6 @@ import {
   PartialCreditEngine,
   DifficultySelector,
   QuizTerminationPolicy,
-  AdaptiveQuizEngine,
   InMemoryAssessmentRecordProvider,
   AssessmentService,
   AssessmentBlueprint,
@@ -16,7 +15,7 @@ import {
   AssessmentStatus
 } from "./index.ts";
 import { InMemoryLearningRecordProvider } from "../learning/providers/LearningRecordProvider.ts";
-import { DifficultyLevel, MasteryStatus } from "../learning/domain/MasteryTypes.ts";
+import { DifficultyLevel } from "../learning/domain/MasteryTypes.ts";
 
 test("Assessment Intelligence - Question Bank and Answer Leak Prevention", () => {
   const provider = QuestionBankProvider.getInstance();

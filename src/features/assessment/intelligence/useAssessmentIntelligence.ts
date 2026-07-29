@@ -110,7 +110,7 @@ export function useAssessmentIntelligence(
                 explanation: "", // hidden until answer is submitted and graded
                 conceptId: firstQuestion.conceptId,
                 lessonId: firstQuestion.lessonId,
-                difficulty: (firstQuestion.difficulty?.toLowerCase() || "medium") as "easy" | "medium" | "hard",
+                difficulty: (firstQuestion.difficulty?.toLowerCase() === "hard" ? "challenging" : firstQuestion.difficulty?.toLowerCase() === "easy" ? "easy" : "standard") as AssessmentQuestion["difficulty"],
                 source: "ZANA_ORIGINAL"
               };
 
@@ -287,7 +287,7 @@ export function useAssessmentIntelligence(
                   explanation: "",
                   conceptId: nextQuestion.conceptId,
                   lessonId: nextQuestion.lessonId,
-                  difficulty: (nextQuestion.difficulty?.toLowerCase() || "medium") as "easy" | "medium" | "hard",
+                  difficulty: (nextQuestion.difficulty?.toLowerCase() === "hard" ? "challenging" : nextQuestion.difficulty?.toLowerCase() === "easy" ? "easy" : "standard") as AssessmentQuestion["difficulty"],
                   source: "ZANA_ORIGINAL"
                 };
                 updatedQuestions.push(mappedNext);

@@ -1,4 +1,3 @@
-import { Type } from "@google/genai";
 import { AssessmentQuestion, QuestionSource, QuestionType, GenerationReviewStatus } from "../domain/AssessmentTypes.ts";
 import { DifficultyLevel } from "../../learning/domain/MasteryTypes.ts";
 import { QuestionBankProvider } from "../providers/QuestionBankProvider.ts";
@@ -54,41 +53,41 @@ Ensure the output conforms exactly to the required JSON structure.
 
     const systemInstruction = "You are ZANA, an expert Kurdish Sorani curriculum alignment engine. You generate precise, educational, and license-safe mathematics and science assessment questions matching official curriculum standards of the Kurdistan region.";
 
-    const responseSchema: any = {
-      type: Type.OBJECT,
+    const responseSchema: Record<string, unknown> = {
+      type: "OBJECT",
       properties: {
-        promptKu: { type: Type.STRING, description: "The question prompt in beautiful Kurdish Sorani." },
-        promptEn: { type: Type.STRING, description: "English translation of the question." },
+        promptKu: { type: "STRING", description: "The question prompt in beautiful Kurdish Sorani." },
+        promptEn: { type: "STRING", description: "English translation of the question." },
         options: {
-          type: Type.ARRAY,
+          type: "ARRAY",
           items: {
-            type: Type.OBJECT,
+            type: "OBJECT",
             properties: {
-              id: { type: Type.STRING },
-              textKu: { type: Type.STRING }
+              id: { type: "STRING" },
+              textKu: { type: "STRING" }
             },
             required: ["id", "textKu"]
           }
         },
         correctAnswer: {
-          type: Type.OBJECT,
+          type: "OBJECT",
           properties: {
-            singleOptionId: { type: Type.STRING },
-            multipleOptionIds: { type: Type.ARRAY, items: { type: Type.STRING } },
-            trueFalseValue: { type: Type.BOOLEAN },
-            numericValue: { type: Type.NUMBER },
-            shortAnswerPatterns: { type: Type.ARRAY, items: { type: Type.STRING } }
+            singleOptionId: { type: "STRING" },
+            multipleOptionIds: { type: "ARRAY", items: { type: "STRING" } },
+            trueFalseValue: { type: "BOOLEAN" },
+            numericValue: { type: "NUMBER" },
+            shortAnswerPatterns: { type: "ARRAY", items: { type: "STRING" } }
           }
         },
-        explanationKu: { type: Type.STRING, description: "Detailed step-by-step Kurdish explanation of how to solve." },
+        explanationKu: { type: "STRING", description: "Detailed step-by-step Kurdish explanation of how to solve." },
         misconceptionSignatures: {
-          type: Type.ARRAY,
+          type: "ARRAY",
           items: {
-            type: Type.OBJECT,
+            type: "OBJECT",
             properties: {
-              optionId: { type: Type.STRING },
-              pattern: { type: Type.STRING },
-              misconceptionId: { type: Type.STRING }
+              optionId: { type: "STRING" },
+              pattern: { type: "STRING" },
+              misconceptionId: { type: "STRING" }
             },
             required: ["misconceptionId"]
           }

@@ -15,7 +15,7 @@ export class DifficultySelector {
   public static selectNextDifficulty(
     currentDifficulty: DifficultyLevel,
     lastIsCorrect: boolean,
-    consecutiveStreak: number
+    _consecutiveStreak: number
   ): DifficultyLevel {
     const currentIndex = this.DIFFICULTY_STEPS.indexOf(currentDifficulty);
     if (currentIndex === -1) return DifficultyLevel.STANDARD;

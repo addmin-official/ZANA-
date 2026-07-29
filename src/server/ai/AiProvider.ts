@@ -18,7 +18,6 @@ import {
 } from "./AiContracts.ts";
 import { buildSystemPrompt } from "../../ai/buildSystemPrompt.ts";
 import { resolvePrimaryModel, resolveVisionModel } from "../config/aiModels.ts";
-import { Type } from "@google/genai";
 
 export class ProviderAdapter {
   static async generate(params: ProviderGenerateParams): Promise<{ text: string }> {
@@ -54,10 +53,10 @@ export class ProviderAdapter {
         temperature: 0.7,
         responseMimeType: "application/json",
         responseSchema: {
-          type: Type.OBJECT,
+          type: "OBJECT",
           properties: {
-            text: { type: Type.STRING },
-            isEducational: { type: Type.BOOLEAN },
+            text: { type: "STRING" },
+            isEducational: { type: "BOOLEAN" },
           },
           required: ["text", "isEducational"],
         },
@@ -123,11 +122,11 @@ ${historySummary.join("\n")}
         systemInstruction,
         responseMimeType: "application/json",
         responseSchema: {
-          type: Type.OBJECT,
+          type: "OBJECT",
           properties: {
-            question: { type: Type.STRING },
-            feedback: { type: Type.STRING },
-            isCorrect: { type: Type.BOOLEAN },
+            question: { type: "STRING" },
+            feedback: { type: "STRING" },
+            isCorrect: { type: "BOOLEAN" },
           },
           required: ["question", "feedback", "isCorrect"],
         },
@@ -174,9 +173,9 @@ ${historySummary.join("\n")}
         systemInstruction,
         responseMimeType: "application/json",
         responseSchema: {
-          type: Type.OBJECT,
+          type: "OBJECT",
           properties: {
-            recommendation: { type: Type.STRING },
+            recommendation: { type: "STRING" },
           },
           required: ["recommendation"],
         },
@@ -225,10 +224,10 @@ ${historySummary.join("\n")}
         temperature: 0.7,
         responseMimeType: "application/json",
         responseSchema: {
-          type: Type.OBJECT,
+          type: "OBJECT",
           properties: {
-            text: { type: Type.STRING },
-            isEducational: { type: Type.BOOLEAN },
+            text: { type: "STRING" },
+            isEducational: { type: "BOOLEAN" },
           },
           required: ["text", "isEducational"],
         },
@@ -286,15 +285,15 @@ ${historySummary.join("\n")}
         systemInstruction,
         responseMimeType: "application/json",
         responseSchema: {
-          type: Type.OBJECT,
+          type: "OBJECT",
           properties: {
-            extractedText: { type: Type.STRING },
-            detectedSubject: { type: Type.STRING },
-            responseText: { type: Type.STRING },
-            confidence: { type: Type.STRING, enum: ["high", "medium", "low"] },
+            extractedText: { type: "STRING" },
+            detectedSubject: { type: "STRING" },
+            responseText: { type: "STRING" },
+            confidence: { type: "STRING", enum: ["high", "medium", "low"] },
             warnings: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
+              type: "ARRAY",
+              items: { type: "STRING" },
             },
           },
           required: ["extractedText", "detectedSubject", "responseText", "confidence", "warnings"],

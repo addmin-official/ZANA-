@@ -1,4 +1,4 @@
-import { AssessmentQuestion, AnswerSubmission, QuestionType } from "../domain/AssessmentTypes.ts";
+import { AssessmentQuestion, AnswerSubmission } from "../domain/AssessmentTypes.ts";
 
 export class FeedbackGenerator {
   /**

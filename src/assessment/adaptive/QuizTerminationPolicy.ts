@@ -1,5 +1,4 @@
 import { QuestionAttempt } from "../domain/AssessmentTypes.ts";
-import { DifficultyLevel } from "../../learning/domain/MasteryTypes.ts";
 
 export class QuizTerminationPolicy {
   private static readonly MIN_QUESTIONS = 5;
@@ -25,24 +24,10 @@ export class QuizTerminationPolicy {
       };
     }
 
-    // Analyze recent attempts for confidence-based termination
-    const recentAttempts = attempts.slice(-3); // last 3 attempts
-
-    // Heuristic A: High-Confidence Mastery (3 consecutive correct at CHALLENGING/ADVANCED)
-    const consecutiveHighCorrect = recentAttempts.every(att => 
-      att.isCorrect && 
-      (att.submission.responseTimeMs < 45000) && // exclude speed anomalies
-      (att.id.includes("challenging") || att.id.includes("advanced") || true) // We can check difficulty directly if stored
-    );
-    // Let's check difficulty properties inside attempts or question details. Since we have QuestionAttempt,
-    // let's fetch the question difficulty via some logic or check the reasons.
-    // If the last 3 questions were answered correctly, and they are high difficulty:
-    const allCorrect = recentAttempts.every(att => att.isCorrect && att.partialCreditScore === 1.0);
+    // Heuristic A: High-Confidence Mastery
     const last3CorrectStreak = attempts.slice(-3).every(att => att.isCorrect);
 
     if (last3CorrectStreak) {
-      // If we are at high difficulty (CHALLENGING or ADVANCED), terminate with mastery
-      // To keep it simple and robust, if they have 4 correct in a row or 3 high correct:
       return {
         terminate: true,
         reasonKu: "جێگیربوونی ئاست: تۆ بە سەرکەوتوویی لێهاتوویی تەواوت نیشاندا لەم بابەتەدا.",
