@@ -1293,10 +1293,22 @@ export default {
     } catch (err: unknown) {
       const category = classifyError(err);
       const correlationId = crypto.randomUUID();
+      const missingBinding = !env.GEMINI_API_KEY ? "GEMINI_API_KEY" : undefined;
+      let upstreamStatus: number | undefined = undefined;
+      let errorCode: string | undefined = undefined;
+      if (err && typeof err === "object") {
+        const errObj = err as Record<string, unknown>;
+        if (typeof errObj.status === "number") upstreamStatus = errObj.status;
+        else if (typeof errObj.code === "number") upstreamStatus = errObj.code;
+        if (typeof errObj.name === "string") errorCode = errObj.name;
+      }
       console.error("[AI Worker Diagnostic]", {
         correlationId,
         pathname,
         category,
+        upstreamStatus,
+        errorCode,
+        missingBinding,
         hasApiKey: Boolean(env.GEMINI_API_KEY),
         hasModelOverride: Boolean(env.GEMINI_PRIMARY_MODEL || env.GEMINI_VISION_MODEL),
         errorName: err instanceof Error ? err.name : "UnknownError",

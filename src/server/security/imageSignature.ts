@@ -1,7 +1,7 @@
 /**
  * Lightweight server-side magic-byte signature validator for JPEG, PNG, and WebP.
  */
-export function validateImageSignature(buffer: Buffer, declaredMimeType: string): boolean {
+export function validateImageSignature(buffer: Uint8Array, declaredMimeType: string): boolean {
   if (!buffer || buffer.length === 0) {
     return false;
   }

@@ -173,7 +173,11 @@ export function parseAssessmentRequest(body: unknown): AssessmentRequest {
 export function parseReportRequest(body: unknown): ReportRequest {
   if (!isRecord(body)) throw new Error("داواکارییەکە تێکچووە: Request body must be a JSON object");
 
-  const profileObj = isRecord(body.profile) ? body.profile : {};
+  if (!isRecord(body.profile)) {
+    throw new Error("پڕۆفایلی قوتابی (profile) دیاری نەکراوە یان کەموکوڕی تێدایە.");
+  }
+
+  const profileObj = body.profile;
   const profile: StudentProfileContext = {
     name: typeof profileObj.name === "string" ? profileObj.name.slice(0, 100) : undefined,
     grade: typeof profileObj.grade === "string" ? profileObj.grade.slice(0, 20) : undefined,

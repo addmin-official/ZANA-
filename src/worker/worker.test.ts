@@ -367,6 +367,45 @@ test("Worker - missing payload on /api/study/ask returns 400 with correct Kurdis
   assert.strictEqual(body.error, "داواکارییەکە کەموکوڕی تێدایە.");
 });
 
+test("Worker - missing payload on /api/report returns 400 without calling AI service", async () => {
+  const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/report", {
+    method: "POST",
+    headers: {
+      Origin: "https://zana.krd",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({}), // Missing profile
+  });
+
+  const env = createMockEnv();
+  const res = await worker.fetch(req, env);
+
+  assert.strictEqual(res.status, 400);
+  const body = (await res.json()) as any;
+  assert.ok(body.error.includes("پڕۆفایلی قوتابی") || body.error.includes("زانیارییەکان تەواو نین"));
+});
+
+test("Worker - validateImageSignature handles Uint8Array correctly for JPEG, PNG, WebP", async () => {
+  const { validateImageSignature } = await import("../server/security/imageSignature.ts");
+
+  const jpegBytes = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
+  assert.strictEqual(validateImageSignature(jpegBytes, "image/jpeg"), true);
+  assert.strictEqual(validateImageSignature(jpegBytes, "image/jpg"), true);
+
+  const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  assert.strictEqual(validateImageSignature(pngBytes, "image/png"), true);
+
+  const webpBytes = new Uint8Array([
+    0x52, 0x49, 0x46, 0x46, // RIFF
+    0x00, 0x00, 0x00, 0x00,
+    0x57, 0x45, 0x42, 0x50, // WEBP
+  ]);
+  assert.strictEqual(validateImageSignature(webpBytes, "image/webp"), true);
+
+  const invalidBytes = new Uint8Array([0x00, 0x00, 0x00, 0x00]);
+  assert.strictEqual(validateImageSignature(invalidBytes, "image/png"), false);
+});
+
 test("Worker - error classification mapping for 401, 403, 404, 429, 500, timeout, unsupported parameter", () => {
   assert.strictEqual(classifyError(new Error("GEMINI_API_KEY missing")), "missing_credentials");
   assert.strictEqual(classifyError(new Error("HTTP 401 Unauthorized")), "invalid_credentials");

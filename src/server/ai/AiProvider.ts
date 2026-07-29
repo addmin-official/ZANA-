@@ -19,6 +19,16 @@ import {
 import { buildSystemPrompt } from "../../ai/buildSystemPrompt.ts";
 import { resolvePrimaryModel, resolveVisionModel } from "../config/aiModels.ts";
 
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 8192;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, chunk as unknown as number[]);
+  }
+  return btoa(binary);
+}
+
 export class ProviderAdapter {
   static async generate(params: ProviderGenerateParams): Promise<{ text: string }> {
     return GeminiProvider.generate(params);
@@ -247,7 +257,7 @@ ${historySummary.join("\n")}
 
   static async vision(apiKey: string, req: VisionRequest, env?: unknown): Promise<VisionResponse> {
     const model = resolveVisionModel(env as Record<string, unknown> | undefined);
-    const base64Data = Buffer.from(req.imageBytes).toString("base64");
+    const base64Data = uint8ArrayToBase64(req.imageBytes);
 
     const systemInstruction = buildSystemPrompt({
       studentName: req.context.studentId || "قوتابی",
