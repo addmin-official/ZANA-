@@ -124,7 +124,6 @@ function isOriginAllowed(origin: string | null, env: Env): boolean {
   const allowed = [
     ...(env.ALLOWED_ORIGINS || "").split(","),
     "https://zana-api-worker.zana-platform.workers.dev",
-    "https://zana-official.web.app",
     "https://zana.krd",
   ]
     .map((o) => o.trim().toLowerCase().replace(/\/$/, ""))

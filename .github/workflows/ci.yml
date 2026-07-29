@@ -332,12 +332,12 @@ jobs:
       - name: Verify Worker Health & CORS
         env:
           CLEANED_URL: ${{ secrets.VITE_API_BASE_URL }}
-          CANONICAL_FRONTEND_ORIGIN: ${{ secrets.ZANA_FRONTEND_ORIGIN || 'https://zana-app.web.app' }}
+          CANONICAL_FRONTEND_ORIGIN: ${{ secrets.ZANA_FRONTEND_ORIGIN || 'https://zana.krd' }}
         run: |
           set -euo pipefail
           
           CLEANED_URL=$(echo "$CLEANED_URL" | sed 's/\/$//')
-          FRONTEND_ORIGIN="${CANONICAL_FRONTEND_ORIGIN:-https://zana-app.web.app}"
+          FRONTEND_ORIGIN="${CANONICAL_FRONTEND_ORIGIN:-https://zana.krd}"
           export CLEANED_URL FRONTEND_ORIGIN
           echo "Verifying live Cloudflare Worker at: $CLEANED_URL"
           echo "Using canonical frontend origin: $FRONTEND_ORIGIN"
@@ -550,7 +550,7 @@ jobs:
       - name: Run Production Smoke Tests
         env:
           API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
-          ZANA_FRONTEND_ORIGIN: ${{ secrets.ZANA_FRONTEND_ORIGIN || 'https://zana-app.web.app' }}
+          ZANA_FRONTEND_ORIGIN: ${{ secrets.ZANA_FRONTEND_ORIGIN || 'https://zana.krd' }}
         run: |
           set -euo pipefail
           npm run test:smoke 2>&1 | tee smoke-test-report.log

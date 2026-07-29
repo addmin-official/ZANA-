@@ -1,7 +1,7 @@
 import { readFileSync } from 'fs';
 
 const API_BASE_URL = process.env.API_BASE_URL || process.env.VITE_API_BASE_URL;
-const FRONTEND_ORIGIN = process.env.ZANA_FRONTEND_ORIGIN || process.env.FRONTEND_ORIGIN || 'https://zana-official.web.app';
+const FRONTEND_ORIGIN = process.env.ZANA_FRONTEND_ORIGIN || process.env.FRONTEND_ORIGIN || 'https://zana.krd';
 
 if (!API_BASE_URL) {
   console.error("::error::ERROR: API_BASE_URL or VITE_API_BASE_URL must be specified as an environment variable.");
