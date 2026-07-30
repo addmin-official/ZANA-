@@ -4,8 +4,17 @@ import { test } from "node:test";
 import assert from "node:assert";
 import worker, { classifyError, getClientSafeErrorMessage, Env } from "./index.ts";
 
+interface ApiJsonResponse {
+  ok?: boolean;
+  status?: string;
+  service?: string;
+  error?: string;
+  stack?: string;
+  apiKey?: string;
+}
+
 // Helper to create a mock Env
-const createMockEnv = (assetsMock?: any): Env => ({
+const createMockEnv = (assetsMock?: { fetch: (req: Request) => Promise<Response> }): Env => ({
   GEMINI_API_KEY: "test-api-key",
   ALLOWED_ORIGINS: "https://zana.krd",
   FIREBASE_PROJECT_ID: "gen-lang-client-0009572581",
@@ -28,7 +37,7 @@ test("Worker - GET /api/health with approved Origin returns 200 and exact CORS o
   assert.strictEqual(res.headers.get("location"), null); // zero redirects
   assert.strictEqual(res.headers.get("access-control-allow-origin"), "https://zana.krd");
 
-  const body = (await res.json()) as any;
+  const body = (await res.json()) as ApiJsonResponse;
   assert.strictEqual(body.ok, true);
   assert.strictEqual(body.status, "ok");
   assert.strictEqual(body.service, "zana-api-worker");
@@ -44,7 +53,7 @@ test("Worker - GET /api/health without Origin header returns 200 without CORS he
 
   assert.strictEqual(res.status, 200);
   assert.strictEqual(res.headers.get("access-control-allow-origin"), null);
-  const body = (await res.json()) as any;
+  const body = (await res.json()) as ApiJsonResponse;
   assert.strictEqual(body.ok, true);
 });
 
@@ -61,7 +70,7 @@ test("Worker - GET /api/health with unapproved Origin returns 200 health without
 
   assert.strictEqual(res.status, 200);
   assert.strictEqual(res.headers.get("access-control-allow-origin"), null);
-  const body = (await res.json()) as any;
+  const body = (await res.json()) as ApiJsonResponse;
   assert.strictEqual(body.ok, true);
 });
 
@@ -92,7 +101,8 @@ test("Worker - GET /api/health is unaffected by missing GEMINI_API_KEY, JWT_SECR
   });
 
   // Empty env without GEMINI_API_KEY, JWT_SECRET, or KV bindings
-  const emptyEnv: any = {
+  const emptyEnv: Env = {
+    GEMINI_API_KEY: "",
     ALLOWED_ORIGINS: "https://zana.krd",
     FIREBASE_PROJECT_ID: "gen-lang-client-0009572581",
   };
@@ -100,7 +110,7 @@ test("Worker - GET /api/health is unaffected by missing GEMINI_API_KEY, JWT_SECR
   const res = await worker.fetch(req, emptyEnv);
 
   assert.strictEqual(res.status, 200);
-  const body = (await res.json()) as any;
+  const body = (await res.json()) as ApiJsonResponse;
   assert.strictEqual(body.ok, true);
 });
 
@@ -117,7 +127,7 @@ test("Worker - GET /api/health/ with trailing slash normalizes to /api/health an
 
   assert.strictEqual(res.status, 200);
   assert.strictEqual(res.headers.get("location"), null);
-  const body = (await res.json()) as any;
+  const body = (await res.json()) as ApiJsonResponse;
   assert.strictEqual(body.ok, true);
 });
 
@@ -135,7 +145,7 @@ test("Worker - Protected API route rejects unapproved Origin with 403", async ()
   const res = await worker.fetch(req, env);
 
   assert.strictEqual(res.status, 403);
-  const body = (await res.json()) as any;
+  const body = (await res.json()) as ApiJsonResponse;
   assert.strictEqual(body.error, "Disallowed Origin");
 });
 
@@ -162,7 +172,7 @@ test("Worker - Protected API route rejects denied Firebase Hosting and localhost
     assert.strictEqual(res.status, 403);
     assert.strictEqual(res.headers.get("access-control-allow-origin"), null);
     assert.notStrictEqual(res.headers.get("access-control-allow-origin"), "*");
-    const body = (await res.json()) as any;
+    const body = (await res.json()) as ApiJsonResponse;
     assert.strictEqual(body.error, "Disallowed Origin");
   }
 });
@@ -201,7 +211,7 @@ test("Worker - GET /api/health is not captured by SPA fallback", async () => {
   const res = await worker.fetch(req, env);
 
   assert.strictEqual(res.status, 200);
-  const body = (await res.json()) as any;
+  const body = (await res.json()) as ApiJsonResponse;
   assert.strictEqual(body.ok, true);
   assert.notStrictEqual(body, "index html file content");
 });
@@ -219,7 +229,7 @@ test("Worker - unknown /api route returns JSON 404", async () => {
 
   assert.strictEqual(res.status, 404);
   assert.strictEqual(res.headers.get("content-type"), "application/json");
-  const body = (await res.json()) as any;
+  const body = (await res.json()) as ApiJsonResponse;
   assert.ok(body.error);
 });
 
@@ -239,7 +249,7 @@ test("Worker - missing static asset returns real 404", async () => {
   const res = await worker.fetch(req, env);
 
   assert.strictEqual(res.status, 404);
-  const body = (await res.json()) as any;
+  const body = (await res.json()) as ApiJsonResponse;
   assert.ok(body.error); // returns JSON 404 instead of SPA html
 });
 
@@ -282,7 +292,7 @@ test("Worker - Canonical URL / slash normalization is correct", async () => {
   const res = await worker.fetch(req, env);
 
   assert.strictEqual(res.status, 200);
-  const body = (await res.json()) as any;
+  const body = (await res.json()) as ApiJsonResponse;
   assert.strictEqual(body.ok, true);
 });
 
@@ -316,7 +326,7 @@ test("Worker - missing GEMINI_API_KEY on AI endpoint returns safe Kurdish error 
     }),
   });
 
-  const envWithoutKey: any = {
+  const envWithoutKey: Env = {
     ALLOWED_ORIGINS: "https://zana.krd",
     FIREBASE_PROJECT_ID: "gen-lang-client-0009572581",
     GEMINI_API_KEY: "",
@@ -324,7 +334,7 @@ test("Worker - missing GEMINI_API_KEY on AI endpoint returns safe Kurdish error 
 
   const res = await worker.fetch(req, envWithoutKey);
   assert.strictEqual(res.status, 500);
-  const body = (await res.json()) as any;
+  const body = (await res.json()) as ApiJsonResponse;
   assert.strictEqual(body.error, "خزمەتگوزارییەکە لە ئێستادا بەردەست نییە. تکایە دواتر هەوڵ بدەرەوە.");
   // Ensure no secret text or stack trace is exposed
   assert.strictEqual(body.stack, undefined);
@@ -345,7 +355,7 @@ test("Worker - missing payload on /api/chat returns 400 with correct Kurdish spe
   const res = await worker.fetch(req, env);
 
   assert.strictEqual(res.status, 400);
-  const body = (await res.json()) as any;
+  const body = (await res.json()) as ApiJsonResponse;
   assert.strictEqual(body.error, "داواکارییەکە کەموکوڕی تێدایە.");
 });
 
@@ -363,7 +373,7 @@ test("Worker - missing payload on /api/study/ask returns 400 with correct Kurdis
   const res = await worker.fetch(req, env);
 
   assert.strictEqual(res.status, 400);
-  const body = (await res.json()) as any;
+  const body = (await res.json()) as ApiJsonResponse;
   assert.strictEqual(body.error, "داواکارییەکە کەموکوڕی تێدایە.");
 });
 
@@ -381,8 +391,8 @@ test("Worker - missing payload on /api/report returns 400 without calling AI ser
   const res = await worker.fetch(req, env);
 
   assert.strictEqual(res.status, 400);
-  const body = (await res.json()) as any;
-  assert.ok(body.error.includes("پڕۆفایلی قوتابی") || body.error.includes("زانیارییەکان تەواو نین"));
+  const body = (await res.json()) as ApiJsonResponse;
+  assert.ok(body.error && (body.error.includes("پڕۆفایلی قوتابی") || body.error.includes("زانیارییەکان تەواو نین")));
 });
 
 test("Worker - validateImageSignature handles Uint8Array correctly for JPEG, PNG, WebP", async () => {
@@ -495,7 +505,7 @@ test("Worker - No API key or prompt leakage on error responses", async () => {
     }),
   });
 
-  const envWithSecretKey: any = {
+  const envWithSecretKey: Env = {
     ALLOWED_ORIGINS: "https://zana.krd",
     FIREBASE_PROJECT_ID: "gen-lang-client-0009572581",
     GEMINI_API_KEY: "secret_api_key_123456789_do_not_leak",

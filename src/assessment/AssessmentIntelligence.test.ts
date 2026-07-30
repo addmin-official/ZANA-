@@ -12,7 +12,8 @@ import {
   AssessmentType,
   QuestionType,
   AnswerSubmission,
-  AssessmentStatus
+  AssessmentStatus,
+  QuestionAttempt
 } from "./index.ts";
 import { InMemoryLearningRecordProvider } from "../learning/providers/LearningRecordProvider.ts";
 import { DifficultyLevel } from "../learning/domain/MasteryTypes.ts";
@@ -29,8 +30,9 @@ test("Assessment Intelligence - Question Bank and Answer Leak Prevention", () =>
   const publicQ = provider.toPublicQuestion(firstQ);
 
   // Correct answer definitions must not be present in public representation
-  assert.strictEqual((publicQ as any).correctAnswer, undefined, "Answer key must be stripped!");
-  assert.strictEqual((publicQ as any).explanationKu, undefined, "Explanation must be stripped!");
+  const pubRecord = publicQ as unknown as Record<string, unknown>;
+  assert.strictEqual(pubRecord.correctAnswer, undefined, "Answer key must be stripped!");
+  assert.strictEqual(pubRecord.explanationKu, undefined, "Explanation must be stripped!");
 });
 
 test("Assessment Intelligence - Authoritative Server Grading and Misconception Mapping", () => {
@@ -111,12 +113,12 @@ test("Assessment Intelligence - Adaptive Stepping and Early Stopping Pathways", 
   assert.strictEqual(stepDown, DifficultyLevel.EASY);
 
   // Test early stopping policy triggers
-  const mockAttempts: any[] = [
-    { isCorrect: true, maxScore: 1.0, partialCreditScore: 1.0, id: "q1_standard", submission: { responseTimeMs: 1000 } },
-    { isCorrect: true, maxScore: 1.0, partialCreditScore: 1.0, id: "q2_challenging", submission: { responseTimeMs: 1000 } },
-    { isCorrect: true, maxScore: 1.0, partialCreditScore: 1.0, id: "q3_challenging", submission: { responseTimeMs: 1000 } },
-    { isCorrect: true, maxScore: 1.0, partialCreditScore: 1.0, id: "q4_advanced", submission: { responseTimeMs: 1000 } },
-    { isCorrect: true, maxScore: 1.0, partialCreditScore: 1.0, id: "q5_advanced", submission: { responseTimeMs: 1000 } }
+  const mockAttempts: QuestionAttempt[] = [
+    { id: "1", questionId: "q1_standard", isCorrect: true, maxScore: 1.0, partialCreditScore: 1.0, gradedAt: "2026-01-01T00:00:00Z", reasonCodes: [], feedbackKu: "تەواوە", submission: { questionId: "q1_standard", responseTimeMs: 1000 } },
+    { id: "2", questionId: "q2_challenging", isCorrect: true, maxScore: 1.0, partialCreditScore: 1.0, gradedAt: "2026-01-01T00:00:00Z", reasonCodes: [], feedbackKu: "تەواوە", submission: { questionId: "q2_challenging", responseTimeMs: 1000 } },
+    { id: "3", questionId: "q3_challenging", isCorrect: true, maxScore: 1.0, partialCreditScore: 1.0, gradedAt: "2026-01-01T00:00:00Z", reasonCodes: [], feedbackKu: "تەواوە", submission: { questionId: "q3_challenging", responseTimeMs: 1000 } },
+    { id: "4", questionId: "q4_advanced", isCorrect: true, maxScore: 1.0, partialCreditScore: 1.0, gradedAt: "2026-01-01T00:00:00Z", reasonCodes: [], feedbackKu: "تەواوە", submission: { questionId: "q4_advanced", responseTimeMs: 1000 } },
+    { id: "5", questionId: "q5_advanced", isCorrect: true, maxScore: 1.0, partialCreditScore: 1.0, gradedAt: "2026-01-01T00:00:00Z", reasonCodes: [], feedbackKu: "تەواوە", submission: { questionId: "q5_advanced", responseTimeMs: 1000 } }
   ];
 
   const termDecision = QuizTerminationPolicy.shouldTerminate(mockAttempts);

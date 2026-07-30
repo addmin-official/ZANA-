@@ -14,28 +14,30 @@ test("Firebase Config - isFirebaseConfigured validations", () => {
     appId: "1:123456789:web:abcdef",
     measurementId: "",
   };
-  assert.strictEqual(isFirebaseConfigured(validCfg as any), true);
+  type FirebaseConfigParam = Parameters<typeof isFirebaseConfigured>[0];
+
+  assert.strictEqual(isFirebaseConfigured(validCfg as FirebaseConfigParam), true);
 
   // 2. Missing API key
   const missingApiKey = {
     apiKey: "",
     projectId: "valid-project-id",
   };
-  assert.strictEqual(isFirebaseConfigured(missingApiKey as any), false);
+  assert.strictEqual(isFirebaseConfigured(missingApiKey as FirebaseConfigParam), false);
 
   // 3. Missing project ID
   const missingProjectId = {
     apiKey: "AIzaSyValidApiKey1234567890abcdef",
     projectId: "",
   };
-  assert.strictEqual(isFirebaseConfigured(missingProjectId as any), false);
+  assert.strictEqual(isFirebaseConfigured(missingProjectId as FirebaseConfigParam), false);
 
   // 4. Placeholder configuration
   const placeholderCfg = {
     apiKey: "AIzaSyFakeKeyForTestEnvironmentOnly12345",
     projectId: "valid-project-id",
   };
-  assert.strictEqual(isFirebaseConfigured(placeholderCfg as any), false);
+  assert.strictEqual(isFirebaseConfigured(placeholderCfg as FirebaseConfigParam), false);
 
   // 5. Optional measurement ID absent
   const noMeasurementId = {
@@ -43,7 +45,7 @@ test("Firebase Config - isFirebaseConfigured validations", () => {
     projectId: "valid-project-id",
     appId: "1:123456789:web:abcdef",
   };
-  assert.strictEqual(isFirebaseConfigured(noMeasurementId as any), true);
+  assert.strictEqual(isFirebaseConfigured(noMeasurementId as FirebaseConfigParam), true);
 
   // 6. No secret logged
   let loggedOutput = "";
@@ -51,7 +53,7 @@ test("Firebase Config - isFirebaseConfigured validations", () => {
   console.log = (...args: unknown[]) => {
     loggedOutput += args.join(" ");
   };
-  isFirebaseConfigured(validCfg as any);
+  isFirebaseConfigured(validCfg as FirebaseConfigParam);
   console.log = originalLog;
   assert.strictEqual(loggedOutput.includes("AIzaSyValidApiKey1234567890abcdef"), false);
 });
