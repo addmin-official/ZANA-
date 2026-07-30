@@ -1,15 +1,12 @@
 {
   "$schema": "https://json.schemastore.org/wrangler.json",
   "name": "zana-api-worker",
-  "main": "src/worker/index.ts",
+  "main": "src/worker/secure-entry.ts",
   "compatibility_date": "2024-04-03",
-  "compatibility_flags": [
-    "nodejs_compat"
-  ],
   "vars": {
     "ALLOWED_ORIGINS": "https://zana.krd,https://zana-api-worker.zana-platform.workers.dev",
-    "GEMINI_PRIMARY_MODEL": "gemini-3.6-flash",
-    "GEMINI_VISION_MODEL": "gemini-3.6-flash"
+    "GEMINI_PRIMARY_MODEL": "gemini-2.5-flash",
+    "GEMINI_VISION_MODEL": "gemini-2.5-flash"
   },
   "assets": {
     "directory": "./dist/client",
