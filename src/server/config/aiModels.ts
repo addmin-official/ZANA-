@@ -1,7 +1,7 @@
 export const AI_CONFIG = {
   apiBaseUrl: "https://generativelanguage.googleapis.com",
-  primaryModel: "gemini-3.6-flash",
-  visionModel: "gemini-3.6-flash",
+  primaryModel: "gemini-2.5-flash",
+  visionModel: "gemini-2.5-flash",
   timeoutMs: 30000,
   retryPolicy: {
     maxRetries: 2,
@@ -37,12 +37,10 @@ export function normalizeModel(
 
   let cleaned = model.trim();
 
-  // Strip surrounding quotes
   if ((cleaned.startsWith('"') && cleaned.endsWith('"')) || (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
     cleaned = cleaned.slice(1, -1).trim();
   }
 
-  // Strip repeated prefixes
   while (cleaned.startsWith("models/")) {
     cleaned = cleaned.substring(7).trim();
   }
@@ -50,7 +48,6 @@ export function normalizeModel(
     cleaned = cleaned.substring(7).trim();
   }
 
-  // Check for invalid format (URL, slashes, spaces, path traversal, control chars)
   const isInvalid =
     !cleaned ||
     cleaned.includes("://") ||
