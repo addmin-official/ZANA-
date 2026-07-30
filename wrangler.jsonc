@@ -7,7 +7,9 @@
     "nodejs_compat"
   ],
   "vars": {
-    "ALLOWED_ORIGINS": "https://zana.krd,https://zana-api-worker.zana-platform.workers.dev"
+    "ALLOWED_ORIGINS": "https://zana.krd,https://zana-api-worker.zana-platform.workers.dev",
+    "GEMINI_PRIMARY_MODEL": "gemini-3.6-flash",
+    "GEMINI_VISION_MODEL": "gemini-3.6-flash"
   },
   "assets": {
     "directory": "./dist/client",

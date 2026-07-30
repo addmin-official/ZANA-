@@ -293,8 +293,14 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.VITE_GEMINI_API_KEY }}
         run: |
           set -euo pipefail
+          if [ -n "${GEMINI_API_KEY:-}" ]; then
+            echo "$GEMINI_API_KEY" | npx wrangler secret put GEMINI_API_KEY --config wrangler.production.json
+          else
+            echo "::warning::GEMINI_API_KEY secret is not defined in environment"
+          fi
           npx wrangler deploy --config wrangler.production.json 2>&1 | tee wrangler-deploy.log
 
       - name: Parse Worker Deployment Metadata
@@ -469,6 +475,43 @@ jobs:
           fi
 
           echo "Worker response verified successfully!"
+
+      - name: Verify Production Provider Preflight
+        env:
+          CLEANED_URL: ${{ secrets.VITE_API_BASE_URL }}
+          CANONICAL_FRONTEND_ORIGIN: ${{ secrets.ZANA_FRONTEND_ORIGIN || 'https://zana.krd' }}
+        run: |
+          set -euo pipefail
+          CLEANED_URL=$(echo "$CLEANED_URL" | sed 's/\/$//')
+          FRONTEND_ORIGIN="${CANONICAL_FRONTEND_ORIGIN:-https://zana.krd}"
+          echo "Verifying production AI provider preflight at ${CLEANED_URL}/api/provider/preflight..."
+          
+          PREFLIGHT_FILE=$(mktemp)
+          HTTP_STATUS=$(curl --silent --show-error \
+            --connect-timeout 10 \
+            --max-time 30 \
+            -H "Origin: $FRONTEND_ORIGIN" \
+            -o "$PREFLIGHT_FILE" \
+            -w "%{http_code}" \
+            "${CLEANED_URL}/api/provider/preflight")
+          
+          echo "Provider Preflight Status: $HTTP_STATUS"
+          echo "Response Excerpt:"
+          cat "$PREFLIGHT_FILE"
+          echo ""
+
+          if [ "$HTTP_STATUS" -ne 200 ]; then
+            echo "::error::Production provider preflight failed with HTTP status $HTTP_STATUS. GEMINI_API_KEY may be missing or model unavailable."
+            exit 1
+          fi
+
+          OK_VAL=$(jq -r '.ok' "$PREFLIGHT_FILE" 2>/dev/null || echo "")
+          if [ "$OK_VAL" != "true" ]; then
+            echo "::error::Provider preflight returned ok=false"
+            exit 1
+          fi
+
+          echo "Production provider preflight check PASSED successfully!"
 
       - name: Verify Production Exposure Security
         env:

@@ -1,5 +1,6 @@
 import { ProviderAdapter } from "../server/ai/AiProvider.ts";
 import { classifyError, getClientSafeErrorMessage, type SafeErrorCategory } from "../server/ai/AiErrors.ts";
+import { resolvePrimaryModel } from "../server/config/aiModels.ts";
 export { classifyError, getClientSafeErrorMessage, type SafeErrorCategory };
 import { PersistentLearningRecordProvider } from "../learning/providers/LearningRecordProvider.ts";
 import { AdaptiveLearningEngine } from "../learning/engine/AdaptiveLearningEngine.ts";
@@ -396,6 +397,55 @@ export default {
           }),
           { status: 200, headers: responseHeaders }
         );
+      }
+    }
+
+    // Production Provider Preflight endpoint
+    if (pathname === "/api/provider/preflight") {
+      if (request.method === "GET" || request.method === "POST") {
+        const responseHeaders = getCorsHeaders(origin, env);
+        responseHeaders.set("Content-Type", "application/json");
+
+        if (!env.GEMINI_API_KEY || !env.GEMINI_API_KEY.trim()) {
+          return new Response(
+            JSON.stringify({ ok: false, status: "error", error: "GEMINI_API_KEY missing" }),
+            { status: 503, headers: responseHeaders }
+          );
+        }
+
+        try {
+          const model = resolvePrimaryModel(env);
+          const result = await ProviderAdapter.generate({
+            apiKey: env.GEMINI_API_KEY,
+            model,
+            contents: "ping",
+            pathname: "/api/provider/preflight",
+          });
+
+          if (!result.text) {
+            throw new Error("Empty response text from provider preflight");
+          }
+
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              status: "healthy",
+              model,
+            }),
+            { status: 200, headers: responseHeaders }
+          );
+        } catch (err: unknown) {
+          const category = classifyError(err);
+          return new Response(
+            JSON.stringify({
+              ok: false,
+              status: "error",
+              category,
+              error: "Provider preflight check failed",
+            }),
+            { status: 503, headers: responseHeaders }
+          );
+        }
       }
     }
 
