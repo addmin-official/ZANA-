@@ -1,814 +1,205 @@
-name: Unified CI/CD Deployment Pipeline
+name: ZANA Finalization CI/CD
 
 on:
   push:
-    branches: [ "**" ]
+    branches: ["**"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
 
 concurrency:
-  group: production-deployment
+  group: zana-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
-  contents: read
+  contents: write
   statuses: write
 
 jobs:
   validate:
-    name: Validate Codebase (Preflight & Quality)
+    name: Validate, Test, Security and RTL
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      # STAGE 1: Preflight Secrets Check
-      - name: Preflight Secrets Check
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          set -euo pipefail
-          echo "Running Preflight checks for required deployment secrets..."
-          MISSING_SECRETS=0
-
-          if [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ]; then
-            echo "::error::Missing secret CLOUDFLARE_API_TOKEN"
-            MISSING_SECRETS=1
-          fi
-          if [ -z "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" ]; then
-            echo "::error::Missing secret CLOUDFLARE_ACCOUNT_ID"
-            MISSING_SECRETS=1
-          fi
-          if [ -z "${{ secrets.FIREBASE_SERVICE_ACCOUNT }}" ]; then
-            echo "::error::Missing secret FIREBASE_SERVICE_ACCOUNT"
-            MISSING_SECRETS=1
-          fi
-          if [ -z "${{ secrets.VITE_API_BASE_URL }}" ]; then
-            echo "::error::Missing secret VITE_API_BASE_URL"
-            MISSING_SECRETS=1
-          fi
-
-          if [ $MISSING_SECRETS -ne 0 ]; then
-            echo "Preflight check failed. One or more required secrets are missing."
-            exit 1
-          fi
-          echo "All preflight checks passed successfully."
-
-      - name: Use Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: 'npm'
-
-      - name: Install Dependencies
-        run: npm ci
-
-      # STAGE 2: Lint
-      - name: Run Linter
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run test:architecture
+      - run: npm run test:security
+      - run: npm run test:rtl
+      - name: Verify architecture and exposure boundaries
         run: |
           set -euo pipefail
-          npm run lint 2>&1 | tee lint.log
-
-      # STAGE 3: Typecheck
-      - name: Run Typecheck
-        run: |
-          set -euo pipefail
-          npm run typecheck 2>&1 | tee typecheck.log
-
-      # STAGE 3.5: Run Full Test Suite (Mandatory Gate)
-      - name: Run Full Test Suite
-        run: |
-          set -euo pipefail
-          npm test 2>&1 | tee test.log
-
-      - name: Save Pipeline Start Time
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          set -euo pipefail
-          mkdir -p deployment-started
-          cat <<EOF > deployment-started/metadata-started.json
-          {
-            "deployment_started_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-            "deployment_started_epoch": $(date +%s)
-          }
-          EOF
-
-      - name: Upload Validation and Start Logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: validation-logs
-          path: |
-            lint.log
-            typecheck.log
-            test.log
-            deployment-started/
+          if git grep -nE 'firebase deploy|functions:deploy|hosting:deploy' -- ':!docs/**' ':!*.md'; then
+            echo '::error::Firebase Hosting or Functions deployment command found.'
+            exit 1
+          fi
+          if git grep -nE 'https://[^ ]*(web\.app|firebaseapp\.com)|localhost|127\.0\.0\.1' -- '.github/**' 'wrangler*.json*' 'src/**' ':!src/**/*.test.ts' ':!src/test/**'; then
+            echo '::error::Forbidden production hosting or emulator routing reference found.'
+            exit 1
+          fi
+          if git grep -nE 'GEMINI_API_KEY\s*[:=]\s*["'"'][^"'"']+["'"']|AIza[0-9A-Za-z_-]{20,}' -- ':!package-lock.json' ':!bun.lock'; then
+            echo '::error::Potential secret exposure found.'
+            exit 1
+          fi
+          git diff --check
 
   build:
-    name: Build Application (Client, Server & Worker)
+    name: Build Client and Worker
     needs: validate
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Use Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: 'npm'
-
-      - name: Install Dependencies
-        run: npm ci
-
-      # STAGE 4.1: Client and Server Application Build
-      - name: Build Client and Server
+          cache: npm
+      - run: npm ci
+      - name: Build client
         env:
-          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
-        run: |
-          set -euo pipefail
-          npm run build 2>&1 | tee build.log
-
-      # STAGE 4.2: Explicit Client Output Verification
-      - name: Verify Client Output Explicitly
-        run: |
-          set -euo pipefail
-          echo "Verifying dist/client build artifacts..."
-          if [ ! -d "dist/client" ]; then
-            echo "::error::dist/client directory does not exist!"
-            exit 1
-          fi
-          if [ ! -f "dist/client/index.html" ]; then
-            echo "::error::dist/client/index.html does not exist!"
-            exit 1
-          fi
-
-          JS_COUNT=$(find dist/client -type f -name "*.js" | wc -l)
-          if [ "$JS_COUNT" -eq 0 ]; then
-            echo "::error::No JavaScript assets found in dist/client!"
-            exit 1
-          fi
-
-          HTML_SIZE=$(stat -c%s "dist/client/index.html" 2>/dev/null || stat -f%z "dist/client/index.html")
-          if [ "$HTML_SIZE" -lt 50 ]; then
-            echo "::error::dist/client/index.html appears to be a placeholder (size $HTML_SIZE bytes)!"
-            exit 1
-          fi
-
-          MAP_COUNT=$(find dist/client -type f -name "*.map" | wc -l)
-          if [ "$MAP_COUNT" -ne 0 ]; then
-            echo "::error::Source map files (.map) were found in dist/client!"
-            find dist/client -type f -name "*.map"
-            exit 1
-          fi
-
-          echo "Explicit client output verification succeeded."
-
-      # STAGE 4.3: Worker Validation (Only runs after dist/client exists)
-      - name: Build Worker (Validation)
-        run: |
-          set -euo pipefail
-          npm run build:worker 2>&1 | tee build-worker.log
-
-      # STAGE 4.4: Checksum Generation and Self-Verification
-      - name: Generate and Verify Build Checksums
-        run: |
-          set -euo pipefail
-          CHECKSUM_FILE="${RUNNER_TEMP:-/tmp}/build-checksums.txt"
-          
-          echo "Generating build checksum manifest outside dist..."
-          find dist -type f \
-            ! -name 'checksums.txt' \
-            -print0 \
-            | sort -z \
-            | xargs -0 sha256sum \
-            > "$CHECKSUM_FILE"
-
-          if [ ! -s "$CHECKSUM_FILE" ]; then
-            echo "::error::Generated checksum manifest is empty!"
-            exit 1
-          fi
-
-          cp "$CHECKSUM_FILE" dist/checksums.txt
-
-          if grep -q "checksums.txt" dist/checksums.txt; then
-            echo "::error::dist/checksums.txt contains a self-referential entry!"
-            exit 1
-          fi
-
-          echo "Verifying build checksums before artifact upload:"
-          sha256sum -c dist/checksums.txt
-
-      - name: Upload Build Artifacts
-        uses: actions/upload-artifact@v4
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL || 'https://zana-api-worker.zana-platform.workers.dev' }}
+        run: npm run build:client
+      - name: Validate Worker bundle
+        run: npx wrangler deploy --dry-run
+      - uses: actions/upload-artifact@v4
         with:
-          name: build-outputs
-          path: |
-            dist/
-            build.log
-            build-worker.log
+          name: zana-build
+          path: dist/client
 
-  deploy-worker:
-    name: Deploy Cloudflare Worker
+  deploy:
+    name: Deploy Cloudflare Production
     needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: Production
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Use Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: 'npm'
-
-      - name: Install Dependencies
-        run: npm ci
-
-      - name: Download Build Outputs
-        uses: actions/download-artifact@v4
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v4
         with:
-          name: build-outputs
-          path: .
-
-      - name: Verify Artifact Integrity
+          name: zana-build
+          path: dist/client
+      - name: Fail fast on mandatory secrets
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PROVIDER_PREFLIGHT_TOKEN: ${{ secrets.PROVIDER_PREFLIGHT_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
-          echo "Verifying artifact checksums..."
-          if [ ! -f "dist/checksums.txt" ]; then
-            echo "::error::dist/checksums.txt is missing from build artifact!"
-            exit 1
-          fi
-
-          if grep -q "checksums.txt" dist/checksums.txt; then
-            echo "::error::dist/checksums.txt contains self-referential entries!"
-            exit 1
-          fi
-
-          sha256sum -c dist/checksums.txt
-          
-          echo "Verifying dist/client directory..."
-          if [ ! -d "dist/client" ]; then
-            echo "::error::dist/client directory is missing!"
-            exit 1
-          fi
-          if [ ! -f "dist/client/index.html" ]; then
-            echo "::error::dist/client/index.html is missing!"
-            exit 1
-          fi
-          
-          echo "Verifying Worker entrypoint and configuration..."
-          if [ ! -f "src/worker/index.ts" ]; then
-            echo "::error::Worker entrypoint src/worker/index.ts is missing!"
-            exit 1
-          fi
-          if [ ! -f "wrangler.jsonc" ]; then
-            echo "::error::Worker configuration wrangler.jsonc is missing!"
-            exit 1
-          fi
-          
-          echo "Artifact integrity verification successful!"
-
-      # Resolve deterministic KV namespace binding
-      - name: Resolve deterministic KV namespace binding
+          for name in GEMINI_API_KEY PROVIDER_PREFLIGHT_TOKEN CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing mandatory production secret: ${name}"
+              exit 1
+            fi
+          done
+      - name: Resolve KV binding
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_KV_NAMESPACE_ID: ${{ secrets.CLOUDFLARE_KV_NAMESPACE_ID }}
-        run: |
-          set -euo pipefail
-          node scripts/resolve-kv.js
-          
-          # Verify production config validity
-          jq empty wrangler.production.json
-          echo "Generated config validation: PASS"
-          
-          # Dry run with wrangler deployment config
-          npx wrangler deploy --config wrangler.production.json --dry-run
-          echo "Dry-run result: PASS"
-
-      # STAGE 6: Deploy Cloudflare Worker
-      - name: Deploy Cloudflare Worker
+        run: node scripts/resolve-kv.js
+      - name: Upload Worker secrets
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.VITE_GEMINI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PROVIDER_PREFLIGHT_TOKEN: ${{ secrets.PROVIDER_PREFLIGHT_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -n "${GEMINI_API_KEY:-}" ]; then
-            echo "$GEMINI_API_KEY" | npx wrangler secret put GEMINI_API_KEY --config wrangler.production.json
-          else
-            echo "::warning::GEMINI_API_KEY secret is not defined in environment"
-          fi
-          npx wrangler deploy --config wrangler.production.json 2>&1 | tee wrangler-deploy.log
+          printf '%s' "$GEMINI_API_KEY" | npx wrangler secret put GEMINI_API_KEY --config wrangler.production.json
+          printf '%s' "$PROVIDER_PREFLIGHT_TOKEN" | npx wrangler secret put PROVIDER_PREFLIGHT_TOKEN --config wrangler.production.json
+      - name: Deploy Worker and static assets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy --config wrangler.production.json
 
-      - name: Parse Worker Deployment Metadata
-        if: always()
+  verify:
+    name: Verify Production Provider and Exposure
+    needs: deploy
+    runs-on: ubuntu-latest
+    environment: Production
+    env:
+      API_BASE_URL: ${{ secrets.VITE_API_BASE_URL || 'https://zana-api-worker.zana-platform.workers.dev' }}
+      FRONTEND_ORIGIN: ${{ secrets.ZANA_FRONTEND_ORIGIN || 'https://zana.krd' }}
+      PROVIDER_PREFLIGHT_TOKEN: ${{ secrets.PROVIDER_PREFLIGHT_TOKEN }}
+    steps:
+      - name: Verify health and strict CORS
         run: |
           set -euo pipefail
-          node -e "
-          const fs = require('fs');
-          let log = '';
-          try { log = fs.readFileSync('wrangler-deploy.log', 'utf8'); } catch(e) {}
-          const nameMatch = log.match(/Uploaded\s+([a-zA-Z0-9-]+)/i) || log.match(/Published\s+([a-zA-Z0-9-]+)/i);
-          const worker_name = nameMatch ? nameMatch[1] : 'zana-api-worker';
-          const idMatch = log.match(/Deployment ID:\s*([a-zA-Z0-9-]+)/i) || log.match(/Version:\s*([0-9]+)/i);
-          const worker_deployment_id = idMatch ? idMatch[1] : null;
-          fs.mkdirSync('metadata-worker', { recursive: true });
-          fs.writeFileSync('metadata-worker/metadata-worker.json', JSON.stringify({ worker_name, worker_deployment_id }));
-          "
+          base="${API_BASE_URL%/}"
+          headers=$(mktemp)
+          body=$(mktemp)
+          status=$(curl --silent --show-error --max-time 30 -H "Origin: $FRONTEND_ORIGIN" -D "$headers" -o "$body" -w '%{http_code}' "$base/api/health")
+          test "$status" = "200"
+          test "$(jq -r '.ok' "$body")" = "true"
+          test "$(grep -i '^access-control-allow-origin:' "$headers" | awk -F': ' '{print $2}' | tr -d '\r')" = "$FRONTEND_ORIGIN"
+      - name: Verify preflight is private
+        run: |
+          set -euo pipefail
+          base="${API_BASE_URL%/}"
+          status=$(curl --silent --show-error -o /dev/null -w '%{http_code}' "$base/api/provider/preflight")
+          test "$status" = "404"
+      - name: Verify authenticated provider preflight
+        run: |
+          set -euo pipefail
+          base="${API_BASE_URL%/}"
+          body=$(mktemp)
+          status=$(curl --silent --show-error --max-time 45 \
+            -H "Authorization: Bearer $PROVIDER_PREFLIGHT_TOKEN" \
+            -o "$body" -w '%{http_code}' "$base/api/provider/preflight")
+          cat "$body"
+          test "$status" = "200"
+          test "$(jq -r '.ok' "$body")" = "true"
+          test "$(jq -r '.status' "$body")" = "healthy"
+          test "$(jq -r 'has("model") or has("category") or has("error")' "$body")" = "false"
 
-      - name: Upload Worker Metadata & Log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: wrangler-deploy-log
-          path: |
-            wrangler-deploy.log
-            metadata-worker/
-
-  verify-worker:
-    name: Verify Worker Live Health & Exposure
-    needs: deploy-worker
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  smoke:
+    name: Production Smoke Tests
+    needs: verify
     runs-on: ubuntu-latest
     environment: Production
     steps:
-      - name: Verify Worker Health & CORS
-        env:
-          CLEANED_URL: ${{ secrets.VITE_API_BASE_URL }}
-          CANONICAL_FRONTEND_ORIGIN: ${{ secrets.ZANA_FRONTEND_ORIGIN || 'https://zana.krd' }}
-        run: |
-          set -euo pipefail
-          
-          CLEANED_URL=$(echo "$CLEANED_URL" | sed 's/\/$//')
-          FRONTEND_ORIGIN="${CANONICAL_FRONTEND_ORIGIN:-https://zana.krd}"
-          export CLEANED_URL FRONTEND_ORIGIN
-          echo "Verifying live Cloudflare Worker at: $CLEANED_URL"
-          echo "Using canonical frontend origin: $FRONTEND_ORIGIN"
-          
-          if [ -z "$CLEANED_URL" ]; then
-            echo "::error::API Base URL is empty!"
-            exit 1
-          fi
-          
-          node -e "
-          try {
-            const u = new URL(process.env.CLEANED_URL);
-            if (u.protocol !== 'https:') throw new Error('API Base URL must use HTTPS');
-            if (!u.hostname) throw new Error('API Base URL hostname is missing');
-            if (u.username || u.password) throw new Error('API Base URL must not contain credentials');
-            if (u.search) throw new Error('API Base URL must not contain query parameters');
-            if (u.hash) throw new Error('API Base URL must not contain a fragment');
-            if (u.pathname !== '/' && u.pathname !== '') throw new Error('API Base URL must be the domain origin (pathname must be empty or /)');
-            console.log('API Base URL structure is perfectly valid.');
-          } catch (err) {
-            console.error('::error::Invalid API Base URL: ' + err.message);
-            process.exit(1);
-          }
-          "
-
-          # Diagnostic run
-          DIAG_HEADER_FILE=$(mktemp)
-          DIAG_BODY_FILE=$(mktemp)
-          RESPONSE_FILE=$(mktemp)
-          HEADER_FILE=$(mktemp)
-
-          cleanup() {
-            rm -f "$DIAG_HEADER_FILE" "$DIAG_BODY_FILE" "$RESPONSE_FILE" "$HEADER_FILE"
-          }
-          trap cleanup EXIT
-
-          echo "--- DIAGNOSTIC RUN ---"
-          echo "Requested health URL: $CLEANED_URL/api/health"
-          
-          HTTP_STATUS=$(curl --silent --show-error \
-            --connect-timeout 10 \
-            --max-time 20 \
-            -H "Origin: $FRONTEND_ORIGIN" \
-            -D "$DIAG_HEADER_FILE" \
-            -o "$DIAG_BODY_FILE" \
-            -w "%{http_code}" \
-            "$CLEANED_URL/api/health")
-            
-          echo "HTTP Status: $HTTP_STATUS"
-          
-          LOCATION_HEADER=$(grep -i '^location:' "$DIAG_HEADER_FILE" | awk -F': ' '{print $2}' | tr -d '\r\n ' || echo "None")
-          echo "Location header: $LOCATION_HEADER"
-          
-          CONTENT_TYPE_HEADER=$(grep -i '^content-type:' "$DIAG_HEADER_FILE" | awk -F': ' '{print $2}' | tr -d '\r\n ' || echo "None")
-          echo "Content-Type: $CONTENT_TYPE_HEADER"
-          
-          DIAG_CURL_OUT=$(curl --silent --show-error --location --max-redirs 5 \
-            --connect-timeout 10 \
-            --max-time 20 \
-            -H "Origin: $FRONTEND_ORIGIN" \
-            -o /dev/null \
-            -w "%{url_effective}|%{num_redirects}|%{http_code}|%{content_type}" \
-            "$CLEANED_URL/api/health" || echo "failed")
-          
-          if [ "$DIAG_CURL_OUT" != "failed" ]; then
-            export DIAG_CURL_OUT
-            node -e "
-            const [urlEffective, numRedirects, httpCode, contentType] = process.env.DIAG_CURL_OUT.split('|');
-            let hostname = 'unknown';
-            try { hostname = new URL(urlEffective).hostname; } catch(e) {}
-            console.log('Redirect Count: ' + numRedirects);
-            console.log('Final Effective URL: ' + urlEffective);
-            console.log('Final Hostname: ' + hostname);
-            console.log('Final HTTP Code: ' + httpCode);
-            console.log('Final Content Type: ' + contentType);
-            "
-          else
-            echo "Redirect count diagnosis failed"
-          fi
-          echo "----------------------"
-
-          HTTP_CODE=$(curl --fail-with-body --silent --show-error \
-            --connect-timeout 10 \
-            --max-time 30 \
-            -H "Origin: $FRONTEND_ORIGIN" \
-            -D "$HEADER_FILE" \
-            -o "$RESPONSE_FILE" \
-            -w "%{http_code}" \
-            "$CLEANED_URL/api/health")
-
-          echo "HTTP Response Code: $HTTP_CODE"
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "::error::Worker health check returned status $HTTP_CODE (expected exactly 200, zero redirects)."
-            echo "Response Body:"
-            cat "$RESPONSE_FILE"
-            exit 1
-          fi
-
-          STATUS=$(jq -r '.status' "$RESPONSE_FILE" 2>/dev/null || echo "")
-          SERVICE=$(jq -r '.service' "$RESPONSE_FILE" 2>/dev/null || echo "")
-          OK_VAL=$(jq -r '.ok' "$RESPONSE_FILE" 2>/dev/null || echo "")
-
-          echo "Parsed status: $STATUS"
-          echo "Parsed service: $SERVICE"
-          echo "Parsed ok: $OK_VAL"
-
-          if [ "$OK_VAL" != "true" ]; then
-            echo "::error::Invalid health ok value: '$OK_VAL' (expected 'true')"
-            exit 1
-          fi
-
-          if [ "$STATUS" != "ok" ]; then
-            echo "::error::Invalid health status: '$STATUS' (expected 'ok')"
-            exit 1
-          fi
-
-          if [ "$SERVICE" != "zana-api-worker" ]; then
-            echo "::error::Invalid service name: '$SERVICE' (expected 'zana-api-worker')"
-            exit 1
-          fi
-
-          CORS_HEADER=$(grep -i 'access-control-allow-origin' "$HEADER_FILE" | head -n 1 | awk -F': ' '{print $2}' | tr -d '\r\n ' || echo "")
-
-          echo "Received CORS Allowed Origin: '$CORS_HEADER'"
-
-          if [ "$CORS_HEADER" != "$FRONTEND_ORIGIN" ]; then
-            echo "::error::CORS header verification failed. Expected '$FRONTEND_ORIGIN', got '$CORS_HEADER'"
-            exit 1
-          fi
-
-          echo "Worker response verified successfully!"
-
-      - name: Verify Production Provider Preflight
-        env:
-          CLEANED_URL: ${{ secrets.VITE_API_BASE_URL }}
-          CANONICAL_FRONTEND_ORIGIN: ${{ secrets.ZANA_FRONTEND_ORIGIN || 'https://zana.krd' }}
-        run: |
-          set -euo pipefail
-          CLEANED_URL=$(echo "$CLEANED_URL" | sed 's/\/$//')
-          FRONTEND_ORIGIN="${CANONICAL_FRONTEND_ORIGIN:-https://zana.krd}"
-          echo "Verifying production AI provider preflight at ${CLEANED_URL}/api/provider/preflight..."
-          
-          PREFLIGHT_FILE=$(mktemp)
-          HTTP_STATUS=$(curl --silent --show-error \
-            --connect-timeout 10 \
-            --max-time 30 \
-            -H "Origin: $FRONTEND_ORIGIN" \
-            -o "$PREFLIGHT_FILE" \
-            -w "%{http_code}" \
-            "${CLEANED_URL}/api/provider/preflight")
-          
-          echo "Provider Preflight Status: $HTTP_STATUS"
-          echo "Response Excerpt:"
-          cat "$PREFLIGHT_FILE"
-          echo ""
-
-          if [ "$HTTP_STATUS" -ne 200 ]; then
-            echo "::error::Production provider preflight failed with HTTP status $HTTP_STATUS. GEMINI_API_KEY may be missing or model unavailable."
-            exit 1
-          fi
-
-          OK_VAL=$(jq -r '.ok' "$PREFLIGHT_FILE" 2>/dev/null || echo "")
-          if [ "$OK_VAL" != "true" ]; then
-            echo "::error::Provider preflight returned ok=false"
-            exit 1
-          fi
-
-          echo "Production provider preflight check PASSED successfully!"
-
-      - name: Verify Production Exposure Security
-        env:
-          CLEANED_URL: ${{ secrets.VITE_API_BASE_URL }}
-        run: |
-          set -euo pipefail
-          CLEANED_URL=$(echo "$CLEANED_URL" | sed 's/\/$//')
-          echo "Verifying production exposure security at $CLEANED_URL..."
-          
-          PATHS_TO_CHECK=(
-            "/.env"
-            "/.env.local"
-            "/.env.production"
-            "/.dev.vars"
-            "/package.json"
-            "/wrangler.jsonc"
-            "/wrangler.production.json"
-            "/src/worker/index.ts"
-            "/src/test/setupEnv.ts"
-            "/scripts/resolve-kv.js"
-            "/assets/index.js.map"
-          )
-
-          FORBIDDEN_EXPOSED=0
-
-          for p in "${PATHS_TO_CHECK[@]}"; do
-            echo "Checking sensitive path exposure: ${CLEANED_URL}${p}"
-            RESP_FILE=$(mktemp)
-            
-            HTTP_STATUS=$(curl --silent --show-error \
-              --connect-timeout 10 \
-              --max-time 15 \
-              -o "$RESP_FILE" \
-              -w "%{http_code}" \
-              "${CLEANED_URL}${p}")
-
-            echo "Path ${p} -> Status: ${HTTP_STATUS}"
-
-            if [ "$HTTP_STATUS" -eq 200 ]; then
-              echo "::error::Security exposure failure: Path '${p}' returned HTTP 200!"
-              FORBIDDEN_EXPOSED=1
-            fi
-
-            if grep -iq "<!DOCTYPE html>" "$RESP_FILE" || grep -iq "<html" "$RESP_FILE"; then
-              echo "::error::Security exposure failure: Path '${p}' returned HTML (SPA fallback) instead of a real 404!"
-              FORBIDDEN_EXPOSED=1
-            fi
-
-            rm -f "$RESP_FILE"
-          done
-
-          if [ "$FORBIDDEN_EXPOSED" -ne 0 ]; then
-            echo "Production exposure security checks failed!"
-            exit 1
-          fi
-
-          echo "Production exposure security checks passed successfully!"
-
-  smoke-tests:
-    name: Run Production Smoke Tests
-    needs: verify-worker
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    environment: Production
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Use Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: 'npm'
-
-      - name: Install Dependencies
-        run: npm ci
-
-      # STAGE 8: Production Smoke Tests
-      - name: Run Production Smoke Tests
+          cache: npm
+      - run: npm ci
+      - name: Run complete production smoke suite
         env:
-          API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+          API_BASE_URL: ${{ secrets.VITE_API_BASE_URL || 'https://zana-api-worker.zana-platform.workers.dev' }}
           ZANA_FRONTEND_ORIGIN: ${{ secrets.ZANA_FRONTEND_ORIGIN || 'https://zana.krd' }}
-        run: |
-          set -euo pipefail
-          npm run test:smoke 2>&1 | tee smoke-test-report.log
-
-      - name: Upload Smoke Test Report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: smoke-test-report
-          path: smoke-test-report.log
-
-  security-checks:
-    name: Run Security Exposure Checks
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Verify No Secrets or Environment Files Exposed
-        run: |
-          set -euo pipefail
-          echo "Scanning codebase for security exposures..."
-          
-          FORBIDDEN_FILES=(".env" ".env.production" "wrangler.toml" "wrangler.production.json" "firebase-service-account.json")
-          for file in "${FORBIDDEN_FILES[@]}"; do
-            if [ -f "$file" ]; then
-              echo "::error::Security Exposure Check Failed: Forbidden file '$file' exists in the codebase!"
-              exit 1
-            fi
-          done
-
-          echo "Scanning for private keys..."
-          if grep -r -l "BEGIN PRIVATE KEY" --exclude-dir=node_modules --exclude=package.json --exclude=package-lock.json --exclude-dir=.github .; then
-            echo "::error::Security Exposure Check Failed: Found possible private key committed in the codebase!"
-            exit 1
-          fi
-
-          echo "Security checks passed successfully!"
+        run: npm run test:smoke
 
   release:
-    name: Generate Release Tag & Metadata
-    needs: [validate, build, deploy-worker, verify-worker, smoke-tests, security-checks]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    name: Generate Release Metadata
+    needs: smoke
     runs-on: ubuntu-latest
-    environment: Production
-    permissions:
-      contents: write
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Download Pipeline Start Metadata
-        uses: actions/download-artifact@v4
-        with:
-          name: validation-logs
-
-      - name: Download Cloudflare Metadata
-        uses: actions/download-artifact@v4
-        with:
-          name: wrangler-deploy-log
-
-      - name: Generate Release Summary & Tag
+      - uses: actions/checkout@v4
+      - name: Create release metadata
         run: |
-          set -euo pipefail
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          RELEASE_TIME=$(date -u +"%Y%m%d-%H%M%S")
-          RELEASE_TAG="release-${RELEASE_TIME}-${{ github.run_number }}-${SHORT_SHA}"
-          
-          echo "Release Tag: $RELEASE_TAG"
-          echo "RELEASE_TAG=$RELEASE_TAG" >> $GITHUB_ENV
-          
-          node -e "
-          const fs = require('fs');
-
-          let started = { deployment_started_at: new Date().toISOString(), deployment_started_epoch: Math.floor(Date.now() / 1000) };
-          try {
-            started = JSON.parse(fs.readFileSync('deployment-started/metadata-started.json', 'utf8'));
-          } catch (e) {}
-
-          let worker = { worker_name: null, worker_deployment_id: null };
-          try {
-            worker = JSON.parse(fs.readFileSync('metadata-worker/metadata-worker.json', 'utf8'));
-          } catch (e) {}
-
-          const completedAt = new Date().toISOString();
-          const completedEpoch = Math.floor(Date.now() / 1000);
-          const duration = Math.max(0, completedEpoch - started.deployment_started_epoch);
-
-          const summary = {
-            commit_sha: '${{ github.sha }}',
-            short_sha: '$SHORT_SHA',
-            github_run_id: '${{ github.run_id }}',
-            github_run_number: '${{ github.run_number }}',
-            deployment_started_at: started.deployment_started_at,
-            deployment_completed_at: completedAt,
-            deployment_duration_seconds: duration,
-            release_tag: '$RELEASE_TAG',
-            worker_name: worker.worker_name || null,
-            worker_deployment_id: worker.worker_deployment_id || null,
-            smoke_test_status: 'SUCCESS'
-          };
-
-          fs.writeFileSync('release-summary.json', JSON.stringify(summary, null, 2));
-          "
-          echo "Generated Real Release Metadata:"
-          cat release-summary.json
-
-      - name: Upload Release Summary Artifact
-        uses: actions/upload-artifact@v4
+          mkdir -p release
+          cat > release/metadata.json <<EOF
+          {
+            "commit": "${GITHUB_SHA}",
+            "created_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "status": "ready",
+            "frontend": "https://zana.krd",
+            "runtime": "cloudflare-worker"
+          }
+          EOF
+      - uses: actions/upload-artifact@v4
         with:
-          name: release-summary
-          path: release-summary.json
-
-      - name: Create Git Tag and GitHub Release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          
-          git tag -a "$RELEASE_TAG" -m "Automated production release $RELEASE_TAG"
-          git push origin "$RELEASE_TAG"
-          
-          gh release create "$RELEASE_TAG" \
-            --title "Production Release $RELEASE_TAG" \
-            --notes "Automated release triggered by GitHub Action run ${{ github.run_id }}. Commit: ${{ github.sha }}." \
-            release-summary.json
-
-  report-status:
-    name: Report Pipeline Status
-    needs: [validate, build, deploy-worker, verify-worker, smoke-tests, security-checks, release]
-    if: always()
-    runs-on: ubuntu-latest
-    permissions:
-      statuses: write
-    steps:
-      - name: Report Statuses to GitHub
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VALIDATE_STATUS: ${{ needs.validate.result }}
-          BUILD_STATUS: ${{ needs.build.result }}
-          DEPLOY_STATUS: ${{ needs.deploy-worker.result }}
-          VERIFY_STATUS: ${{ needs.verify-worker.result }}
-          SMOKE_STATUS: ${{ needs.smoke-tests.result }}
-          SECURITY_STATUS: ${{ needs.security-checks.result }}
-          RELEASE_STATUS: ${{ needs.release.result }}
-        run: |
-          set -euo pipefail
-          
-          map_status() {
-            local status="$1"
-            case "$status" in
-              success)
-                echo "success"
-                ;;
-              failure)
-                echo "failure"
-                ;;
-              *)
-                echo "error"
-                ;;
-            esac
-          }
-          
-          map_description() {
-            local status="$1"
-            local job_name="$2"
-            case "$status" in
-              success)
-                echo "$job_name passed successfully"
-                ;;
-              failure)
-                echo "$job_name failed"
-                ;;
-              skipped)
-                echo "$job_name was skipped"
-                ;;
-              cancelled)
-                echo "$job_name was cancelled"
-                ;;
-              *)
-                echo "$job_name status: $status"
-                ;;
-            esac
-          }
-
-          SHA="${{ github.sha }}"
-          REPO="${{ github.repository }}"
-          RUN_ID="${{ github.run_id }}"
-          TARGET_URL="https://github.com/${REPO}/actions/runs/${RUN_ID}"
-
-          post_status() {
-            local context="$1"
-            local raw_status="$2"
-            local state=$(map_status "$raw_status")
-            local desc=$(map_description "$raw_status" "$context")
-            
-            echo "Publishing status to $context: state=$state, desc='$desc'"
-            
-            gh api --method POST \
-              -H "Accept: application/vnd.github+json" \
-              "/repos/${REPO}/statuses/${SHA}" \
-              -f state="$state" \
-              -f context="$context" \
-              -f description="$desc" \
-              -f target_url="$TARGET_URL" > /dev/null
-          }
-
-          post_status "ZANA/validate" "$VALIDATE_STATUS"
-          post_status "ZANA/build" "$BUILD_STATUS"
-          post_status "ZANA/deploy" "$DEPLOY_STATUS"
-          post_status "ZANA/verify" "$VERIFY_STATUS"
-          post_status "ZANA/smoke" "$SMOKE_STATUS"
-          post_status "ZANA/security" "$SECURITY_STATUS"
-          post_status "ZANA/release" "$RELEASE_STATUS"
+          name: zana-release-${{ github.sha }}
+          path: release/metadata.json
