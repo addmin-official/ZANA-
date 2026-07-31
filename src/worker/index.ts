@@ -44,6 +44,7 @@ export interface Env {
   GEMINI_PRIMARY_MODEL?: string;
   GEMINI_VISION_MODEL?: string;
   PROVIDER_PREFLIGHT_TOKEN?: string;
+  ZANA_REVISION?: string;
   ZANA_LEARNING_KV?: AssessmentKVStore;
   LEARNING_RECORDS_KV?: AssessmentKVStore;
   ASSETS?: { fetch: (req: Request) => Promise<Response> };
@@ -413,13 +414,12 @@ export default {
         const responseHeaders = getCorsHeaders(origin, env);
         responseHeaders.set("Content-Type", "application/json");
 
-        // Use global/process environment as fallback if `env` does not have it. Wait, inside cloudflare worker env is the source of truth, but we can also inject global variables or we just check if env has ZANA_REVISION.
         return new Response(
           JSON.stringify({
             ok: true,
             status: "ok",
             service: "zana-api-worker",
-            revision: (env as unknown as Record<string, unknown>).ZANA_REVISION || (typeof process !== "undefined" && process.env.ZANA_REVISION) || "unknown",
+            revision: env.ZANA_REVISION || "unknown",
           }),
           { status: 200, headers: responseHeaders }
         );
@@ -531,12 +531,20 @@ export default {
             }),
             { status: 200, headers: responseHeaders }
           );
-        } catch {
+        } catch (error: unknown) {
+          const e = error as Record<string, unknown>;
           return new Response(
             JSON.stringify({
               ok: false,
               status: "error",
               error: "Provider preflight check failed",
+              diagnostic: {
+                upstreamStatus: e.status || undefined,
+                googleErrorCode: e.code || undefined,
+                sdkErrorName: e.name || undefined,
+                model: resolvePrimaryModel(env),
+                apiService: "zana-api-worker"
+              }
             }),
             { status: 503, headers: responseHeaders }
           );
@@ -931,7 +939,7 @@ export default {
           studentId,
           timestamp: new Date().toISOString(),
           type: "EXERCISE_ATTEMPT",
-          data: attempt as unknown as Record<string, unknown>,
+          data: { ...attempt },
         };
         await lp.appendLearningEvent(studentId, event);
 

@@ -13,6 +13,13 @@ interface ApiJsonResponse {
   apiKey?: string;
 }
 
+interface HealthResponse {
+  ok: boolean;
+  status: string;
+  service: string;
+  revision: string;
+}
+
 // Helper to create a mock Env
 const createMockEnv = (assetsMock?: { fetch: (req: Request) => Promise<Response> }): Env => ({
   GEMINI_API_KEY: "test-api-key",
@@ -43,18 +50,29 @@ test("Worker - GET /api/health with approved Origin returns 200 and exact CORS o
   assert.strictEqual(body.service, "zana-api-worker");
 });
 
-test("Worker - GET /api/health returns revision", async () => {
+test("Worker - GET /api/health meets strict health contract", async () => {
   const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/health", {
     method: "GET",
   });
 
   const env = createMockEnv();
-  (env as any).ZANA_REVISION = "test-revision";
+  env.ZANA_REVISION = "a1b2c3d";
   const res = await worker.fetch(req, env);
   
   assert.strictEqual(res.status, 200);
-  const body = (await res.json()) as any;
-  assert.strictEqual(body.revision, "test-revision");
+  const body = (await res.json()) as HealthResponse & Record<string, unknown>;
+  
+  assert.strictEqual(body.ok, true);
+  assert.strictEqual(body.status, "ok");
+  assert.strictEqual(body.service, "zana-api-worker");
+  assert.strictEqual(/^[0-9a-f]{7}$/.test(body.revision), true);
+  
+  // Verify no sensitive fields leak
+  assert.strictEqual(body.apiKey, undefined);
+  assert.strictEqual(body.token, undefined);
+  assert.strictEqual(body.model, undefined);
+  assert.strictEqual(body.pathname, undefined);
+  assert.strictEqual(body.upstreamDiagnostic, undefined);
 });
 
 test("Worker - GET /api/provider/preflight with POST returns 405", async () => {
@@ -125,7 +143,7 @@ test("Worker - GET /api/provider/preflight with valid token returns sanitized 50
   env.GEMINI_API_KEY = "dummy";
   const res = await worker.fetch(req, env);
   assert.strictEqual(res.status, 503);
-  const body = (await res.json()) as any;
+  const body = (await res.json()) as Record<string, unknown>;
   assert.strictEqual(body.ok, false);
   assert.strictEqual(body.error, "Provider preflight check failed");
   assert.strictEqual(body.category, undefined); // Should not expose internal details

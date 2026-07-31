@@ -426,13 +426,25 @@ export function generateProductionConfig(
   // Inject ZANA_REVISION variable
   prodConfig.vars = prodConfig.vars || {};
   let shortSha = "unknown";
-  try {
-    shortSha = execSync("git rev-parse --short HEAD", { encoding: "utf8" }).trim();
-  } catch (e) {
-    if (process.env.GITHUB_SHA) {
-      shortSha = process.env.GITHUB_SHA.substring(0, 7);
+  
+  if (process.env.GITHUB_SHA) {
+    shortSha = process.env.GITHUB_SHA.substring(0, 7);
+  } else if (process.env.NODE_ENV !== "production") {
+    shortSha = "dev";
+  }
+  
+  if (process.env.CI) {
+    if (!process.env.GITHUB_SHA) {
+      throw new Error("GITHUB_SHA is absent in CI environment");
+    }
+    if (!/^[0-9a-f]{7}$/.test(shortSha)) {
+      throw new Error(`Revision '${shortSha}' is not exactly seven lowercase hexadecimal characters`);
+    }
+    if (shortSha === "unknown") {
+      throw new Error("Never deploy revision 'unknown' in CI");
     }
   }
+
   prodConfig.vars.ZANA_REVISION = shortSha;
 
   fs.writeFileSync(productionConfigPath, JSON.stringify(prodConfig, null, 2), "utf8");

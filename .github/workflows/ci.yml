@@ -475,7 +475,13 @@ jobs:
           REVISION=$(jq -r '.revision' "$RESPONSE_FILE" 2>/dev/null || echo "")
           echo "Parsed revision: $REVISION"
           
-          EXPECTED_REVISION=$(git rev-parse --short HEAD)
+          EXPECTED_REVISION="${GITHUB_SHA:0:7}"
+          
+          if [[ ! "$EXPECTED_REVISION" =~ ^[0-9a-f]{7}$ ]]; then
+            echo "::error::Invalid expected revision"
+            exit 1
+          fi
+          
           echo "Expected revision: $EXPECTED_REVISION"
           
           if [ "$REVISION" != "$EXPECTED_REVISION" ]; then
@@ -703,7 +709,7 @@ jobs:
       - name: Generate Release Summary & Tag
         run: |
           set -euo pipefail
-          SHORT_SHA=$(git rev-parse --short HEAD)
+          SHORT_SHA="${GITHUB_SHA:0:7}"
           RELEASE_TIME=$(date -u +"%Y%m%d-%H%M%S")
           RELEASE_TAG="release-${RELEASE_TIME}-${{ github.run_number }}-${SHORT_SHA}"
           
