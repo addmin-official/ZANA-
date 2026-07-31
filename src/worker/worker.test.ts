@@ -43,6 +43,93 @@ test("Worker - GET /api/health with approved Origin returns 200 and exact CORS o
   assert.strictEqual(body.service, "zana-api-worker");
 });
 
+test("Worker - GET /api/health returns revision", async () => {
+  const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/health", {
+    method: "GET",
+  });
+
+  const env = createMockEnv();
+  (env as any).ZANA_REVISION = "test-revision";
+  const res = await worker.fetch(req, env);
+  
+  assert.strictEqual(res.status, 200);
+  const body = (await res.json()) as any;
+  assert.strictEqual(body.revision, "test-revision");
+});
+
+test("Worker - GET /api/provider/preflight with POST returns 405", async () => {
+  const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/provider/preflight", {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer test-token",
+    }
+  });
+
+  const env = createMockEnv();
+  env.PROVIDER_PREFLIGHT_TOKEN = "test-token";
+  const res = await worker.fetch(req, env);
+  assert.strictEqual(res.status, 405);
+});
+
+test("Worker - GET /api/provider/preflight without token returns 401", async () => {
+  const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/provider/preflight", {
+    method: "GET",
+  });
+
+  const env = createMockEnv();
+  env.PROVIDER_PREFLIGHT_TOKEN = "test-token";
+  const res = await worker.fetch(req, env);
+  assert.strictEqual(res.status, 401);
+});
+
+test("Worker - GET /api/provider/preflight with invalid token returns 401", async () => {
+  const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/provider/preflight", {
+    method: "GET",
+    headers: {
+      Authorization: "Bearer invalid-token",
+    }
+  });
+
+  const env = createMockEnv();
+  env.PROVIDER_PREFLIGHT_TOKEN = "test-token";
+  const res = await worker.fetch(req, env);
+  assert.strictEqual(res.status, 401);
+});
+
+test("Worker - GET /api/provider/preflight with valid token but no API KEY returns 503", async () => {
+  const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/provider/preflight", {
+    method: "GET",
+    headers: {
+      Authorization: "Bearer test-token",
+    }
+  });
+
+  const env = createMockEnv();
+  env.PROVIDER_PREFLIGHT_TOKEN = "test-token";
+  env.GEMINI_API_KEY = "";
+  const res = await worker.fetch(req, env);
+  assert.strictEqual(res.status, 503);
+});
+
+// Since we cannot easily mock ProviderAdapter.generate in this test environment natively without setup, we will just ensure it reaches the provider by testing the error response when API_KEY is invalid/dummy.
+test("Worker - GET /api/provider/preflight with valid token returns sanitized 503 on provider error", async () => {
+  const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/provider/preflight", {
+    method: "GET",
+    headers: {
+      Authorization: "Bearer test-token",
+    }
+  });
+
+  const env = createMockEnv();
+  env.PROVIDER_PREFLIGHT_TOKEN = "test-token";
+  env.GEMINI_API_KEY = "dummy";
+  const res = await worker.fetch(req, env);
+  assert.strictEqual(res.status, 503);
+  const body = (await res.json()) as any;
+  assert.strictEqual(body.ok, false);
+  assert.strictEqual(body.error, "Provider preflight check failed");
+  assert.strictEqual(body.category, undefined); // Should not expose internal details
+});
 test("Worker - GET /api/health without Origin header returns 200 without CORS header", async () => {
   const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/health", {
     method: "GET",

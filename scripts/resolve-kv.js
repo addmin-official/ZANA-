@@ -423,6 +423,18 @@ export function generateProductionConfig(
     },
   ];
 
+  // Inject ZANA_REVISION variable
+  prodConfig.vars = prodConfig.vars || {};
+  let shortSha = "unknown";
+  try {
+    shortSha = execSync("git rev-parse --short HEAD", { encoding: "utf8" }).trim();
+  } catch (e) {
+    if (process.env.GITHUB_SHA) {
+      shortSha = process.env.GITHUB_SHA.substring(0, 7);
+    }
+  }
+  prodConfig.vars.ZANA_REVISION = shortSha;
+
   fs.writeFileSync(productionConfigPath, JSON.stringify(prodConfig, null, 2), "utf8");
 
   // Validate written file is valid JSON

@@ -294,12 +294,19 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY || secrets.VITE_GEMINI_API_KEY }}
+          PROVIDER_PREFLIGHT_TOKEN: ${{ secrets.PROVIDER_PREFLIGHT_TOKEN }}
         run: |
           set -euo pipefail
           if [ -n "${GEMINI_API_KEY:-}" ]; then
             echo "$GEMINI_API_KEY" | npx wrangler secret put GEMINI_API_KEY --config wrangler.production.json
           else
             echo "::warning::GEMINI_API_KEY secret is not defined in environment"
+          fi
+          if [ -n "${PROVIDER_PREFLIGHT_TOKEN:-}" ]; then
+            echo "$PROVIDER_PREFLIGHT_TOKEN" | npx wrangler secret put PROVIDER_PREFLIGHT_TOKEN --config wrangler.production.json
+          else
+            echo "::error::PROVIDER_PREFLIGHT_TOKEN secret is not defined in environment"
+            exit 1
           fi
           npx wrangler deploy --config wrangler.production.json 2>&1 | tee wrangler-deploy.log
 
@@ -465,6 +472,17 @@ jobs:
             exit 1
           fi
 
+          REVISION=$(jq -r '.revision' "$RESPONSE_FILE" 2>/dev/null || echo "")
+          echo "Parsed revision: $REVISION"
+          
+          EXPECTED_REVISION=$(git rev-parse --short HEAD)
+          echo "Expected revision: $EXPECTED_REVISION"
+          
+          if [ "$REVISION" != "$EXPECTED_REVISION" ]; then
+            echo "::error::Worker revision mismatch. Expected '$EXPECTED_REVISION', got '$REVISION'"
+            exit 1
+          fi
+
           CORS_HEADER=$(grep -i 'access-control-allow-origin' "$HEADER_FILE" | head -n 1 | awk -F': ' '{print $2}' | tr -d '\r\n ' || echo "")
 
           echo "Received CORS Allowed Origin: '$CORS_HEADER'"
@@ -480,17 +498,42 @@ jobs:
         env:
           CLEANED_URL: ${{ secrets.VITE_API_BASE_URL }}
           CANONICAL_FRONTEND_ORIGIN: ${{ secrets.ZANA_FRONTEND_ORIGIN || 'https://zana.krd' }}
+          PROVIDER_PREFLIGHT_TOKEN: ${{ secrets.PROVIDER_PREFLIGHT_TOKEN }}
         run: |
           set -euo pipefail
           CLEANED_URL=$(echo "$CLEANED_URL" | sed 's/\/$//')
           FRONTEND_ORIGIN="${CANONICAL_FRONTEND_ORIGIN:-https://zana.krd}"
           echo "Verifying production AI provider preflight at ${CLEANED_URL}/api/provider/preflight..."
           
+          # 1. Unauthenticated check (must fail with 401)
+          echo "Running unauthenticated preflight check..."
+          UNAUTH_HTTP_STATUS=$(curl --silent --show-error \
+            --connect-timeout 10 \
+            --max-time 15 \
+            -H "Origin: $FRONTEND_ORIGIN" \
+            -o /dev/null \
+            -w "%{http_code}" \
+            "${CLEANED_URL}/api/provider/preflight")
+            
+          if [ "$UNAUTH_HTTP_STATUS" != "401" ] && [ "$UNAUTH_HTTP_STATUS" != "403" ] && [ "$UNAUTH_HTTP_STATUS" != "404" ]; then
+            echo "::error::Unauthenticated preflight failed! Expected 401/403/404, got HTTP $UNAUTH_HTTP_STATUS"
+            exit 1
+          fi
+          echo "Unauthenticated check properly rejected (HTTP $UNAUTH_HTTP_STATUS)."
+
+          if [ -z "${PROVIDER_PREFLIGHT_TOKEN:-}" ]; then
+            echo "::error::PROVIDER_PREFLIGHT_TOKEN secret is not defined in environment"
+            exit 1
+          fi
+
+          # 2. Authenticated check (must succeed with 200)
+          echo "Running authenticated preflight check..."
           PREFLIGHT_FILE=$(mktemp)
           HTTP_STATUS=$(curl --silent --show-error \
             --connect-timeout 10 \
             --max-time 30 \
             -H "Origin: $FRONTEND_ORIGIN" \
+            -H "Authorization: Bearer $PROVIDER_PREFLIGHT_TOKEN" \
             -o "$PREFLIGHT_FILE" \
             -w "%{http_code}" \
             "${CLEANED_URL}/api/provider/preflight")

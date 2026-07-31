@@ -37,42 +37,8 @@ app.get("/api/health", (req: Request, res: Response) => {
   res.json({
     status: "ok",
     service: "zana-api",
+    revision: process.env.ZANA_REVISION || "unknown",
   });
-});
-
-// Production Provider Preflight endpoint
-app.get("/api/provider/preflight", async (req: Request, res: Response) => {
-  const authHeader = req.headers.authorization;
-  if (!process.env.PROVIDER_PREFLIGHT_TOKEN || authHeader !== `Bearer ${process.env.PROVIDER_PREFLIGHT_TOKEN}`) {
-    return res.status(401).send("Unauthorized");
-  }
-
-  if (!process.env.GEMINI_API_KEY || !process.env.GEMINI_API_KEY.trim()) {
-    return res.status(503).json({ ok: false, status: "error", error: "GEMINI_API_KEY missing" });
-  }
-
-  try {
-    const { resolvePrimaryModel } = await import("./config/aiModels.ts");
-    const model = resolvePrimaryModel(process.env);
-    const result = await ProviderAdapter.generate({
-      apiKey: process.env.GEMINI_API_KEY,
-      model,
-      contents: "ping",
-      pathname: "/api/provider/preflight",
-    });
-
-    if (!result.text) {
-      throw new Error("Empty response text from provider preflight");
-    }
-
-    res.status(200).json({ ok: true, status: "healthy" });
-  } catch {
-    res.status(503).json({
-      ok: false,
-      status: "error",
-      error: "Provider preflight check failed",
-    });
-  }
 });
 
 export { classifyError, getClientSafeErrorMessage, logMinimalError, type SafeErrorCategory };

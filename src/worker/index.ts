@@ -81,6 +81,29 @@ export function isRateLimited(ip: string, limit: number, windowMs: number): bool
   return false;
 }
 
+// Timing-safe comparison using Web Crypto for Bearer token validation
+async function timingSafeEqual(a: string, b: string): Promise<boolean> {
+  const encoder = new TextEncoder();
+  const aData = encoder.encode(a);
+  const bData = encoder.encode(b);
+
+  if (aData.byteLength !== bData.byteLength) {
+    return false;
+  }
+
+  const aHash = await crypto.subtle.digest("SHA-256", aData);
+  const bHash = await crypto.subtle.digest("SHA-256", bData);
+
+  const aView = new Uint8Array(aHash);
+  const bView = new Uint8Array(bHash);
+
+  let result = 0;
+  for (let i = 0; i < aView.length; i++) {
+    result |= aView[i] ^ bView[i];
+  }
+  return result === 0;
+}
+
 // 2. MAGIC BYTE SIGNATURE VALIDATOR FOR IMAGES
 export function validateImageSignature(buffer: Uint8Array, declaredMimeType: string): boolean {
   if (!buffer || buffer.length === 0) {
@@ -390,11 +413,13 @@ export default {
         const responseHeaders = getCorsHeaders(origin, env);
         responseHeaders.set("Content-Type", "application/json");
 
+        // Use global/process environment as fallback if `env` does not have it. Wait, inside cloudflare worker env is the source of truth, but we can also inject global variables or we just check if env has ZANA_REVISION.
         return new Response(
           JSON.stringify({
             ok: true,
             status: "ok",
             service: "zana-api-worker",
+            revision: (env as any).ZANA_REVISION || (typeof process !== "undefined" && process.env.ZANA_REVISION) || "unknown",
           }),
           { status: 200, headers: responseHeaders }
         );
@@ -469,7 +494,13 @@ export default {
         }
 
         const authHeader = request.headers.get("Authorization");
-        if (!env.PROVIDER_PREFLIGHT_TOKEN || authHeader !== `Bearer ${env.PROVIDER_PREFLIGHT_TOKEN}`) {
+        if (!env.PROVIDER_PREFLIGHT_TOKEN || !authHeader || !authHeader.startsWith("Bearer ")) {
+          return new Response("Unauthorized", { status: 401, headers: responseHeaders });
+        }
+
+        const providedToken = authHeader.substring(7).trim();
+        const isValid = await timingSafeEqual(providedToken, env.PROVIDER_PREFLIGHT_TOKEN);
+        if (!isValid) {
           return new Response("Unauthorized", { status: 401, headers: responseHeaders });
         }
 

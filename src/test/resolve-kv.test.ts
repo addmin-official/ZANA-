@@ -398,7 +398,14 @@ test("14. Production Config Generation: Preserves assets, name, vars, and does n
     assert.equal(parsedGenerated.main, baseConfig.main);
     assert.equal(parsedGenerated.compatibility_date, baseConfig.compatibility_date);
     assert.deepEqual(parsedGenerated.assets, baseConfig.assets);
-    assert.deepEqual(parsedGenerated.vars, baseConfig.vars);
+    
+    const expectedVars = { ...baseConfig.vars };
+    const actualVars = { ...parsedGenerated.vars };
+    delete actualVars.ZANA_REVISION;
+    
+    assert.deepEqual(actualVars, expectedVars);
+    assert.ok(parsedGenerated.vars.ZANA_REVISION);
+    
     assert.deepEqual(parsedGenerated.kv_namespaces, [
       {
         binding: "LEARNING_RECORDS_KV",
