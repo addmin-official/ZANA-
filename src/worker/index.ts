@@ -419,7 +419,7 @@ export default {
             ok: true,
             status: "ok",
             service: "zana-api-worker",
-            revision: (env as any).ZANA_REVISION || (typeof process !== "undefined" && process.env.ZANA_REVISION) || "unknown",
+            revision: (env as Record<string, unknown>).ZANA_REVISION || (typeof process !== "undefined" && process.env.ZANA_REVISION) || "unknown",
           }),
           { status: 200, headers: responseHeaders }
         );
