@@ -43,6 +43,7 @@ export interface Env {
   FIREBASE_PROJECT_ID: string;
   GEMINI_PRIMARY_MODEL?: string;
   GEMINI_VISION_MODEL?: string;
+  PROVIDER_PREFLIGHT_TOKEN?: string;
   ZANA_LEARNING_KV?: AssessmentKVStore;
   LEARNING_RECORDS_KV?: AssessmentKVStore;
   ASSETS?: { fetch: (req: Request) => Promise<Response> };
@@ -400,54 +401,8 @@ export default {
       }
     }
 
-    // Production Provider Preflight endpoint
-    if (pathname === "/api/provider/preflight") {
-      if (request.method === "GET" || request.method === "POST") {
-        const responseHeaders = getCorsHeaders(origin, env);
-        responseHeaders.set("Content-Type", "application/json");
+    // Production Provider Preflight endpoint (moved to proper location)
 
-        if (!env.GEMINI_API_KEY || !env.GEMINI_API_KEY.trim()) {
-          return new Response(
-            JSON.stringify({ ok: false, status: "error", error: "GEMINI_API_KEY missing" }),
-            { status: 503, headers: responseHeaders }
-          );
-        }
-
-        try {
-          const model = resolvePrimaryModel(env);
-          const result = await ProviderAdapter.generate({
-            apiKey: env.GEMINI_API_KEY,
-            model,
-            contents: "ping",
-            pathname: "/api/provider/preflight",
-          });
-
-          if (!result.text) {
-            throw new Error("Empty response text from provider preflight");
-          }
-
-          return new Response(
-            JSON.stringify({
-              ok: true,
-              status: "healthy",
-              model,
-            }),
-            { status: 200, headers: responseHeaders }
-          );
-        } catch (err: unknown) {
-          const category = classifyError(err);
-          return new Response(
-            JSON.stringify({
-              ok: false,
-              status: "error",
-              category,
-              error: "Provider preflight check failed",
-            }),
-            { status: 503, headers: responseHeaders }
-          );
-        }
-      }
-    }
 
     // OPTIONS preflight
     if (request.method === "OPTIONS") {
@@ -507,6 +462,56 @@ export default {
     }
 
     try {
+      // Production Provider Preflight endpoint
+      if (pathname === "/api/provider/preflight") {
+        if (request.method !== "GET") {
+          return new Response("Method Not Allowed", { status: 405, headers: responseHeaders });
+        }
+
+        const authHeader = request.headers.get("Authorization");
+        if (!env.PROVIDER_PREFLIGHT_TOKEN || authHeader !== `Bearer ${env.PROVIDER_PREFLIGHT_TOKEN}`) {
+          return new Response("Unauthorized", { status: 401, headers: responseHeaders });
+        }
+
+        if (!env.GEMINI_API_KEY || !env.GEMINI_API_KEY.trim()) {
+          return new Response(
+            JSON.stringify({ ok: false, status: "error", error: "GEMINI_API_KEY missing" }),
+            { status: 503, headers: responseHeaders }
+          );
+        }
+
+        try {
+          const model = resolvePrimaryModel(env);
+          const result = await ProviderAdapter.generate({
+            apiKey: env.GEMINI_API_KEY,
+            model,
+            contents: "ping",
+            pathname: "/api/provider/preflight",
+          });
+
+          if (!result.text) {
+            throw new Error("Empty response text from provider preflight");
+          }
+
+          return new Response(
+            JSON.stringify({
+              ok: true,
+              status: "healthy"
+            }),
+            { status: 200, headers: responseHeaders }
+          );
+        } catch {
+          return new Response(
+            JSON.stringify({
+              ok: false,
+              status: "error",
+              error: "Provider preflight check failed",
+            }),
+            { status: 503, headers: responseHeaders }
+          );
+        }
+      }
+
       // POST /api/chat
       if (pathname === "/api/chat" && request.method === "POST") {
         let chatReq: ChatRequest;

@@ -444,25 +444,26 @@ test("Centralized model normalization & prefix stripping", async () => {
   const { normalizeModel, getPrimaryModel, getVisionModel, AI_CONFIG } = await import("../server/config/aiModels.ts");
 
   // AI_CONFIG schema compliance
-  assert.strictEqual(AI_CONFIG.primaryModel, "gemini-3.6-flash");
-  assert.strictEqual(AI_CONFIG.visionModel, "gemini-3.6-flash");
+  assert.strictEqual(AI_CONFIG.primaryModel, "gemini-2.5-flash");
+  assert.strictEqual(AI_CONFIG.visionModel, "gemini-2.5-flash");
   assert.strictEqual(AI_CONFIG.apiBaseUrl, "https://generativelanguage.googleapis.com");
   assert.strictEqual(AI_CONFIG.timeoutMs, 30000);
   assert.strictEqual(AI_CONFIG.retryPolicy.maxRetries, 2);
   assert.deepStrictEqual(AI_CONFIG.retryPolicy.retryableStatusCodes, [429, 500, 502, 503, 504]);
 
   // Model normalization
-  assert.strictEqual(normalizeModel("gemini-3.6-flash"), "gemini-3.6-flash");
-  assert.strictEqual(normalizeModel("models/gemini-3.6-flash"), "gemini-3.6-flash");
-  assert.strictEqual(normalizeModel("models/models/gemini-3.6-flash"), "gemini-3.6-flash");
-  assert.strictEqual(normalizeModel("gemini/gemini-3.6-flash"), "gemini-3.6-flash");
-  assert.strictEqual(normalizeModel(""), "gemini-3.6-flash");
-  assert.strictEqual(normalizeModel(null), "gemini-3.6-flash");
-  assert.strictEqual(normalizeModel(undefined), "gemini-3.6-flash");
+  const canonicalModel = AI_CONFIG.primaryModel;
+  assert.strictEqual(normalizeModel(canonicalModel), canonicalModel);
+  assert.strictEqual(normalizeModel(`models/${canonicalModel}`), canonicalModel);
+  assert.strictEqual(normalizeModel(`models/models/${canonicalModel}`), canonicalModel);
+  assert.strictEqual(normalizeModel(`gemini/${canonicalModel}`), canonicalModel);
+  assert.strictEqual(normalizeModel(""), canonicalModel);
+  assert.strictEqual(normalizeModel(null), canonicalModel);
+  assert.strictEqual(normalizeModel(undefined), canonicalModel);
 
   // Default fallback
-  assert.strictEqual(getPrimaryModel(), "gemini-3.6-flash");
-  assert.strictEqual(getVisionModel(), "gemini-3.6-flash");
+  assert.strictEqual(getPrimaryModel(), canonicalModel);
+  assert.strictEqual(getVisionModel(), AI_CONFIG.visionModel);
 
   // Worker Env override with models/ prefix
   assert.strictEqual(getPrimaryModel({ GEMINI_PRIMARY_MODEL: "models/custom-worker-primary" }), "custom-worker-primary");

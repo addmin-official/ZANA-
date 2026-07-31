@@ -7,7 +7,7 @@ export const aiConstitution: Constitution = {
   description: "Sets technical boundaries for AI models, managing scoping, refusal behavior, and topic safety restrictions.",
   priority: 95,
   metadata: {
-    recommendedModels: ["gemini-3.6-flash"],
+    recommendedModels: ["gemini-2.5-flash"],
     scopingLimits: ["math", "physics", "chemistry", "english"],
     refusalResponseCode: "out-of-scope",
   },
