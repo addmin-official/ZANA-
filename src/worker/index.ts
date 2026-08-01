@@ -495,13 +495,13 @@ export default {
 
         const authHeader = request.headers.get("Authorization");
         if (!env.PROVIDER_PREFLIGHT_TOKEN || !authHeader || !authHeader.startsWith("Bearer ")) {
-          return new Response("Unauthorized", { status: 401, headers: responseHeaders });
+          return new Response(JSON.stringify({ ok: false, status: "error", error: "Unauthorized" }), { status: 401, headers: responseHeaders });
         }
 
-        const providedToken = authHeader.substring(7).trim();
+        const providedToken = authHeader.substring(7);
         const isValid = await timingSafeEqual(providedToken, env.PROVIDER_PREFLIGHT_TOKEN);
         if (!isValid) {
-          return new Response("Unauthorized", { status: 401, headers: responseHeaders });
+          return new Response(JSON.stringify({ ok: false, status: "error", error: "Unauthorized" }), { status: 401, headers: responseHeaders });
         }
 
         if (!env.GEMINI_API_KEY || !env.GEMINI_API_KEY.trim()) {

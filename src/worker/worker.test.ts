@@ -98,9 +98,29 @@ test("Worker - GET /api/provider/preflight without token returns 401", async () 
   env.PROVIDER_PREFLIGHT_TOKEN = "test-token";
   const res = await worker.fetch(req, env);
   assert.strictEqual(res.status, 401);
+  const body = (await res.json()) as Record<string, unknown>;
+  assert.strictEqual(body.ok, false);
+  assert.strictEqual(body.error, "Unauthorized");
 });
 
-test("Worker - GET /api/provider/preflight with invalid token returns 401", async () => {
+test("Worker - GET /api/provider/preflight with malformed Bearer header returns 401", async () => {
+  const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/provider/preflight", {
+    method: "GET",
+    headers: {
+      Authorization: "Basic invalid-token",
+    }
+  });
+
+  const env = createMockEnv();
+  env.PROVIDER_PREFLIGHT_TOKEN = "test-token";
+  const res = await worker.fetch(req, env);
+  assert.strictEqual(res.status, 401);
+  const body = (await res.json()) as Record<string, unknown>;
+  assert.strictEqual(body.ok, false);
+  assert.strictEqual(body.error, "Unauthorized");
+});
+
+test("Worker - GET /api/provider/preflight with wrong token returns 401", async () => {
   const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/provider/preflight", {
     method: "GET",
     headers: {
@@ -112,6 +132,9 @@ test("Worker - GET /api/provider/preflight with invalid token returns 401", asyn
   env.PROVIDER_PREFLIGHT_TOKEN = "test-token";
   const res = await worker.fetch(req, env);
   assert.strictEqual(res.status, 401);
+  const body = (await res.json()) as Record<string, unknown>;
+  assert.strictEqual(body.ok, false);
+  assert.strictEqual(body.error, "Unauthorized");
 });
 
 test("Worker - GET /api/provider/preflight with valid token but no API KEY returns 503", async () => {
@@ -127,6 +150,9 @@ test("Worker - GET /api/provider/preflight with valid token but no API KEY retur
   env.GEMINI_API_KEY = "";
   const res = await worker.fetch(req, env);
   assert.strictEqual(res.status, 503);
+  const body = (await res.json()) as Record<string, unknown>;
+  assert.strictEqual(body.ok, false);
+  assert.strictEqual(body.error, "GEMINI_API_KEY missing");
 });
 
 // Since we cannot easily mock ProviderAdapter.generate in this test environment natively without setup, we will just ensure it reaches the provider by testing the error response when API_KEY is invalid/dummy.
@@ -147,6 +173,9 @@ test("Worker - GET /api/provider/preflight with valid token returns sanitized 50
   assert.strictEqual(body.ok, false);
   assert.strictEqual(body.error, "Provider preflight check failed");
   assert.strictEqual(body.category, undefined); // Should not expose internal details
+  // Ensure no secret leakage in response
+  assert.strictEqual(body.apiKey, undefined);
+  assert.strictEqual(body.token, undefined);
 });
 test("Worker - GET /api/health without Origin header returns 200 without CORS header", async () => {
   const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/health", {

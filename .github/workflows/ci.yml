@@ -549,7 +549,10 @@ jobs:
           cat "$PREFLIGHT_FILE"
           echo ""
 
-          if [ "$HTTP_STATUS" -ne 200 ]; then
+          if [ "$HTTP_STATUS" -eq 401 ]; then
+            echo "::error::PROVIDER_PREFLIGHT_TOKEN missing or mismatched (HTTP 401)"
+            exit 1
+          elif [ "$HTTP_STATUS" -ne 200 ]; then
             echo "::error::Production provider preflight failed with HTTP status $HTTP_STATUS. GEMINI_API_KEY may be missing or model unavailable."
             exit 1
           fi
