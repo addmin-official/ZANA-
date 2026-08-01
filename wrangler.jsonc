@@ -8,8 +8,8 @@
   ],
   "vars": {
     "ALLOWED_ORIGINS": "https://zana.krd,https://zana-api-worker.zana-platform.workers.dev",
-    "GEMINI_PRIMARY_MODEL": "gemini-2.5-flash",
-    "GEMINI_VISION_MODEL": "gemini-2.5-flash"
+    "GEMINI_PRIMARY_MODEL": "gemini-3.5-flash",
+    "GEMINI_VISION_MODEL": "gemini-3.5-flash"
   },
   "assets": {
     "directory": "./dist/client",
