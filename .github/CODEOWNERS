@@ -1,0 +1,16 @@
+# ZANA finalization ownership
+# Critical production, deployment, security, AI-provider and contract files require owner review.
+
+* @addmin-official
+
+/.github/workflows/ @addmin-official
+/scripts/smoke-test.js @addmin-official
+/scripts/verify-finalization-contract.js @addmin-official
+/wrangler.jsonc @addmin-official
+/src/worker/ @addmin-official
+/src/server/ai/ @addmin-official
+/src/server/config/aiModels.ts @addmin-official
+/src/constitutions/ai.constitution.ts @addmin-official
+/package.json @addmin-official
+/firebase.json @addmin-official
+/.firebaserc @addmin-official
