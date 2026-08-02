@@ -578,8 +578,8 @@ test("Centralized model normalization & prefix stripping", async () => {
   const { normalizeModel, getPrimaryModel, getVisionModel, AI_CONFIG } = await import("../server/config/aiModels.ts");
 
   // AI_CONFIG schema compliance
-  assert.strictEqual(AI_CONFIG.primaryModel, "gemini-2.5-flash");
-  assert.strictEqual(AI_CONFIG.visionModel, "gemini-2.5-flash");
+  assert.strictEqual(AI_CONFIG.primaryModel, "gemini-3.5-flash");
+  assert.strictEqual(AI_CONFIG.visionModel, "gemini-3.5-flash");
   assert.strictEqual(AI_CONFIG.apiBaseUrl, "https://generativelanguage.googleapis.com");
   assert.strictEqual(AI_CONFIG.timeoutMs, 30000);
   assert.strictEqual(AI_CONFIG.retryPolicy.maxRetries, 2);
