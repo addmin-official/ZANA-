@@ -218,11 +218,8 @@ async function main() {
     }, 400);
     if (!askBad.ok) allPassed = false;
 
-    // 10. POST /api/study/vision (Valid payload: complete decodable 1x1 PNG image)
-    const validPng = Buffer.from(
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2ZQAAAABJRU5ErkJggg==',
-      'base64'
-    );
+    // 10. POST /api/study/vision (Valid payload: correct 8-byte PNG image)
+    const validPng = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
     const validBlob = new Blob([validPng], { type: 'image/png' });
     const validFormData = new FormData();
     validFormData.append('image', validBlob, 'test.png');
