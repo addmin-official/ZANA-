@@ -1,0 +1,40 @@
+name: ZANA Finalization Contract
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: finalization-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  protect-finalized-production:
+    name: Protect Finalized Production Contracts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Exact Dependencies
+        run: npm ci
+
+      - name: Verify ZANA Finalization Contract
+        run: npm run verify:finalization
+
+      - name: Verify TypeScript Safety
+        run: npm run typecheck
+
+      - name: Verify Production Test Suite
+        run: npm test
