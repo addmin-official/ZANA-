@@ -241,3 +241,77 @@ test("Tests verify no copyrighted source names are hardcoded", () => {
   assert.ok(allCurricula);
   assert.strictEqual(allCurricula.name, "ZANA Default Open Curriculum");
 });
+
+test("Literary section curriculum boundary - strictly excludes physics and chemistry", async () => {
+  const { getAvailableSubjectsForStream, LITERARY_AVAILABLE_SUBJECTS } = await import("./data/subjectCatalog.ts");
+  const literarySubjects = getAvailableSubjectsForStream("literary");
+  assert.deepStrictEqual(literarySubjects, ["math", "english"]);
+  assert.strictEqual(literarySubjects.includes("physics" as any), false, "Physics must not be available in literary section");
+  assert.strictEqual(literarySubjects.includes("chemistry" as any), false, "Chemistry must not be available in literary section");
+  assert.deepStrictEqual(LITERARY_AVAILABLE_SUBJECTS, ["math", "english"]);
+});
+
+test("Phase 19.1 - XwendnCurriculumProvider contract and Grade 12 Chemistry pilot verification", async () => {
+  const { XwendnCurriculumProvider, XWENDN_CURRICULUM_ID } = await import("./providers/XwendnCurriculumProvider.ts");
+  const provider = new XwendnCurriculumProvider();
+
+  // 1. Verify curriculum metadata
+  const curr = await provider.getCurriculum(XWENDN_CURRICULUM_ID);
+  assert.ok(curr, "Xwendn curriculum metadata must exist.");
+  assert.strictEqual(curr.id, XWENDN_CURRICULUM_ID);
+  assert.ok(curr.name.toLowerCase().includes("xwendn.krd"));
+
+  // 2. Verify Grade 12 Chemistry unit and lesson retrieval
+  const units = await provider.listUnits(XWENDN_CURRICULUM_ID, "12", "chemistry");
+  assert.ok(units.length >= 2, "Must contain at least 2 units for Grade 12 Chemistry pilot.");
+  assert.strictEqual(units[0].grade, "12");
+  assert.strictEqual(units[0].subject, "chemistry");
+
+  // 3. Verify real chemistry lessons
+  const lessons = await provider.listLessons(units[0].id);
+  assert.ok(lessons.length >= 1, "Must contain lessons under Unit 1.");
+  const lesson1 = lessons[0];
+  assert.strictEqual(lesson1.grade, "12");
+  assert.strictEqual(lesson1.subject, "chemistry");
+  assert.ok(lesson1.concepts.includes("ترشی برۆنستد-لۆری"));
+  assert.ok(lesson1.learningObjectives.length > 0);
+  assert.ok(lesson1.contentExcerpts && lesson1.contentExcerpts.length > 0);
+  assert.strictEqual(lesson1.sourceStatus, "OPEN_LICENSE");
+
+  // 4. Verify context retrieval by topic query
+  const retrieved = await provider.retrieveContext("12", "chemistry", undefined, undefined, "pH");
+  assert.ok(retrieved.length > 0, "Query 'pH' should retrieve relevant chemistry lesson.");
+  assert.ok(retrieved.some((l) => l.title.includes("pH")));
+
+  // 5. Fail-closed on non-existent curriculum context
+  const missing = await provider.retrieveContext("12", "history");
+  assert.deepStrictEqual(missing, [], "Must return empty array for non-existent subject without hallucinating.");
+});
+
+test("Phase 19.1 - CurriculumRetriever grounding and fail-closed fallback", async () => {
+  const { XwendnCurriculumProvider } = await import("./providers/XwendnCurriculumProvider.ts");
+  const provider = new XwendnCurriculumProvider();
+  const retriever = new CurriculumRetriever(provider);
+
+  // 1. Grounded retrieval for Grade 12 Chemistry
+  const groundedResult = await retriever.retrieve({
+    grade: "12",
+    subject: "chemistry",
+    lessonTitle: "پێناسەی ترش و تفتەکان (تیۆری برۆنستد-لۆری و ئارینیۆس)",
+  });
+  assert.strictEqual(groundedResult.groundingStatus, "GROUNDED");
+  assert.ok(groundedResult.matchedLessons.length > 0);
+  assert.ok(groundedResult.excerpts.length > 0);
+  assert.ok(groundedResult.confidence > 0);
+
+  // 2. Fail-closed ungrounded retrieval for unregistered subject
+  const ungroundedResult = await retriever.retrieve({
+    grade: "12",
+    subject: "philosophy",
+    query: "epistemology",
+  });
+  assert.strictEqual(ungroundedResult.groundingStatus, "UNGROUNDED");
+  assert.strictEqual(ungroundedResult.matchedLessons.length, 0);
+  assert.strictEqual(ungroundedResult.confidence, 0);
+});
+

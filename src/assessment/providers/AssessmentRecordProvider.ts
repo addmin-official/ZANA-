@@ -9,8 +9,10 @@ export interface AssessmentRecordProvider {
 }
 
 export interface AssessmentKVStore {
-  get(key: string): Promise<string | null>;
-  put(key: string, value: string): Promise<void>;
+  get(key: string, type?: string): Promise<string | Record<string, unknown> | null>;
+  put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>;
+  list?(options?: { prefix?: string; limit?: number }): Promise<{ keys: { name: string }[] }>;
+  delete?(key: string): Promise<void>;
 }
 
 // Helper to access Node's fs module safely without breaking browser or Cloudflare environments
@@ -224,7 +226,8 @@ export class PersistentAssessmentRecordProvider implements AssessmentRecordProvi
 
       // Append to student's list of attempts
       const studentKey = this.getStudentAttemptsKey(attempt.studentId);
-      const list = JSON.parse(await this.cloudflareKv.get(studentKey) || "[]") as string[];
+      const studentRaw = await this.cloudflareKv.get(studentKey);
+      const list = JSON.parse((typeof studentRaw === "string" ? studentRaw : JSON.stringify(studentRaw)) || "[]") as string[];
       if (!list.includes(attempt.id)) {
         list.push(attempt.id);
         await this.cloudflareKv.put(studentKey, JSON.stringify(list));
@@ -251,7 +254,7 @@ export class PersistentAssessmentRecordProvider implements AssessmentRecordProvi
       const key = this.getAttemptKey(attemptId);
       const val = await this.cloudflareKv.get(key);
       if (val) {
-        return JSON.parse(val) as AssessmentAttempt;
+        return JSON.parse(typeof val === "string" ? val : JSON.stringify(val)) as AssessmentAttempt;
       }
       return null;
     }
@@ -270,7 +273,8 @@ export class PersistentAssessmentRecordProvider implements AssessmentRecordProvi
 
     if (this.cloudflareKv) {
       const studentKey = this.getStudentAttemptsKey(studentId);
-      const list = JSON.parse(await this.cloudflareKv.get(studentKey) || "[]") as string[];
+      const studentRaw = await this.cloudflareKv.get(studentKey);
+      const list = JSON.parse((typeof studentRaw === "string" ? studentRaw : JSON.stringify(studentRaw)) || "[]") as string[];
       const attempts: AssessmentAttempt[] = [];
       for (const id of list) {
         const a = await this.getAttempt(id);
@@ -316,7 +320,7 @@ export class PersistentAssessmentRecordProvider implements AssessmentRecordProvi
       const key = this.getResultKey(attemptId);
       const val = await this.cloudflareKv.get(key);
       if (val) {
-        return JSON.parse(val) as AssessmentResult;
+        return JSON.parse(typeof val === "string" ? val : JSON.stringify(val)) as AssessmentResult;
       }
       return null;
     }

@@ -71,6 +71,9 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
         setError("تکایە ڕێڕەوی خوێندنت دیاری بکە.");
         return;
       }
+      if (stream === "literary" && (subject === "physics" || subject === "chemistry")) {
+        setSubject("math");
+      }
       setError("");
     }
 
@@ -345,7 +348,14 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
               </div>
 
               <div className="grid grid-cols-1 gap-3">
-                {(Object.keys(SUBJECT_LABELS) as SubjectKey[]).map((val) => {
+                {(Object.keys(SUBJECT_LABELS) as SubjectKey[])
+                  .filter((val) => {
+                    if (stream === "literary") {
+                      return val !== "physics" && val !== "chemistry";
+                    }
+                    return true;
+                  })
+                  .map((val) => {
                   const isSelected = subject === val;
                   return (
                     <button

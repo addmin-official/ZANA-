@@ -50,16 +50,28 @@ export const StudentStudyPathDashboard: React.FC<StudentStudyPathDashboardProps>
     return headers;
   }, [authToken, studentId]);
 
+  const safeFetchJson = async (url: string, headers: Record<string, string>) => {
+    try {
+      const res = await fetch(url, { headers });
+      if (!res.ok) return null;
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  };
+
   const loadData = useCallback(async () => {
     try {
       const headers = await fetchHeaders();
       const [todayRes, weekRes, goalRes, prefsRes, nextActionRes, progressRes] = await Promise.all([
-        fetch("/api/planning/today", { headers }).then(r => r.ok ? r.json() : null),
-        fetch("/api/planning/week", { headers }).then(r => r.ok ? r.json() : null),
-        fetch("/api/planning/goals", { headers }).then(r => r.ok ? r.json() : null),
-        fetch("/api/planning/preferences", { headers }).then(r => r.ok ? r.json() : null),
-        fetch("/api/planning/next-action", { headers }).then(r => r.ok ? r.json() : null),
-        fetch("/api/planning/progress", { headers }).then(r => r.ok ? r.json() : null)
+        safeFetchJson("/api/planning/today", headers),
+        safeFetchJson("/api/planning/week", headers),
+        safeFetchJson("/api/planning/goals", headers),
+        safeFetchJson("/api/planning/preferences", headers),
+        safeFetchJson("/api/planning/next-action", headers),
+        safeFetchJson("/api/planning/progress", headers)
       ]);
 
       if (todayRes) setTodayPlan(todayRes);
@@ -69,7 +81,7 @@ export const StudentStudyPathDashboard: React.FC<StudentStudyPathDashboardProps>
       if (nextActionRes) setNextBestAction(nextActionRes);
       if (progressRes) setProgress(progressRes);
     } catch (err) {
-      console.error("[StudentStudyPathDashboard] Error loading planning data:", err);
+      console.warn("[StudentStudyPathDashboard] Could not load planning data:", err);
     } finally {
       setIsLoading(false);
     }

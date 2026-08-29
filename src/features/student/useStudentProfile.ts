@@ -111,9 +111,14 @@ export function useStudentProfile() {
           setIsOfflineFallback(true);
         }
       } else {
-        signInAnonymously(auth).catch((err) => {
+        signInAnonymously(auth).catch((err: unknown) => {
           setIsOfflineFallback(true);
-          console.warn("Firebase Auth anonymous sign-in unavailable, running in local guest mode:", err?.message || err);
+          const errCode = (err && typeof err === "object" && "code" in err) ? String((err as { code: unknown }).code) : "";
+          if (errCode === "auth/admin-restricted-operation" || String(err).includes("admin-restricted-operation")) {
+            console.info("Firebase Auth admin-restricted-operation caught: switching smoothly to local offline demo mode with seeded student data.");
+          } else {
+            console.warn("Firebase Auth anonymous sign-in unavailable, running in local guest mode:", (err as Error)?.message || err);
+          }
         });
       }
     });
