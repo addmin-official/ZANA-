@@ -32,6 +32,16 @@ export { SubjectRegistry } from "./registry/SubjectRegistry.ts";
 export * from "./providers/CurriculumProvider.ts";
 export { EmptyCurriculumProvider } from "./providers/EmptyCurriculumProvider.ts";
 export { LicensedCurriculumProvider } from "./providers/LicensedCurriculumProvider.ts";
+export {
+  XwendnCurriculumProvider,
+  XWENDN_CURRICULUM_ID,
+  XWENDN_LICENSE_ID,
+  XWENDN_CURRICULUM_METADATA,
+  XWENDN_GRADES,
+  XWENDN_SUBJECTS,
+  XWENDN_PILOT_UNITS,
+  XWENDN_PILOT_LESSONS,
+} from "./providers/XwendnCurriculumProvider.ts";
 
 // Retrieval
 export * from "./retrieval/CurriculumRetriever.ts";

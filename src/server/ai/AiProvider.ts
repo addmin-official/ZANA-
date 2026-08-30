@@ -16,7 +16,8 @@ import {
   validateAskResponse,
   validateVisionResponse,
 } from "./AiContracts.ts";
-import { buildSystemPrompt } from "../../ai/buildSystemPrompt.ts";
+import { buildSystemPrompt, CurriculumPromptContext } from "../../ai/buildSystemPrompt.ts";
+import { CurriculumRetriever } from "../../curriculum/retrieval/CurriculumRetriever.ts";
 import { resolvePrimaryModel, resolveVisionModel } from "../config/aiModels.ts";
 
 function uint8ArrayToBase64(bytes: Uint8Array): string {
@@ -36,14 +37,68 @@ export class ProviderAdapter {
     return GeminiProvider.generate(params);
   }
 
-  static async chat(apiKey: string, req: ChatRequest, env?: unknown): Promise<ChatResponse> {
+  static async chat(apiKey: string | undefined, req: ChatRequest, env?: unknown): Promise<ChatResponse> {
     const model = resolvePrimaryModel(env as Record<string, unknown> | undefined);
+
+    const grade = req.profile.grade || "12";
+    const subject = req.profile.activeSubject || "chemistry";
+    const stream = req.profile.stream;
+    const lessonTitle = req.academicContext?.lessonTitle;
+    const conceptTitle = req.academicContext?.conceptTitle;
+
+    let curriculumContext: CurriculumPromptContext | undefined = undefined;
+    try {
+      const retriever = new CurriculumRetriever();
+      const retrieval = await retriever.retrieve({
+        grade,
+        stream,
+        subject,
+        lessonTitle,
+        conceptTitle,
+        query: req.message,
+      });
+
+      if (retrieval.groundingStatus === "GROUNDED") {
+        const topLesson = retrieval.matchedLessons[0];
+        curriculumContext = {
+          curriculumId: topLesson?.curriculumId || "curriculum-xwendn-krd",
+          unitTitle: topLesson?.unitId,
+          lessonTitle: topLesson?.title || lessonTitle,
+          conceptTitle: retrieval.matchedConcepts[0] || conceptTitle,
+          groundingStatus: "GROUNDED",
+          sourceStatus: topLesson?.sourceStatus || "OPEN_LICENSE",
+          retrievalConfidence: retrieval.confidence,
+          excerpts: retrieval.excerpts,
+        };
+      } else {
+        curriculumContext = {
+          curriculumId: "unspecified",
+          groundingStatus: "UNGROUNDED",
+          sourceStatus: "NONE",
+          retrievalConfidence: 0,
+          excerpts: [],
+        };
+      }
+    } catch {
+      curriculumContext = {
+        curriculumId: "unspecified",
+        groundingStatus: "UNGROUNDED",
+        sourceStatus: "NONE",
+        retrievalConfidence: 0,
+        excerpts: [],
+      };
+    }
+
     const systemInstruction = buildSystemPrompt({
       studentName: req.profile.name || "قوتابی",
-      grade: req.profile.grade || "9",
-      subject: req.profile.activeSubject || "بیرکاری",
+      grade,
+      stream,
+      subject,
       level: req.profile.level || "ناوەند",
       mode: "chat",
+      lessonTitle,
+      conceptTitle,
+      curriculumContext,
     });
 
     const contents = (req.history || []).map((msg) => ({
@@ -86,7 +141,7 @@ export class ProviderAdapter {
     return validateChatResponse(json);
   }
 
-  static async assessment(apiKey: string, req: AssessmentRequest, env?: unknown): Promise<AssessmentResponse> {
+  static async assessment(apiKey: string | undefined, req: AssessmentRequest, env?: unknown): Promise<AssessmentResponse> {
     const model = resolvePrimaryModel(env as Record<string, unknown> | undefined);
     const systemInstruction = buildSystemPrompt({
       studentName: req.profile.name || "قوتابی",
@@ -156,7 +211,7 @@ ${historySummary.join("\n")}
     return validateAssessmentResponse(json);
   }
 
-  static async report(apiKey: string, req: ReportRequest, env?: unknown): Promise<ReportResponse> {
+  static async report(apiKey: string | undefined, req: ReportRequest, env?: unknown): Promise<ReportResponse> {
     const model = resolvePrimaryModel(env as Record<string, unknown> | undefined);
     const systemInstruction = buildSystemPrompt({
       studentName: req.profile.name || "قوتابی",
@@ -205,7 +260,7 @@ ${historySummary.join("\n")}
     return validateReportResponse(json);
   }
 
-  static async ask(apiKey: string, req: AskRequest, env?: unknown): Promise<AskResponse> {
+  static async ask(apiKey: string | undefined, req: AskRequest, env?: unknown): Promise<AskResponse> {
     const model = resolvePrimaryModel(env as Record<string, unknown> | undefined);
     const systemInstruction = buildSystemPrompt({
       studentName: req.context.studentName || "قوتابی",
@@ -257,7 +312,7 @@ ${historySummary.join("\n")}
     return validateAskResponse(json);
   }
 
-  static async vision(apiKey: string, req: VisionRequest, env?: unknown): Promise<VisionResponse> {
+  static async vision(apiKey: string | undefined, req: VisionRequest, env?: unknown): Promise<VisionResponse> {
     const model = resolveVisionModel(env as Record<string, unknown> | undefined);
     const base64Data = uint8ArrayToBase64(req.imageBytes);
 

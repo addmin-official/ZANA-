@@ -2,25 +2,44 @@ import { AskApiRequest, AskApiResponse } from "./askTypes.ts";
 
 const getApiUrl = (path: string): string => {
   const baseUrl = import.meta.env.VITE_API_BASE_URL;
-  if (!baseUrl) {
-    const isDev = import.meta.env.DEV;
-    if (isDev) {
-      throw new Error("Development Error: VITE_API_BASE_URL environment variable is missing or undefined. Please configure it in your environment.");
-    } else {
-      throw new Error("ببوورە، ڕێکخستنی خزمەتگوزارییەکانی زانا تەواو نییە (VITE_API_BASE_URL دیاری نەکراوە). تکایە پەیوەندی بە سەرپەرشتیارەوە بکە.");
-    }
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  if (!baseUrl || !baseUrl.trim()) {
+    return normalizedPath;
   }
   const normalizedBase = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   return `${normalizedBase}${normalizedPath}`;
 };
+
+async function fetchWithFallback(path: string, init: RequestInit): Promise<Response> {
+  const primaryUrl = getApiUrl(path);
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+
+  if (primaryUrl === normalizedPath) {
+    return fetch(primaryUrl, init);
+  }
+
+  try {
+    const response = await fetch(primaryUrl, init);
+    if (!response.ok && (response.status === 404 || response.status === 502 || response.status === 503)) {
+      try {
+        return await fetch(normalizedPath, init);
+      } catch {
+        return response;
+      }
+    }
+    return response;
+  } catch (err) {
+    console.warn(`Fetch to ${primaryUrl} failed (${err instanceof Error ? err.message : String(err)}), falling back to relative endpoint: ${normalizedPath}`);
+    return fetch(normalizedPath, init);
+  }
+}
 
 export async function askZana(request: AskApiRequest): Promise<AskApiResponse> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 seconds timeout
 
   try {
-    const response = await fetch(getApiUrl("/api/study/ask"), {
+    const response = await fetchWithFallback("/api/study/ask", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

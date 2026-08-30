@@ -36,6 +36,14 @@ import {
   PlanRebalancer,
   PlanGenerationMode,
 } from "../planning/index.ts";
+import { handleStudyPlanRoute } from "../server/api/study/plan.ts";
+import { handleStudentProfileRoute } from "../server/api/student/profile.ts";
+import { handleFeedbackRoute } from "../server/api/feedback.ts";
+import { handleTelemetryExportRoute } from "../server/api/internal/telemetryExport.ts";
+import { handleHealthRoute } from "../server/api/health.ts";
+import { enforceAiRateLimit } from "../server/middleware/rateLimiter.ts";
+import { applySecurityHeaders } from "../server/middleware/security.ts";
+import { validateProductionEnv } from "../server/config/envValidator.ts";
 
 export interface Env {
   GEMINI_API_KEY: string;
@@ -43,11 +51,13 @@ export interface Env {
   FIREBASE_PROJECT_ID: string;
   GEMINI_PRIMARY_MODEL?: string;
   GEMINI_VISION_MODEL?: string;
+  ADMIN_TELEMETRY_SECRET?: string;
   PROVIDER_PREFLIGHT_TOKEN?: string;
   ZANA_REVISION?: string;
   ZANA_LEARNING_KV?: AssessmentKVStore;
   LEARNING_RECORDS_KV?: AssessmentKVStore;
   ASSETS?: { fetch: (req: Request) => Promise<Response> };
+  [key: string]: unknown;
 }
 
 // 1. IN-MEMORY RATE LIMITING
@@ -398,7 +408,38 @@ async function getWorkerAuthenticatedStudentId(req: Request, env: Env): Promise<
 }
 
 export default {
-  async fetch(request: Request, env: Env, _ctx?: unknown): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx?: unknown): Promise<Response> {
+    try {
+      // 1. Fail-fast if edge environment is misconfigured in production
+      const url = new URL(request.url);
+      const isHealth = url.pathname === "/api/health";
+      const envObj = env as unknown as Record<string, unknown>;
+      const isProd = envObj.ZANA_ENV === "production" || (!envObj.ZANA_ENV && process.env.NODE_ENV === "production");
+
+      if (!isHealth && isProd) {
+        validateProductionEnv(env);
+      }
+
+      // 2. Route the request and apply edge security headers
+      const rawResponse = await this.handleRequest(request, env, ctx);
+      return applySecurityHeaders(rawResponse);
+    } catch (error: unknown) {
+      console.error("[Worker Fatal Error]", error);
+      const errResponse = new Response(
+        JSON.stringify({
+          error: "Service Unavailable",
+          message: "The system is temporarily unable to handle requests.",
+        }),
+        {
+          status: 503,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+      return applySecurityHeaders(errResponse);
+    }
+  },
+
+  async handleRequest(request: Request, env: Env, _ctx?: unknown): Promise<Response> {
     const url = new URL(request.url);
     let pathname = url.pathname.replace(/\/+/g, "/");
 
@@ -562,6 +603,31 @@ export default {
             status: 400,
             headers: responseHeaders,
           });
+        }
+
+        const authHeader = request.headers.get("Authorization");
+        const studentId = (authHeader && authHeader.startsWith("Bearer "))
+          ? authHeader.split("Bearer ")[1].slice(0, 32)
+          : (request.headers.get("CF-Connecting-IP") || "anonymous");
+
+        try {
+          await enforceAiRateLimit(env, studentId);
+        } catch (rlError: unknown) {
+          if ((rlError as Error)?.message === "RATE_LIMIT_EXCEEDED") {
+            return new Response(
+              JSON.stringify({
+                error: "گەیشتیتە سنوری دیاریکراوی بەکارهێنان بۆ ئەم کاتژمێرە. تکایە دواتر هەوڵبدەرەوە.",
+              }),
+              {
+                status: 429,
+                headers: {
+                  ...responseHeaders,
+                  "Retry-After": "3600",
+                },
+              }
+            );
+          }
+          throw rlError;
         }
 
         const chatResult = await ProviderAdapter.chat(env.GEMINI_API_KEY, chatReq, env);
@@ -1380,6 +1446,31 @@ export default {
           }
           return new Response(JSON.stringify({ error: errMsg }), { status: 400, headers: responseHeaders });
         }
+      }
+
+      // GET /api/health/deep
+      if (pathname === "/api/health/deep" && request.method === "GET") {
+        return handleHealthRoute(request, env as never);
+      }
+
+      // GET /api/study/plan
+      if (pathname === "/api/study/plan" && request.method === "GET") {
+        return handleStudyPlanRoute(request, env as never);
+      }
+
+      // GET /api/student/profile
+      if (pathname === "/api/student/profile" && request.method === "GET") {
+        return handleStudentProfileRoute(request, env as never);
+      }
+
+      // POST /api/feedback
+      if (pathname === "/api/feedback" && request.method === "POST") {
+        return handleFeedbackRoute(request, env as never);
+      }
+
+      // GET /api/internal/telemetry
+      if (pathname === "/api/internal/telemetry" && request.method === "GET") {
+        return handleTelemetryExportRoute(request, env as never);
       }
 
       // Fallback 404

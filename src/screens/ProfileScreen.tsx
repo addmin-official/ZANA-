@@ -228,7 +228,12 @@ export function ProfileScreen({ profile, onUpdateProfile, onResetAll }: ProfileS
               className="w-full font-sans text-sm min-h-[48px] px-3 rounded-xl border border-slate-200 bg-white text-right"
               style={{ direction: "rtl" }}
             >
-              {SUBJECTS_DATA.map((sub) => (
+              {SUBJECTS_DATA.filter((sub) => {
+                if (profile.stream === "literary") {
+                  return sub.id !== "physics" && sub.id !== "chemistry";
+                }
+                return true;
+              }).map((sub) => (
                 <option key={sub.id} value={sub.id}>
                   {sub.name}
                 </option>

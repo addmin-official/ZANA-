@@ -1,6 +1,7 @@
 import { ZANA_AI_CONSTITUTION } from "./constitutions/zana-ai-constitution.ts";
 import { SORANI_LANGUAGE_CONSTITUTION } from "./constitutions/sorani-language-constitution.ts";
 import { TEACHING_CONSTITUTION } from "./constitutions/teaching-constitution.ts";
+import { CurriculumEvidence } from "../curriculum/retrieval/CurriculumEvidence.ts";
 
 export interface CurriculumPromptContext {
   curriculumId: string;
@@ -11,6 +12,7 @@ export interface CurriculumPromptContext {
   sourceStatus: "NONE" | "OPEN_LICENSE" | "LICENSED";
   retrievalConfidence: number;
   excerpts?: string[];
+  evidence?: CurriculumEvidence[];
 }
 
 export interface SystemPromptOptions {
@@ -76,18 +78,48 @@ export function buildSystemPrompt(options: SystemPromptOptions): string {
 
   let curriculumGroundingInstructions = "";
   if (curriculumContext) {
-    const { groundingStatus, excerpts = [] } = curriculumContext;
-    if (groundingStatus === "UNGROUNDED") {
+    const { groundingStatus, excerpts = [], evidence = [] } = curriculumContext;
+    if (groundingStatus === "UNGROUNDED" || (evidence.length === 0 && excerpts.length === 0)) {
       curriculumGroundingInstructions = `
 [ڕێساکانی بنەڕەتی پڕۆگرامی خوێندنی فەرمی - دۆخی بێ سەرچاوە یان بێ مۆڵەت]
 - تۆ نابێت بە هیچ شێوەیەک بانگەشەی ئەوە بکەیت کە ئەم وەڵامە لە کتێبی فەرمی یان سەرچاوەی فەرمی وەزارەتەوە وەرگیراوە.
 - نابێت باسی هیچ ژمارەی لاپەڕەیەک یان بەشی دیاریکراوی ناو کتێب بکەیت.
 - تەنها چەمکەکان بەپێی زانیاریی فێرکاریی گشتیی خۆت ڕوون بکەرەوە.
 - هەرگیز مەڵێ 'ئەمە هاوتایە لەگەڵ پڕۆگرامی فەرمی پۆلی دیاریکراو'.
+- بە زمانی شیرینی کوردی سۆرانی بە قوتابییەکە ڕابگەیەنە: "ببوورە، من ناتوانم ئەم زانیارییە یان بابەتە لە پەڕتووکی خوێندنی فەرمی دیاریکراودا بدۆزمەوە."
+- هەمیشە شێوازی سوقراتی بپارێزە: پرسیاری پشکنینی بکە یان ڕێنمایی گشتی بدە بۆ یارمەتیدانی، بەڵام بێ ئاماژەدان بە کتێبی فەرمی.
 `;
     } else if (groundingStatus === "GROUNDED") {
-      const excerptText = excerpts.length > 0 ? excerpts.join("\n\n") : "هیچ دەقێک بەردەست نییە.";
-      curriculumGroundingInstructions = `
+      if (evidence && evidence.length > 0) {
+        const evidenceText = evidence.map((e, idx) => `
+بەڵگەی ژمارە ${idx + 1}:
+- ناسنامە: ${e.evidenceId}
+- بەش/بەند: بەندی ${e.chapterNumber || "نادیار"}: ${e.chapterTitleKurdish}
+- وانە: وانەی ${e.lessonNumber || "نادیار"}: ${e.lessonTitleKurdish}
+- لاپەڕەکان: لاپەڕە ${e.pageNumberStart} تا ${e.pageNumberEnd}
+- دەقی سەرچاوە: "${e.contentSnippet}"
+- سەرچاوەی فەرمی (Provenance): بڵاوکەرەوە: ${e.provenance.publisher || "وەزارەتی پەروەردە"}، چاپ: ${e.provenance.edition || "نادیار"}، ساڵ: ${e.provenance.publishedYear || "نادیار"}
+`).join("\n\n");
+
+        curriculumGroundingInstructions = `
+[ڕێساکانی بنەڕەتی پڕۆگرامی خوێندنی فەرمی - دۆخی سەلمێنراو بە بەڵگەی فەرمی]
+ئەم زانیاری و بەڵگانەی خوارەوە بە شێوەیەکی فەرمی و زانستی لە پەڕتووکی خوێندنی فەرمی هەرێمەوە دەرهێنراون:
+=== دەستپێکی بەڵگە فەرمییەکان ===
+${evidenceText}
+=== کۆتایی بەڵگە فەرمییەکان ===
+
+ڕێسا بەھێزەکانی بەکارهێنانی بەڵگە:
+1. پێویستە تەنها و تەنها لە چوارچێوەی دەقی بەڵگە فەرمییەکانی سەرەوەدا وەڵامی پرسیارە زانستی و هاوکێشەکان بدەیتەوە. بە هیچ شێوەیەک زانیاری دەرەکی یان گریمانەیی تێکەڵ مەکە.
+2. هەمیشە ژمارەی بەش/بەند، ناونیشانی وانە، و ژمارەی لاپەڕەکان بە تەواوی تەنها لەو بەڵگانەی سەرەوە وەربگرە و بە ڕوونی ئاماژەیان پێ بکە (بۆ نموونە: "بەپێی پەڕتووکی خوێندنی فەرمی پۆلی ١٢، بەندی [Chapter Number]، وانەی [Lesson Number]، لاپەڕەی [Page Number]...").
+3. پێویستە تەنها و تەنها لە چوارچێوەی دەقی سەرچاوەی فەرمیی هاوپێچکراوی سەرەوەدا وەڵام بدەیتەوە.
+4. نابێت هیچ لاپەڕەیەک، ژمارەی بەند، یان وانەیەک لە دەرەوەی ئەو بەڵگانەی سەرەوە دابهێنیت یان ئاماژەی پێ بکەیت.
+5. ئەگەر بەشێک لە پرسیارەکە یان تەواوی پرسیارەکە لەم بەڵگانەدا نییە یان ناتوانیت لەناو ئەم بەڵگانەدا بدۆزیتەوە، پێویستە زۆر بە ڕوونی بە کوردی سۆرانی بڵێیت: "ببوورە، من ناتوانم ئەم زانیارییە یان بابەتە لە پەڕتووکی خوێندنی فەرمی دیاریکراودا بدۆزمەوە."، و پاشان سوقراتییانە لەسەر بیرۆکە گشتییەکان ڕێنمایی بکە بێ ئەوەی ئیدیعا بکەیت کە لە کتێبی خوێندندایە.
+6. هەمیشە وەڵامەکانت بە زمانی کوردی سۆرانییەکی زۆر سروشتی و شیرین و ڕەوان بنووسە.
+7. شێوازی سوقراتی فێرکاری (Socratic Instruction) بپارێزە: لە جیاتی ئەوەی یەکسەر وەڵامی تەواو و ئامادەکراو بدەیت، سەرەتا بە پرسیاری سەرنجڕاکێش یان هێمایەکی بچووک یارمەتی بدە تا خۆی وەڵامەکە بدۆزێتەوە.
+`;
+      } else {
+        const excerptText = excerpts.length > 0 ? excerpts.join("\n\n") : "هیچ دەقێک بەردەست نییە.";
+        curriculumGroundingInstructions = `
 [ڕێساکانی بنەڕەتی پڕۆگرامی خوێندنی فەرمی - دۆخی سەلمێنراو بە مۆڵەتی فەرمی]
 - ئەم نووسینانەی خوارەوە بە شێوەیەکی فەرمی و یاسایی لە پڕۆگرامی خوێندنی فەرمی هەرێمەوە وەرگیراون بۆ زانا:
 === دەستپێکی سەرچاوەی فەرمی ===
@@ -98,7 +130,9 @@ ${excerptText}
 - بە هیچ شێوەیەک زانیاری دەرەکی یان گریمانەیی تێکەڵ مەکە.
 - نابێت هیچ لاپەڕەیەک، ژمارەی بەش، یان کوتەیشنێکی نوێ لە خۆتەوە دابهێنیت کە لە دەقی سەرەوەدا نییە.
 - سەرچاوەکە بپارێزە بە تەواوی.
+- ئەگەر زانیارییەکە لەناو ئەم دەقەدا نییە، پێویستە زۆر بە ڕوونی بە کوردی سۆرانی بڵێیت: "ببوورە، من ناتوانم ئەم زانیارییە یان بابەتە لە پەڕتووکی خوێندنی فەرمی دیاریکراودا بدۆزمەوە."، و پاشان سوقراتییانە یارمەتی بدەیت بێ ئیدیعاکردنی ئەوەی کە لە کتێبی فەرمیدایە.
 `;
+      }
     }
   }
 

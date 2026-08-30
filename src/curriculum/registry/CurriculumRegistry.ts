@@ -1,5 +1,10 @@
 import { Curriculum, CurriculumLesson, Unit } from "../domain/CurriculumTypes.ts";
 import { seedDemoCurriculum } from "./demoCurriculum.ts";
+import {
+  XWENDN_CURRICULUM_METADATA,
+  XWENDN_PILOT_UNITS,
+  XWENDN_PILOT_LESSONS,
+} from "../providers/XwendnCurriculumProvider.ts";
 
 export class CurriculumRegistry {
   private static instance: CurriculumRegistry | null = null;
@@ -19,6 +24,15 @@ export class CurriculumRegistry {
       version: "1.0.0"
     });
     seedDemoCurriculum();
+
+    // Register Xwendn.krd curriculum metadata and pilot lessons
+    this.registerCurriculum(XWENDN_CURRICULUM_METADATA);
+    for (const unit of XWENDN_PILOT_UNITS) {
+      this.registerUnit(unit);
+    }
+    for (const lesson of XWENDN_PILOT_LESSONS) {
+      this.registerLesson(lesson);
+    }
   }
 
   public static getInstance(): CurriculumRegistry {

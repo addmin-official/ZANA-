@@ -51,7 +51,12 @@ export function SubjectsScreen({ profile, onSelectSubject, onNavigate }: Subject
 
       {/* Subject List */}
       <div className="space-y-4">
-        {SUBJECTS_DATA.map((subject) => {
+        {SUBJECTS_DATA.filter((subject) => {
+          if (profile.stream === "literary") {
+            return subject.id !== "physics" && subject.id !== "chemistry";
+          }
+          return true;
+        }).map((subject) => {
           const subjectId = subject.id as SubjectKey;
           const isExpanded = expandedSubject === subjectId;
           const isActiveSubject = profile.activeSubject === subjectId;

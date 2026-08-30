@@ -19,30 +19,57 @@ export interface ReportResponse {
 
 const getApiUrl = (path: string): string => {
   const baseUrl = import.meta.env.VITE_API_BASE_URL;
-  if (!baseUrl) {
-    const isDev = import.meta.env.DEV;
-    if (isDev) {
-      throw new Error("Development Error: VITE_API_BASE_URL environment variable is missing or undefined. Please configure it in your environment.");
-    } else {
-      throw new Error("ببوورە، ڕێکخستنی خزمەتگوزارییەکانی زانا تەواو نییە (VITE_API_BASE_URL دیاری نەکراوە). تکایە پەیوەندی بە سەرپەرشتیارەوە بکە.");
-    }
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  if (!baseUrl || !baseUrl.trim()) {
+    return normalizedPath;
   }
   const normalizedBase = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   return `${normalizedBase}${normalizedPath}`;
 };
+
+async function fetchWithFallback(path: string, init: RequestInit): Promise<Response> {
+  const primaryUrl = getApiUrl(path);
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+
+  if (primaryUrl === normalizedPath) {
+    return fetch(primaryUrl, init);
+  }
+
+  try {
+    const response = await fetch(primaryUrl, init);
+    if (!response.ok && (response.status === 404 || response.status === 502 || response.status === 503)) {
+      try {
+        return await fetch(normalizedPath, init);
+      } catch {
+        return response;
+      }
+    }
+    return response;
+  } catch (err) {
+    // NetworkError / CORS error when attempting cross-origin fetch to remote worker
+    console.warn(`Fetch to ${primaryUrl} failed (${err instanceof Error ? err.message : String(err)}), falling back to relative endpoint: ${normalizedPath}`);
+    return fetch(normalizedPath, init);
+  }
+}
 
 export const ZanaApiClient = {
   async sendChatMessage(
     message: string,
     history: ChatMessage[],
-    profile: StudentProfile
+    profile: StudentProfile,
+    academicContext?: { lessonTitle?: string; conceptTitle?: string; curriculumId?: string },
+    token?: string
   ): Promise<ChatResponse> {
     try {
-      const response = await fetch(getApiUrl("/api/chat"), {
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      const response = await fetchWithFallback("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, history, profile }),
+        headers,
+        body: JSON.stringify({ message, history, profile, academicContext }),
       });
 
       if (!response.ok) {
@@ -63,7 +90,7 @@ export const ZanaApiClient = {
     profile: StudentProfile
   ): Promise<AssessmentResponse> {
     try {
-      const response = await fetch(getApiUrl("/api/assessment"), {
+      const response = await fetchWithFallback("/api/assessment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ state, profile }),
@@ -87,7 +114,7 @@ export const ZanaApiClient = {
     summaryStats: { totalSessions: number; weeklyQuestionCount: number }
   ): Promise<ReportResponse> {
     try {
-      const response = await fetch(getApiUrl("/api/report"), {
+      const response = await fetchWithFallback("/api/report", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ profile, summaryStats }),
