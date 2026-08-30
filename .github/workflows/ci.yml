@@ -813,12 +813,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       statuses: write
-      contents: read
-
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - name: Report job status
         env:
-          GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           SHA: ${{ github.sha }}
           VALIDATE_STATUS: ${{ needs.validate.result }}
