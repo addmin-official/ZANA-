@@ -817,10 +817,10 @@ jobs:
     steps:
       - name: Report job status
         env:
+          GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           SHA: ${{ github.sha }}
           VALIDATE_STATUS: ${{ needs.validate.result }}
-          BUILD_STATUS: ${{ needs.build.result }}
           DEPLOY_STATUS: ${{ needs.deploy-worker.result }}
           VERIFY_STATUS: ${{ needs.verify-worker.result }}
           SMOKE_STATUS: ${{ needs.smoke-tests.result }}
