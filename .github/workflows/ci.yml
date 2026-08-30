@@ -178,7 +178,7 @@ jobs:
         run: |
           set -euo pipefail
           CHECKSUM_FILE="${RUNNER_TEMP:-/tmp}/build-checksums.txt"
-          
+
           echo "Generating build checksum manifest outside dist..."
           find dist -type f \
             ! -name 'checksums.txt' \
@@ -276,7 +276,7 @@ jobs:
           fi
 
           sha256sum -c dist/checksums.txt
-          
+
           echo "Verifying dist/client directory..."
           if [ ! -d "dist/client" ]; then
             echo "::error::dist/client directory is missing!"
@@ -286,7 +286,7 @@ jobs:
             echo "::error::dist/client/index.html is missing!"
             exit 1
           fi
-          
+
           echo "Verifying Worker entrypoint and configuration..."
           if [ ! -f "src/worker/index.ts" ]; then
             echo "::error::Worker entrypoint src/worker/index.ts is missing!"
@@ -296,7 +296,7 @@ jobs:
             echo "::error::Worker configuration wrangler.jsonc is missing!"
             exit 1
           fi
-          
+
           echo "Artifact integrity verification successful!"
 
       # Resolve deterministic KV namespace binding
@@ -308,11 +308,11 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/resolve-kv.js
-          
+
           # Verify production config validity
           jq empty wrangler.production.json
           echo "Generated config validation: PASS"
-          
+
           # Dry run with wrangler deployment config
           npx wrangler deploy --config wrangler.production.json --dry-run
           echo "Dry-run result: PASS"
@@ -377,18 +377,18 @@ jobs:
           CANONICAL_FRONTEND_ORIGIN: ${{ secrets.ZANA_FRONTEND_ORIGIN || 'https://zana.krd' }}
         run: |
           set -euo pipefail
-          
+
           CLEANED_URL=$(echo "$CLEANED_URL" | sed 's/\/$//')
           FRONTEND_ORIGIN="${CANONICAL_FRONTEND_ORIGIN:-https://zana.krd}"
           export CLEANED_URL FRONTEND_ORIGIN
           echo "Verifying live Cloudflare Worker at: $CLEANED_URL"
           echo "Using canonical frontend origin: $FRONTEND_ORIGIN"
-          
+
           if [ -z "$CLEANED_URL" ]; then
             echo "::error::API Base URL is empty!"
             exit 1
           fi
-          
+
           node -e "
           try {
             const u = new URL(process.env.CLEANED_URL);
@@ -418,7 +418,7 @@ jobs:
 
           echo "--- DIAGNOSTIC RUN ---"
           echo "Requested health URL: $CLEANED_URL/api/health"
-          
+
           HTTP_STATUS=$(curl --silent --show-error \
             --connect-timeout 10 \
             --max-time 20 \
@@ -427,15 +427,15 @@ jobs:
             -o "$DIAG_BODY_FILE" \
             -w "%{http_code}" \
             "$CLEANED_URL/api/health")
-            
+
           echo "HTTP Status: $HTTP_STATUS"
-          
+
           LOCATION_HEADER=$(grep -i '^location:' "$DIAG_HEADER_FILE" | awk -F': ' '{print $2}' | tr -d '\r\n ' || echo "None")
           echo "Location header: $LOCATION_HEADER"
-          
+
           CONTENT_TYPE_HEADER=$(grep -i '^content-type:' "$DIAG_HEADER_FILE" | awk -F': ' '{print $2}' | tr -d '\r\n ' || echo "None")
           echo "Content-Type: $CONTENT_TYPE_HEADER"
-          
+
           DIAG_CURL_OUT=$(curl --silent --show-error --location --max-redirs 5 \
             --connect-timeout 10 \
             --max-time 20 \
@@ -443,7 +443,7 @@ jobs:
             -o /dev/null \
             -w "%{url_effective}|%{num_redirects}|%{http_code}|%{content_type}" \
             "$CLEANED_URL/api/health" || echo "failed")
-          
+
           if [ "$DIAG_CURL_OUT" != "failed" ]; then
             export DIAG_CURL_OUT
             node -e "
@@ -503,16 +503,16 @@ jobs:
 
           REVISION=$(jq -r '.revision' "$RESPONSE_FILE" 2>/dev/null || echo "")
           echo "Parsed revision: $REVISION"
-          
+
           EXPECTED_REVISION="${GITHUB_SHA:0:7}"
-          
+
           if [[ ! "$EXPECTED_REVISION" =~ ^[0-9a-f]{7}$ ]]; then
             echo "::error::Invalid expected revision"
             exit 1
           fi
-          
+
           echo "Expected revision: $EXPECTED_REVISION"
-          
+
           if [ "$REVISION" != "$EXPECTED_REVISION" ]; then
             echo "::error::Worker revision mismatch. Expected '$EXPECTED_REVISION', got '$REVISION'"
             exit 1
@@ -539,7 +539,7 @@ jobs:
           CLEANED_URL=$(echo "$CLEANED_URL" | sed 's/\/$//')
           FRONTEND_ORIGIN="${CANONICAL_FRONTEND_ORIGIN:-https://zana.krd}"
           echo "Verifying production AI provider preflight at ${CLEANED_URL}/api/provider/preflight..."
-          
+
           # 1. Unauthenticated check (must fail with 401)
           echo "Running unauthenticated preflight check..."
           UNAUTH_HTTP_STATUS=$(curl --silent --show-error \
@@ -549,7 +549,7 @@ jobs:
             -o /dev/null \
             -w "%{http_code}" \
             "${CLEANED_URL}/api/provider/preflight")
-            
+
           if [ "$UNAUTH_HTTP_STATUS" != "401" ] && [ "$UNAUTH_HTTP_STATUS" != "403" ] && [ "$UNAUTH_HTTP_STATUS" != "404" ]; then
             echo "::error::Unauthenticated preflight failed! Expected 401/403/404, got HTTP $UNAUTH_HTTP_STATUS"
             exit 1
@@ -572,7 +572,7 @@ jobs:
             -o "$PREFLIGHT_FILE" \
             -w "%{http_code}" \
             "${CLEANED_URL}/api/provider/preflight")
-          
+
           echo "Provider Preflight Status: $HTTP_STATUS"
           echo "Response Excerpt:"
           cat "$PREFLIGHT_FILE"
@@ -601,7 +601,7 @@ jobs:
           set -euo pipefail
           CLEANED_URL=$(echo "$CLEANED_URL" | sed 's/\/$//')
           echo "Verifying production exposure security at $CLEANED_URL..."
-          
+
           PATHS_TO_CHECK=(
             "/.env"
             "/.env.local"
@@ -621,7 +621,7 @@ jobs:
           for p in "${PATHS_TO_CHECK[@]}"; do
             echo "Checking sensitive path exposure: ${CLEANED_URL}${p}"
             RESP_FILE=$(mktemp)
-            
+
             HTTP_STATUS=$(curl --silent --show-error \
               --connect-timeout 10 \
               --max-time 15 \
@@ -697,7 +697,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "Scanning codebase for security exposures..."
-          
+
           FORBIDDEN_FILES=(".env" ".env.production" "wrangler.toml" "wrangler.production.json" "firebase-service-account.json")
           for file in "${FORBIDDEN_FILES[@]}"; do
             if [ -f "$file" ]; then
@@ -744,10 +744,10 @@ jobs:
           SHORT_SHA="${GITHUB_SHA:0:7}"
           RELEASE_TIME=$(date -u +"%Y%m%d-%H%M%S")
           RELEASE_TAG="release-${RELEASE_TIME}-${{ github.run_number }}-${SHORT_SHA}"
-          
+
           echo "Release Tag: $RELEASE_TAG"
           echo "RELEASE_TAG=$RELEASE_TAG" >> $GITHUB_ENV
-          
+
           node -e "
           const fs = require('fs');
 
@@ -797,10 +797,10 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          
+
           git tag -a "$RELEASE_TAG" -m "Automated production release $RELEASE_TAG"
           git push origin "$RELEASE_TAG"
-          
+
           gh release create "$RELEASE_TAG" \
             --title "Production Release $RELEASE_TAG" \
             --notes "Automated release triggered by GitHub Action run ${{ github.run_id }}. Commit: ${{ github.sha }}." \
@@ -814,6 +814,7 @@ jobs:
     permissions:
       statuses: write
       contents: read
+
     steps:
       - name: Report job status
         env:
@@ -821,6 +822,7 @@ jobs:
           REPO: ${{ github.repository }}
           SHA: ${{ github.sha }}
           VALIDATE_STATUS: ${{ needs.validate.result }}
+          BUILD_STATUS: ${{ needs.build.result }}
           DEPLOY_STATUS: ${{ needs.deploy-worker.result }}
           VERIFY_STATUS: ${{ needs.verify-worker.result }}
           SMOKE_STATUS: ${{ needs.smoke-tests.result }}
