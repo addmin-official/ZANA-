@@ -5,6 +5,8 @@ import { RetrievalResult } from "./RetrievalResult.ts";
 import { NoSourceFallback } from "./NoSourceFallback.ts";
 import { SourceMetadata, CurriculumLesson } from "../domain/CurriculumTypes.ts";
 import { UsageDecision } from "../licensing/ContentLicense.ts";
+import { CurriculumIndexService } from "./CurriculumIndexService.ts";
+import { CurriculumEvidence } from "./CurriculumEvidence.ts";
 
 export interface RetrievalOptions {
   grade: string;
@@ -19,16 +21,24 @@ export interface RetrievalOptions {
 export class CurriculumRetriever {
   private provider: CurriculumProvider;
   private usageGuard: ContentUsageGuard;
+  private indexService: CurriculumIndexService;
 
-  constructor(provider?: CurriculumProvider) {
+  constructor(provider?: CurriculumProvider, indexService?: CurriculumIndexService) {
     this.provider = provider || new LicensedCurriculumProvider();
     this.usageGuard = new ContentUsageGuard();
+    this.indexService = indexService || CurriculumIndexService.getInstance();
   }
 
   public async retrieve(options: RetrievalOptions): Promise<RetrievalResult> {
     const { grade, stream, subject, lessonTitle, conceptTitle, query, maxResults = 3 } = options;
 
     try {
+      // Search index for structured, traceable CurriculumEvidence
+      const evidenceQuery = query || lessonTitle || conceptTitle || "";
+      const evidence: CurriculumEvidence[] = this.indexService.search(evidenceQuery, {
+        limit: maxResults,
+      });
+
       // 1. Retrieve raw candidate lessons from provider
       const candidates = await this.provider.retrieveContext(
         grade,
@@ -58,8 +68,8 @@ export class CurriculumRetriever {
         }
       }
 
-      // 3. Fallback if no allowed lessons matched
-      if (allowedLessons.length === 0) {
+      // 3. Fallback if no allowed lessons matched and no evidence found
+      if (allowedLessons.length === 0 && evidence.length === 0) {
         return NoSourceFallback.getFallbackResult(grade, subject, query);
       }
 
@@ -120,11 +130,16 @@ export class CurriculumRetriever {
         confidence = 0.7;
       }
 
+      if (evidence.length > 0 && evidence[0].score > 0.8) {
+        confidence = Math.max(confidence, evidence[0].score);
+      }
+
       return {
         groundingStatus: "GROUNDED",
         matchedLessons: allowedLessons,
         matchedConcepts: Array.from(new Set(matchedConcepts)),
         excerpts,
+        evidence,
         confidence,
         sourceMetadata: sourceMetadataList,
         licenseDecision: lastDecision,
@@ -132,6 +147,7 @@ export class CurriculumRetriever {
           retrievedAt: new Date().toISOString(),
           providerType: this.provider.constructor.name,
           matchesCount: allowedLessons.length,
+          evidenceCount: evidence.length,
           evaluationGrade: grade,
           evaluationSubject: subject,
         },
@@ -142,3 +158,4 @@ export class CurriculumRetriever {
     }
   }
 }
+
