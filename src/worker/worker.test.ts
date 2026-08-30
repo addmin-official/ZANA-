@@ -3,6 +3,7 @@ process.env.ZANA_ENV = "test";
 import { test } from "node:test";
 import assert from "node:assert";
 import worker, { classifyError, getClientSafeErrorMessage, Env } from "./index.ts";
+import { validateProductionEnv } from "../server/config/envValidator.ts";
 
 interface ApiJsonResponse {
   ok?: boolean;
@@ -653,3 +654,268 @@ test("Worker - No API key or prompt leakage on error responses", async () => {
   assert.doesNotMatch(bodyText, /SECRET_USER_PROMPT_STRING_FOR_TEST/);
   assert.doesNotMatch(bodyText, /You are ZANA/);
 });
+
+test("Worker - POST /api/chat contract accepts academicContext", async () => {
+  const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/chat", {
+    method: "POST",
+    headers: {
+      Origin: "https://zana.krd",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      message: "ترشی برۆنستد-لۆری چییە؟",
+      profile: {
+        name: "Aram",
+        grade: "12",
+        stream: "scientific",
+        activeSubject: "chemistry",
+        level: "پێشکەوتوو",
+      },
+      academicContext: {
+        lessonTitle: "پێناسەی ترش و تفتەکان (تیۆری برۆنستد-لۆری و ئارینیۆس)",
+        conceptTitle: "ترشی برۆنستد-لۆری",
+        curriculumId: "curriculum-xwendn-krd",
+      },
+    }),
+  });
+
+  const env = createMockEnv();
+  const res = await worker.fetch(req, env);
+  // Expect 200 or 500/503 based on provider mock, but NOT 400 bad request (contract valid)
+  assert.notStrictEqual(res.status, 400);
+});
+
+test("Worker - POST /api/assessment validates missing state", async () => {
+  const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/assessment", {
+    method: "POST",
+    headers: {
+      Origin: "https://zana.krd",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      profile: { grade: "12", activeSubject: "chemistry" },
+    }),
+  });
+
+  const env = createMockEnv();
+  const res = await worker.fetch(req, env);
+  assert.strictEqual(res.status, 400);
+  const data = await res.json() as { error?: string };
+  assert.ok(data.error);
+});
+
+test("Worker - Edge security headers applied on all responses", async () => {
+  const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/health", {
+    method: "GET",
+  });
+  const env = createMockEnv();
+  const res = await worker.fetch(req, env);
+
+  assert.strictEqual(res.headers.get("x-frame-options"), "DENY");
+  assert.strictEqual(res.headers.get("x-content-type-options"), "nosniff");
+  assert.strictEqual(res.headers.get("strict-transport-security"), "max-age=31536000; includeSubDomains; preload");
+  assert.strictEqual(res.headers.get("referrer-policy"), "strict-origin-when-cross-origin");
+  assert.ok(res.headers.get("content-security-policy")?.includes("default-src 'self'"));
+});
+
+test("Worker - GET /api/health/deep handles missing dependencies gracefully with degraded status", async () => {
+  const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/health/deep", {
+    method: "GET",
+  });
+  const env = createMockEnv();
+  // env without KV and with dummy API key
+  const res = await worker.fetch(req, env);
+  const data = await res.json() as { status?: string; dependencies?: { kv?: string; gemini?: string } };
+  assert.strictEqual(data.status, "degraded");
+  assert.strictEqual(data.dependencies?.kv, "degraded");
+});
+
+test("Config - validateProductionEnv validates presence of required keys", () => {
+  assert.throws(() => {
+    validateProductionEnv({});
+  }, /Missing required environment variables/);
+
+  assert.throws(() => {
+    validateProductionEnv({ GEMINI_API_KEY: "key", GEMINI_PRIMARY_MODEL: "model" });
+  }, /Missing required environment variables: ADMIN_TELEMETRY_SECRET/);
+
+  assert.throws(() => {
+    validateProductionEnv({
+      GEMINI_API_KEY: "key",
+      GEMINI_PRIMARY_MODEL: "model",
+      ADMIN_TELEMETRY_SECRET: "sec",
+    });
+  }, /LEARNING_RECORDS_KV binding is missing/);
+
+  assert.doesNotThrow(() => {
+    validateProductionEnv({
+      GEMINI_API_KEY: "key",
+      GEMINI_PRIMARY_MODEL: "model",
+      ADMIN_TELEMETRY_SECRET: "sec",
+      LEARNING_RECORDS_KV: {},
+    });
+  });
+});
+
+test("Worker - POST /api/feedback requires authentication", async () => {
+  const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/feedback", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      topicId: "chem-acids",
+      issueType: "AI_INACCURATE",
+    }),
+  });
+  const env = createMockEnv();
+  const res = await worker.fetch(req, env);
+  assert.strictEqual(res.status, 401);
+});
+
+test("Worker - POST /api/feedback validates malformed payload", async () => {
+  const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/feedback", {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer valid-dev-token",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      // missing topicId and issueType
+      comments: "Bad answer",
+    }),
+  });
+  const env = createMockEnv();
+  const res = await worker.fetch(req, env);
+  assert.strictEqual(res.status, 400);
+});
+
+test("Worker - POST /api/feedback successfully records student feedback into KV", async () => {
+  const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/feedback", {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer valid-dev-token",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      topicId: "chem-acids",
+      grade: 12,
+      subject: "chemistry",
+      issueType: "AI_INACCURATE",
+      comments: "Misidentified conjugate base",
+    }),
+  });
+  const env = createMockEnv();
+  const res = await worker.fetch(req, env);
+  assert.strictEqual(res.status, 200);
+  const data = (await res.json()) as { success?: boolean };
+  assert.strictEqual(data.success, true);
+});
+
+test("Worker - POST /api/chat enforces 429 when rate limit of 50 is exceeded", async () => {
+  const mockKvStore = new Map<string, string>();
+  // Pre-seed rate limit count at 50
+  mockKvStore.set("ratelimit:rate-limited-student", "50");
+
+  const env = createMockEnv();
+  env.LEARNING_RECORDS_KV = {
+    get: async (k: string) => mockKvStore.get(k) || null,
+    put: async (k: string, v: string) => { mockKvStore.set(k, v); },
+    list: async () => ({ keys: [] }),
+    delete: async () => {},
+  };
+
+  const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/chat", {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer rate-limited-student",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      message: "Explain Le Chatelier principle",
+      profile: {
+        grade: "12",
+        activeSubject: "chemistry",
+      },
+    }),
+  });
+
+  const res = await worker.fetch(req, env);
+  assert.strictEqual(res.status, 429);
+  assert.strictEqual(res.headers.get("Retry-After"), "3600");
+  const data = (await res.json()) as { error?: string };
+  assert.strictEqual(data.error, "گەیشتیتە سنوری دیاریکراوی بەکارهێنان بۆ ئەم کاتژمێرە. تکایە دواتر هەوڵبدەرەوە.");
+});
+
+test("Worker - GET /api/internal/telemetry rejects unauthorized request with 403 Forbidden", async () => {
+  const env = createMockEnv();
+  env.ADMIN_TELEMETRY_SECRET = "super-secret-admin-key";
+
+  const reqNoAuth = new Request("https://zana-api-worker.zana-platform.workers.dev/api/internal/telemetry", {
+    method: "GET",
+  });
+  const resNoAuth = await worker.fetch(reqNoAuth, env);
+  assert.strictEqual(resNoAuth.status, 403);
+
+  const reqBadAuth = new Request("https://zana-api-worker.zana-platform.workers.dev/api/internal/telemetry", {
+    method: "GET",
+    headers: {
+      Authorization: "Bearer wrong-secret",
+    },
+  });
+  const resBadAuth = await worker.fetch(reqBadAuth, env);
+  assert.strictEqual(resBadAuth.status, 403);
+});
+
+test("Worker - GET /api/internal/telemetry returns feedback records in descending chronological order", async () => {
+  const env = createMockEnv();
+  env.ADMIN_TELEMETRY_SECRET = "super-secret-admin-key";
+
+  const feedbackDb = new Map<string, unknown>([
+    [
+      "feedback:AI_INACCURATE:1700000000000:student-1",
+      {
+        id: "fb-1",
+        studentId: "student-1",
+        issueType: "AI_INACCURATE",
+        timestamp: "2026-08-28T10:00:00.000Z",
+        comments: "Older feedback",
+      },
+    ],
+    [
+      "feedback:TECHNICAL_ERROR:1700001000000:student-2",
+      {
+        id: "fb-2",
+        studentId: "student-2",
+        issueType: "TECHNICAL_ERROR",
+        timestamp: "2026-08-29T12:00:00.000Z",
+        comments: "Newer feedback",
+      },
+    ],
+  ]);
+
+  env.LEARNING_RECORDS_KV = {
+    get: async (k: string) => feedbackDb.get(k) as never || null,
+    put: async () => {},
+    list: async () => ({
+      keys: Array.from(feedbackDb.keys()).map((name) => ({ name })),
+    }),
+    delete: async () => {},
+  };
+
+  const req = new Request("https://zana-api-worker.zana-platform.workers.dev/api/internal/telemetry", {
+    method: "GET",
+    headers: {
+      Authorization: "Bearer super-secret-admin-key",
+    },
+  });
+
+  const res = await worker.fetch(req, env);
+  assert.strictEqual(res.status, 200);
+  const data = (await res.json()) as { success?: boolean; count?: number; data: Array<{ id: string }> };
+  assert.strictEqual(data.success, true);
+  assert.strictEqual(data.count, 2);
+  assert.strictEqual(data.data[0].id, "fb-2"); // Newer first
+  assert.strictEqual(data.data[1].id, "fb-1");
+});
+
+
+

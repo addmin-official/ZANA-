@@ -20,6 +20,16 @@ export const SUBJECT_LABELS: Record<SubjectKey, string> = {
   english: "ئینگلیزی"
 };
 
+export const LITERARY_AVAILABLE_SUBJECTS: SubjectKey[] = ["math", "english"];
+export const SCIENTIFIC_AVAILABLE_SUBJECTS: SubjectKey[] = ["math", "physics", "chemistry", "english"];
+
+export function getAvailableSubjectsForStream(stream?: AcademicStream): SubjectKey[] {
+  if (stream === "literary") {
+    return ["math", "english"];
+  }
+  return ["math", "physics", "chemistry", "english"];
+}
+
 export const LEVEL_LABELS: Record<StudentLevel, string> = {
   beginner: "سەرەتا",
   intermediate: "مامناوەند",

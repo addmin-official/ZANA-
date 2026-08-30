@@ -3,7 +3,7 @@ import { AI_CONFIG } from "../config/aiModels.ts";
 import { classifyError } from "./AiErrors.ts";
 
 export interface ProviderGenerateParams {
-  apiKey: string;
+  apiKey?: string;
   model: string;
   contents: unknown;
   config?: unknown;
@@ -12,7 +12,8 @@ export interface ProviderGenerateParams {
 
 export class GeminiProvider {
   static async generate(params: ProviderGenerateParams): Promise<{ text: string }> {
-    if (!params.apiKey || typeof params.apiKey !== "string" || !params.apiKey.trim()) {
+    const effectiveKey = params.apiKey !== undefined ? params.apiKey.trim() : (process.env.GEMINI_API_KEY?.trim() || "");
+    if (!effectiveKey) {
       throw new Error("کلیل (GEMINI_API_KEY) بۆ سیستەمی زیرەکی زانا بەردەست نییە لە ڕێکخستنەکاندا.");
     }
 
@@ -27,7 +28,12 @@ export class GeminiProvider {
 
       try {
         const ai = new GoogleGenAI({
-          apiKey: params.apiKey,
+          apiKey: effectiveKey,
+          httpOptions: {
+            headers: {
+              "User-Agent": "aistudio-build",
+            },
+          },
         });
 
         const fetchPromise = ai.models.generateContent({

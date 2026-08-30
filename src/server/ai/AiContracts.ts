@@ -1,6 +1,7 @@
 export interface StudentProfileContext {
   name?: string;
   grade?: string;
+  stream?: string;
   activeSubject?: string;
   level?: string;
 }
@@ -9,6 +10,11 @@ export interface ChatRequest {
   message: string;
   history?: Array<{ sender: string; text: string }>;
   profile: StudentProfileContext;
+  academicContext?: {
+    lessonTitle?: string;
+    conceptTitle?: string;
+    curriculumId?: string;
+  };
 }
 
 export interface ChatResponse {
@@ -129,11 +135,21 @@ export function parseChatRequest(body: unknown): ChatRequest {
   const profile: StudentProfileContext = {
     name: typeof profileObj.name === "string" ? profileObj.name.slice(0, 100) : undefined,
     grade: typeof profileObj.grade === "string" ? profileObj.grade.slice(0, 20) : undefined,
+    stream: typeof profileObj.stream === "string" ? profileObj.stream.slice(0, 50) : undefined,
     activeSubject: typeof profileObj.activeSubject === "string" ? profileObj.activeSubject.slice(0, 50) : undefined,
     level: typeof profileObj.level === "string" ? profileObj.level.slice(0, 50) : undefined,
   };
 
-  return { message: body.message.trim(), history, profile };
+  let academicContext: { lessonTitle?: string; conceptTitle?: string; curriculumId?: string } | undefined = undefined;
+  if (body.academicContext !== undefined && isRecord(body.academicContext)) {
+    academicContext = {
+      lessonTitle: typeof body.academicContext.lessonTitle === "string" ? body.academicContext.lessonTitle.slice(0, 200) : undefined,
+      conceptTitle: typeof body.academicContext.conceptTitle === "string" ? body.academicContext.conceptTitle.slice(0, 200) : undefined,
+      curriculumId: typeof body.academicContext.curriculumId === "string" ? body.academicContext.curriculumId.slice(0, 100) : undefined,
+    };
+  }
+
+  return { message: body.message.trim(), history, profile, academicContext };
 }
 
 export function parseAssessmentRequest(body: unknown): AssessmentRequest {

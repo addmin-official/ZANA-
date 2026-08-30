@@ -11,6 +11,7 @@ import { PracticePanel } from "../features/study/practice/index.ts";
 import { AskPanel } from "../features/study/ask/index.ts";
 import { VisionCapturePanel, VisionQuestionEngine } from "../features/vision/index.ts";
 import { useAdaptiveLearning } from "../features/adaptive/useAdaptiveLearning.ts";
+import { StudyChatScreen } from "./StudyChatScreen.tsx";
 import {
   ArrowLeft,
   BookOpen,
@@ -24,7 +25,8 @@ import {
   Layers,
   Check,
   Brain,
-  Camera
+  Camera,
+  MessageSquare
 } from "lucide-react";
 
 // =========================================================================
@@ -415,6 +417,7 @@ export function StudyWorkspaceScreen({ profile, onNavigate }: StudyWorkspaceScre
   const content: WorkspaceContent = WORKSPACE_CONTENT_DB[currentNodeId] || generateFallbackContent(activeNode as CurriculumNode);
 
   // States
+  const [viewMode, setViewMode] = useState<"tutor" | "workspace">("tutor");
   const [activeAction, setActiveAction] = useState<"explain" | "practice" | "ask" | "summary" | "formula" | "vision">("explain");
   // Reset indices on concept shift
   useEffect(() => {
@@ -466,51 +469,81 @@ export function StudyWorkspaceScreen({ profile, onNavigate }: StudyWorkspaceScre
   };
 
   return (
-    <div className="flex-1 flex flex-col justify-start pb-8 space-y-5 select-none" dir="rtl">
-      {/* 1. TOP APP BAR */}
-      <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-xs flex flex-col space-y-3">
-        <div className="flex items-center justify-between">
-          <button
-            onClick={() => onNavigate("daily")}
-            className="flex items-center gap-1.5 text-slate-500 hover:text-blue-600 transition-colors cursor-pointer text-xs font-sans font-bold"
-          >
-            <ArrowLeft className="w-4 h-4 flip-rtl" />
-            <span>گۆڕەپانی سەرەکی</span>
-          </button>
-
-          <span className="font-sans text-[10px] font-bold text-slate-400">
-            {profile.name} • {profile.grade} {profile.stream === "scientific" ? "زانستی" : "وێژەیی"}
-          </span>
-        </div>
-
-        <div className="flex items-center justify-between border-t border-slate-50 pt-2.5">
-          <div className="text-right">
-            <div className="flex items-center gap-1.5 text-blue-600">
-              <BookOpen className="w-4 h-4 shrink-0" />
-              <h1 className="font-sans font-black text-sm">{subjectNameKurdish}</h1>
-            </div>
-            <p className="font-sans text-xs font-medium text-slate-500 mt-0.5 leading-snug">
-              {activeLesson.title}
-            </p>
-          </div>
-
-          <div className="text-left flex flex-col items-end">
-            <span className="font-sans text-xs font-black text-blue-600 flex items-center gap-0.5">
-              <span>{session?.completionPercentage || 0}</span>
-              <Percent className="w-3 h-3" />
-            </span>
-            <span className="font-sans text-[9px] text-slate-400 mt-0.5">پێشکەوتنی گشتی</span>
-          </div>
-        </div>
-
-        {/* Global Progress Line bar */}
-        <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-blue-600 rounded-full transition-all duration-500"
-            style={{ width: `${session?.completionPercentage || 0}%` }}
-          ></div>
-        </div>
+    <div className="flex-1 flex flex-col justify-start pb-8 space-y-4 select-none" dir="rtl">
+      {/* View Switcher: AI Tutor vs Workspace */}
+      <div className="bg-slate-100/80 p-1 rounded-2xl flex items-center gap-1 border border-slate-200/60 shadow-2xs">
+        <button
+          onClick={() => setViewMode("tutor")}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl font-sans text-xs font-bold transition-all cursor-pointer min-h-[44px] ${
+            viewMode === "tutor"
+              ? "bg-white text-blue-600 shadow-xs"
+              : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          <MessageSquare className="w-4 h-4" />
+          <span>مامۆستا زانا (گفتوگۆی زیرەک)</span>
+        </button>
+        <button
+          onClick={() => setViewMode("workspace")}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl font-sans text-xs font-bold transition-all cursor-pointer min-h-[44px] ${
+            viewMode === "workspace"
+              ? "bg-white text-blue-600 shadow-xs"
+              : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          <BookMarked className="w-4 h-4" />
+          <span>مێزی وانە (سەرچاوەکان)</span>
+        </button>
       </div>
+
+      {viewMode === "tutor" ? (
+        <StudyChatScreen profile={profile} onNavigate={onNavigate} />
+      ) : (
+        <>
+          {/* 1. TOP APP BAR */}
+          <div className="bg-white border border-slate-100 rounded-2xl p-4 shadow-xs flex flex-col space-y-3">
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => onNavigate("daily")}
+                className="flex items-center gap-1.5 text-slate-500 hover:text-blue-600 transition-colors cursor-pointer text-xs font-sans font-bold"
+              >
+                <ArrowLeft className="w-4 h-4 flip-rtl" />
+                <span>گۆڕەپانی سەرەکی</span>
+              </button>
+
+              <span className="font-sans text-[10px] font-bold text-slate-400">
+                {profile.name} • {profile.grade} {profile.stream === "scientific" ? "زانستی" : "وێژەیی"}
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between border-t border-slate-50 pt-2.5">
+              <div className="text-right">
+                <div className="flex items-center gap-1.5 text-blue-600">
+                  <BookOpen className="w-4 h-4 shrink-0" />
+                  <h1 className="font-sans font-black text-sm">{subjectNameKurdish}</h1>
+                </div>
+                <p className="font-sans text-xs font-medium text-slate-500 mt-0.5 leading-snug">
+                  {activeLesson.title}
+                </p>
+              </div>
+
+              <div className="text-left flex flex-col items-end">
+                <span className="font-sans text-xs font-black text-blue-600 flex items-center gap-0.5">
+                  <span>{session?.completionPercentage || 0}</span>
+                  <Percent className="w-3 h-3" />
+                </span>
+                <span className="font-sans text-[9px] text-slate-400 mt-0.5">پێشکەوتنی گشتی</span>
+              </div>
+            </div>
+
+            {/* Global Progress Line bar */}
+            <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-blue-600 rounded-full transition-all duration-500"
+                style={{ width: `${session?.completionPercentage || 0}%` }}
+              ></div>
+            </div>
+          </div>
 
       {/* 2. LEARNING CARD (Details of Current Lesson) */}
       <ZanaCard
@@ -790,6 +823,8 @@ export function StudyWorkspaceScreen({ profile, onNavigate }: StudyWorkspaceScre
         <span>هەنگاوی داهاتووی خوێندن</span>
         <ArrowLeft className="w-5 h-5 mr-2 rotate-180" />
       </ZanaButton>
+        </>
+      )}
     </div>
   );
 }
