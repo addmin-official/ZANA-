@@ -59,6 +59,12 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
+      # Required for pull requests and post-merge validation.
+      - name: Verify Finalization Contract
+        run: |
+          set -euo pipefail
+          npm run verify:finalization
+
       # STAGE 2: Lint
       - name: Run Linter
         run: |
@@ -118,9 +124,10 @@ jobs:
         run: npm ci
 
       # STAGE 4.1: Client and Server Application Build
+      # PR builds do not consume the production API URL secret.
       - name: Build Client and Server
         env:
-          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+          VITE_API_BASE_URL: "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && secrets.VITE_API_BASE_URL || '' }}"
         run: |
           set -euo pipefail
           npm run build 2>&1 | tee build.log
@@ -204,9 +211,34 @@ jobs:
             build.log
             build-worker.log
 
+  # PR-only deployment validation: no real deployment and no production secrets.
+  wrangler-dry-run:
+    name: Verify Cloudflare Worker Deployment (Dry Run)
+    needs: [validate, build, security-checks]
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Verify Cloudflare Worker Deployment Dry Run
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --dry-run
+
+  # Production deployment is post-merge only: never run from pull_request.
   deploy-worker:
     name: Deploy Cloudflare Worker
-    needs: build
+    needs: [validate, build, security-checks]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: Production
@@ -776,32 +808,47 @@ jobs:
 
   report-status:
     name: Report Pipeline Status
-    needs: [validate, build, deploy-worker, verify-worker, smoke-tests, security-checks, release]
+    needs: [validate, build, security-checks, wrangler-dry-run, deploy-worker, verify-worker, smoke-tests, release]
     if: always()
     runs-on: ubuntu-latest
     permissions:
       statuses: write
+      contents: read
     steps:
-      - name: Report Statuses to GitHub
+      - name: Report job status
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
           VALIDATE_STATUS: ${{ needs.validate.result }}
           BUILD_STATUS: ${{ needs.build.result }}
           DEPLOY_STATUS: ${{ needs.deploy-worker.result }}
           VERIFY_STATUS: ${{ needs.verify-worker.result }}
           SMOKE_STATUS: ${{ needs.smoke-tests.result }}
           SECURITY_STATUS: ${{ needs.security-checks.result }}
+          DRY_RUN_STATUS: ${{ needs.wrangler-dry-run.result }}
           RELEASE_STATUS: ${{ needs.release.result }}
         run: |
           set -euo pipefail
-          
+
+          is_pull_request() {
+            [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.base_ref }}" = "main" ]
+          }
+
           map_status() {
             local status="$1"
+
             case "$status" in
               success)
                 echo "success"
                 ;;
-              failure)
+              skipped)
+                if is_pull_request; then
+                  echo "success"
+                else
+                  echo "error"
+                fi
+                ;;
+              failure|cancelled)
                 echo "failure"
                 ;;
               *)
@@ -809,10 +856,11 @@ jobs:
                 ;;
             esac
           }
-          
+
           map_description() {
             local status="$1"
             local job_name="$2"
+
             case "$status" in
               success)
                 echo "$job_name passed successfully"
@@ -821,43 +869,86 @@ jobs:
                 echo "$job_name failed"
                 ;;
               skipped)
-                echo "$job_name was skipped"
+                if is_pull_request; then
+                  echo "$job_name was intentionally skipped for pull request CI"
+                else
+                  echo "$job_name was skipped"
+                fi
                 ;;
               cancelled)
                 echo "$job_name was cancelled"
                 ;;
               *)
-                echo "$job_name status: $status"
+                echo "$job_name has an unknown result: $status"
                 ;;
             esac
           }
 
-          SHA="${{ github.sha }}"
-          REPO="${{ github.repository }}"
-          RUN_ID="${{ github.run_id }}"
-          TARGET_URL="https://github.com/${REPO}/actions/runs/${RUN_ID}"
-
           post_status() {
             local context="$1"
             local raw_status="$2"
-            local state=$(map_status "$raw_status")
-            local desc=$(map_description "$raw_status" "$context")
-            
+            local state
+            local desc
+
+            state=$(map_status "$raw_status")
+            desc=$(map_description "$raw_status" "$context")
+
             echo "Publishing status to $context: state=$state, desc='$desc'"
-            
+
             gh api --method POST \
               -H "Accept: application/vnd.github+json" \
               "/repos/${REPO}/statuses/${SHA}" \
               -f state="$state" \
               -f context="$context" \
-              -f description="$desc" \
-              -f target_url="$TARGET_URL" > /dev/null
+              -f description="$desc"
           }
 
           post_status "ZANA/validate" "$VALIDATE_STATUS"
           post_status "ZANA/build" "$BUILD_STATUS"
+          post_status "ZANA/security" "$SECURITY_STATUS"
+          post_status "ZANA/dry-run" "$DRY_RUN_STATUS"
           post_status "ZANA/deploy" "$DEPLOY_STATUS"
           post_status "ZANA/verify" "$VERIFY_STATUS"
           post_status "ZANA/smoke" "$SMOKE_STATUS"
-          post_status "ZANA/security" "$SECURITY_STATUS"
           post_status "ZANA/release" "$RELEASE_STATUS"
+
+          if is_pull_request; then
+            for required_status in \
+              "$VALIDATE_STATUS" \
+              "$BUILD_STATUS" \
+              "$SECURITY_STATUS" \
+              "$DRY_RUN_STATUS"
+            do
+              case "$required_status" in
+                success)
+                  ;;
+                *)
+                  echo "::error::A PR-required CI job did not succeed."
+                  exit 1
+                  ;;
+              esac
+            done
+
+            echo "Pull request CI requirements passed. Production-only jobs were intentionally skipped."
+          else
+            for production_status in \
+              "$VALIDATE_STATUS" \
+              "$BUILD_STATUS" \
+              "$SECURITY_STATUS" \
+              "$DEPLOY_STATUS" \
+              "$VERIFY_STATUS" \
+              "$SMOKE_STATUS" \
+              "$RELEASE_STATUS"
+            do
+              case "$production_status" in
+                success)
+                  ;;
+                *)
+                  echo "::error::A required post-merge production job did not succeed."
+                  exit 1
+                  ;;
+              esac
+            done
+
+            echo "Post-merge production pipeline completed successfully."
+          fi
