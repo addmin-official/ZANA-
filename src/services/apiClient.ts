@@ -1,135 +1,112 @@
 import { ChatMessage, AssessmentState, StudentProfile } from "./storage.ts";
 
-export interface ChatResponse {
-  text: string;
-  isEducational: boolean;
-}
+export interface ChatResponse { text: string; isEducational: boolean; }
+export interface AssessmentResponse { question: string; feedback: string; isCorrect: boolean; completed: boolean; finalLevel: string | null; }
+export interface ReportResponse { recommendation: string; }
 
-export interface AssessmentResponse {
-  question: string;
-  feedback: string;
-  isCorrect: boolean;
-  completed: boolean;
-  finalLevel: string | null;
-}
-
-export interface ReportResponse {
-  recommendation: string;
-}
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || "https://zana-api-worker.zana-platform.workers.dev";
 
 const getApiUrl = (path: string): string => {
-  const baseUrl = import.meta.env.VITE_API_BASE_URL;
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  if (!baseUrl || !baseUrl.trim()) {
-    return normalizedPath;
-  }
-  const normalizedBase = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+  const normalizedBase = BASE_URL.endsWith("/") ? BASE_URL.slice(0, -1) : BASE_URL;
   return `${normalizedBase}${normalizedPath}`;
 };
 
-async function fetchWithFallback(path: string, init: RequestInit): Promise<Response> {
-  const primaryUrl = getApiUrl(path);
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-
-  if (primaryUrl === normalizedPath) {
-    return fetch(primaryUrl, init);
-  }
-
-  try {
-    const response = await fetch(primaryUrl, init);
-    if (!response.ok && (response.status === 404 || response.status === 502 || response.status === 503)) {
-      try {
-        return await fetch(normalizedPath, init);
-      } catch {
-        return response;
-      }
-    }
-    return response;
-  } catch (err) {
-    // NetworkError / CORS error when attempting cross-origin fetch to remote worker
-    console.warn(`Fetch to ${primaryUrl} failed (${err instanceof Error ? err.message : String(err)}), falling back to relative endpoint: ${normalizedPath}`);
-    return fetch(normalizedPath, init);
-  }
-}
-
 export const ZanaApiClient = {
-  async sendChatMessage(
-    message: string,
-    history: ChatMessage[],
-    profile: StudentProfile,
-    academicContext?: { lessonTitle?: string; conceptTitle?: string; curriculumId?: string },
-    token?: string
-  ): Promise<ChatResponse> {
-    try {
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
-      }
+  async sendChatMessage(message: string, history: ChatMessage[], profile: StudentProfile, academicContext?: any, token?: string): Promise<ChatResponse> {
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
 
-      const response = await fetchWithFallback("/api/chat", {
+    try {
+      const requestUrl = getApiUrl("/api/chat");
+      const requestHeaders = {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+
+      console.log("API_FETCH_REQUEST:", {
+        url: requestUrl,
+        headers: requestHeaders,
         method: "POST",
-        headers,
+      });
+
+      const response = await fetch(requestUrl, {
+        method: "POST",
+        headers: requestHeaders,
         body: JSON.stringify({ message, history, profile, academicContext }),
       });
 
+      console.log("API_FETCH_RESPONSE:", {
+        url: requestUrl,
+        status: response.status,
+        ok: response.ok,
+        contentType: response.headers.get("content-type"),
+        accessControlAllowOrigin: response.headers.get("access-control-allow-origin"),
+      });
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || "هەڵەیەک ڕوویدا لە کاتی پەیوەندیکردن بە مامۆستا زانا.");
+
+        console.error("API_HTTP_ERROR:", {
+          url: requestUrl,
+          status: response.status,
+          error: errorData?.error || "Unknown API error",
+        });
+
+        throw new Error(
+          errorData.error ||
+            "هەڵەیەک ڕوویدا لە کاتی پەیوەندیکردن بە مامۆستا زانا."
+        );
       }
 
       return await response.json();
     } catch (error: unknown) {
+      console.error("FETCH_NETWORK_ERROR:", error);
       console.error("API Error in sendChatMessage", error);
-      const errMsg = error instanceof Error ? error.message : "پەیوەندی ئینتەرنێتەکەت تێکچووە، تکایە جارێکی تر هەوڵ بدەرەوە.";
+
+      const errMsg =
+        error instanceof Error
+          ? error.message
+          : "پەیوەندی ئینتەرنێتەکەت تێکچووە، تکایە جارێکی تر هەوڵ بدەرەوە.";
+
       throw new Error(errMsg);
     }
   },
 
-  async getAssessmentNextQuestion(
-    state: Omit<AssessmentState, "id">,
-    profile: StudentProfile
-  ): Promise<AssessmentResponse> {
-    try {
-      const response = await fetchWithFallback("/api/assessment", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ state, profile }),
-      });
+  async submitAssessment(assessment: { question: string; answer: string; studentId?: string; level?: string; }, token?: string): Promise<AssessmentResponse> {
+    const requestUrl = getApiUrl("/api/assessment");
+    const requestHeaders: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) requestHeaders.Authorization = `Bearer ${token}`;
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || "هەڵەیەک ڕوویدا لە کاتی بارکردنی تاقیکردنەوە.");
-      }
+    const response = await fetch(requestUrl, {
+      method: "POST",
+      headers: requestHeaders,
+      body: JSON.stringify(assessment),
+    });
 
-      return await response.json();
-    } catch (error: unknown) {
-      console.error("API Error in getAssessmentNextQuestion", error);
-      const errMsg = error instanceof Error ? error.message : "ناتوانرێت تاقیکردنەوەکە باربکرێت، تکایە هێڵەکەت پشکنیار بکەرەوە.";
-      throw new Error(errMsg);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || "Assessment submission failed");
     }
+
+    return await response.json();
   },
 
-  async getParentReport(
-    profile: StudentProfile,
-    summaryStats: { totalSessions: number; weeklyQuestionCount: number }
-  ): Promise<ReportResponse> {
-    try {
-      const response = await fetchWithFallback("/api/report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profile, summaryStats }),
-      });
+  async getProgressReport(studentId: string, token?: string): Promise<ReportResponse> {
+    const requestUrl = getApiUrl(`/api/reports/${studentId}`);
+    const requestHeaders: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) requestHeaders.Authorization = `Bearer ${token}`;
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || "ڕاپۆرتەکە ناتوانرێت دروست بکرێت لەم کاتەدا.");
-      }
+    const response = await fetch(requestUrl, {
+      method: "GET",
+      headers: requestHeaders,
+    });
 
-      return await response.json();
-    } catch (error: unknown) {
-      console.error("API Error in getParentReport", error);
-      const errMsg = error instanceof Error ? error.message : "ڕاپۆرت دروستکردن سەرکەوتوو نەبوو. تکایە دواتر هەوڵ بدەرەوە.";
-      throw new Error(errMsg);
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || "Failed to fetch progress report");
     }
-  }
+
+    return await response.json();
+  },
 };

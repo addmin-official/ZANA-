@@ -410,8 +410,16 @@ async function getWorkerAuthenticatedStudentId(req: Request, env: Env): Promise<
 export default {
   async fetch(request: Request, env: Env, ctx?: unknown): Promise<Response> {
     try {
+      if (request.method === "OPTIONS") {
+        return new Response(null, {
+          status: 204,
+          headers: getCorsHeaders(request.headers.get("Origin"), env),
+        });
+      }
       // 1. Fail-fast if edge environment is misconfigured in production
       const url = new URL(request.url);
+    const pathname = url.pathname;
+
       const isHealth = url.pathname === "/api/health";
       const envObj = env as unknown as Record<string, unknown>;
       const isProd = envObj.ZANA_ENV === "production" || (!envObj.ZANA_ENV && process.env.NODE_ENV === "production");
@@ -432,7 +440,10 @@ export default {
         }),
         {
           status: 503,
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            ...getCorsHeaders(request.headers.get("Origin"), env),
+          },
         }
       );
       return applySecurityHeaders(errResponse);
@@ -1445,6 +1456,53 @@ export default {
             return new Response(JSON.stringify({ error: errMsg }), { status: 400, headers: responseHeaders });
           }
           return new Response(JSON.stringify({ error: errMsg }), { status: 400, headers: responseHeaders });
+        }
+      }
+
+// ZANA CHAT API
+      if (pathname === "/api/chat" && request.method === "POST") {
+        try {
+          const { parseChatRequest } = await import("../server/ai/AiContracts.ts");
+          const { ProviderAdapter } = await import("../server/ai/AiProvider.ts");
+          const body = await request.json();
+          const chatReq = parseChatRequest(body as any);
+          const result = await ProviderAdapter.chat(env.GEMINI_API_KEY || "", chatReq);
+          return new Response(JSON.stringify({
+            text: result.text,
+            isEducational: result.isEducational,
+          }), { status: 200, headers: responseHeaders });
+        } catch (err: any) {
+          return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: responseHeaders });
+        }
+      }
+
+      // ZANA ASSESSMENT API
+      if (pathname === "/api/assessment" && request.method === "POST") {
+        try {
+          const { parseAssessmentRequest } = await import("../server/ai/AiContracts.ts");
+          const { ProviderAdapter } = await import("../server/ai/AiProvider.ts");
+          const body = await request.json();
+          const assessReq = parseAssessmentRequest(body as any);
+          const result = await ProviderAdapter.assessment(env.GEMINI_API_KEY || "", assessReq);
+
+          const isLast = assessReq.state.currentQuestion === 5;
+          let finalLevel = null;
+          if (isLast) {
+            const correctCount = (assessReq.state.answers || []).filter(Boolean).length + (result.isCorrect ? 1 : 0);
+            if (correctCount <= 2) finalLevel = "سەرەتا";
+            else if (correctCount <= 4) finalLevel = "مامناوەند";
+            else finalLevel = "پێشکەوتوو";
+          }
+
+          return new Response(JSON.stringify({
+            question: result.question,
+            feedback: result.feedback,
+            isCorrect: result.isCorrect,
+            completed: isLast,
+            finalLevel,
+          }), { status: 200, headers: responseHeaders });
+        } catch (err: any) {
+          return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: responseHeaders });
         }
       }
 

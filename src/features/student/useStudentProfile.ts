@@ -32,24 +32,55 @@ export function useStudentProfile() {
     };
   });
 
-  useEffect(() => {
-    if (!isFirebaseConfigured()) {
-      return;
-    }
+useEffect(() => {
+  const firebaseConfigured = isFirebaseConfigured();
 
-    const auth = getFirebaseAuth();
-    const db = getFirestoreDb();
+  if (!firebaseConfigured) {
+    console.error("FIREBASE CONFIG MISSING: Offline fallback activated.", {
+      firebaseConfigured,
+    });
+    setAuthError("Firebase configuration is missing or invalid.");
+    setIsOfflineFallback(true);
+    return;
+  }
 
-    if (!auth || !db) {
-      return;
-    }
+  const auth = getFirebaseAuth();
+  const db = getFirestoreDb();
 
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+  if (!auth) {
+    console.error("AUTH ERROR: Firebase Auth initialization returned null.");
+    setAuthError("Firebase Authentication initialization failed.");
+    setIsOfflineFallback(true);
+    return;
+  }
+
+  if (!db) {
+    console.error("FIRESTORE ERROR: Firestore initialization returned null.");
+    setAuthError("Firestore initialization failed.");
+    setIsOfflineFallback(true);
+    return;
+  }
+
+  console.info("FIREBASE CLIENT READY:", {
+    authReady: Boolean(auth),
+    firestoreReady: Boolean(db),
+    firebaseConfigured: true,
+  });
+
+  const unsubscribe = onAuthStateChanged(
+    auth,
+    async (user) => {
       if (user) {
         setIsOfflineFallback(false);
         setAuthError(null);
 
-        // Anonymous users are NEVER granted server authority
+        console.info("FIREBASE AUTH STATE:", {
+          uidPresent: Boolean(user.uid),
+          isAnonymous: user.isAnonymous,
+          emailPresent: Boolean(user.email),
+        });
+
+        // Anonymous users are NEVER granted server authority.
         if (user.isAnonymous) {
           setProfileState((prev) => ({
             ...prev,
@@ -61,27 +92,51 @@ export function useStudentProfile() {
         }
 
         const docRef = doc(db, "students", user.uid);
+
         try {
+          console.info("FIRESTORE READ START:", {
+            collection: "students",
+            documentIdPresent: Boolean(user.uid),
+          });
+
           const docSnap = await getDoc(docRef);
+
+          console.info("FIRESTORE READ RESULT:", {
+            exists: docSnap.exists(),
+          });
+
           if (docSnap.exists()) {
             const rawData = docSnap.data();
             const serverDraft = parseServerProfileDocument(rawData);
+
             const identity: VerifiedIdentity = {
               verifiedUid: user.uid,
               isAnonymous: false,
               email: user.email,
             };
-            const cloudProfile = createVerifiedStudentProfile(identity, serverDraft);
+
+            const cloudProfile = createVerifiedStudentProfile(
+              identity,
+              serverDraft
+            );
+
             saveStudentProfile(cloudProfile);
             setProfileState(cloudProfile);
+
+            console.info("FIRESTORE PROFILE LOAD SUCCESS:", {
+              authoritative: cloudProfile.authoritative,
+              source: cloudProfile.source,
+            });
           } else {
             const saved = getStudentProfile();
+
             if (saved && saved.onboardingCompleted) {
               const identity: VerifiedIdentity = {
                 verifiedUid: user.uid,
                 isAnonymous: false,
                 email: user.email,
               };
+
               const draftToUpload: StudentProfileDraft = {
                 name: saved.name,
                 grade: saved.grade,
@@ -89,7 +144,12 @@ export function useStudentProfile() {
                 activeSubject: saved.activeSubject,
                 level: saved.level,
               };
-              // Write only allowed profile fields to Firestore
+
+              console.info("FIRESTORE WRITE START:", {
+                collection: "students",
+                documentIdPresent: Boolean(user.uid),
+              });
+
               await setDoc(docRef, {
                 id: user.uid,
                 name: draftToUpload.name,
@@ -100,31 +160,92 @@ export function useStudentProfile() {
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
               });
-              // Only after setDoc succeeds do we grant authority
-              const verifiedProfile = createVerifiedStudentProfile(identity, draftToUpload);
+
+              console.info("FIRESTORE WRITE SUCCESS:", {
+                collection: "students",
+                documentIdPresent: Boolean(user.uid),
+              });
+
+              const verifiedProfile = createVerifiedStudentProfile(
+                identity,
+                draftToUpload
+              );
+
               saveStudentProfile(verifiedProfile);
               setProfileState(verifiedProfile);
             }
           }
-        } catch (e) {
-          console.warn("Firestore student profile sync unavailable, running in guest mode:", e);
+        } catch (error: unknown) {
+          console.error("FIRESTORE PROFILE SYNC ERROR:", {
+            name: error instanceof Error ? error.name : "UnknownError",
+            message: error instanceof Error ? error.message : String(error),
+            code:
+              error &&
+              typeof error === "object" &&
+              "code" in error &&
+              typeof (error as { code?: unknown }).code === "string"
+                ? (error as { code: string }).code
+                : undefined,
+            operation: "getDoc/setDoc",
+            collection: "students",
+          });
+
+          setAuthError(
+            error instanceof Error
+              ? error.message
+              : "Firestore profile synchronization failed."
+          );
           setIsOfflineFallback(true);
         }
       } else {
-        signInAnonymously(auth).catch((err: unknown) => {
+        console.info("AUTH STATE: no authenticated Firebase user; attempting anonymous sign-in.");
+
+        signInAnonymously(auth).catch((error: unknown) => {
+          console.error("AUTH ERROR: Anonymous Firebase sign-in failed.", {
+            name: error instanceof Error ? error.name : "UnknownError",
+            message: error instanceof Error ? error.message : String(error),
+            code:
+              error &&
+              typeof error === "object" &&
+              "code" in error &&
+              typeof (error as { code?: unknown }).code === "string"
+                ? (error as { code: string }).code
+                : undefined,
+          });
+
+          setAuthError(
+            error instanceof Error
+              ? error.message
+              : "Firebase Authentication failed."
+          );
           setIsOfflineFallback(true);
-          const errCode = (err && typeof err === "object" && "code" in err) ? String((err as { code: unknown }).code) : "";
-          if (errCode === "auth/admin-restricted-operation" || String(err).includes("admin-restricted-operation")) {
-            console.info("Firebase Auth admin-restricted-operation caught: switching smoothly to local offline demo mode with seeded student data.");
-          } else {
-            console.warn("Firebase Auth anonymous sign-in unavailable, running in local guest mode:", (err as Error)?.message || err);
-          }
         });
       }
-    });
+    },
+    (error: unknown) => {
+      console.error("AUTH ERROR: Firebase auth state listener failed.", {
+        name: error instanceof Error ? error.name : "UnknownError",
+        message: error instanceof Error ? error.message : String(error),
+        code:
+          error &&
+          typeof error === "object" &&
+          "code" in error &&
+          typeof (error as { code?: unknown }).code === "string"
+            ? (error as { code: string }).code
+            : undefined,
+      });
 
-    return () => unsubscribe();
-  }, []);
+      setAuthError(
+        error instanceof Error
+          ? error.message
+          : "Firebase Authentication state listener failed."
+      );
+      setIsOfflineFallback(true);
+    }
+  );
+
+  return () => unsubscribe();
+}, []);
 
   const isOnboarded = profile.onboardingCompleted;
 

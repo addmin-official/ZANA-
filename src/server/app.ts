@@ -1,5 +1,9 @@
-import express, { type Request, type Response, type NextFunction } from "express";
+import express, { type Request, type Response as ExpressResponse, type NextFunction } from "express";
 import dotenv from "dotenv";
+
+// Keep the Express response type available for route handlers while allowing
+// the global fetch Response constructor to be used without TypeScript collisions.
+type Response = ExpressResponse;
 import multer from "multer";
 import { ProviderAdapter } from "./ai/AiProvider.ts";
 import { classifyError, getClientSafeErrorMessage, logMinimalError, SafeErrorCategory } from "./ai/AiErrors.ts";

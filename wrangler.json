@@ -1,0 +1,29 @@
+{
+  "name": "zana-api-worker",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2024-04-03",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+"vars": {
+    "GEMINI_PRIMARY_MODEL": "gemini-2.5-flash",
+    "GEMINI_VISION_MODEL": "gemini-2.5-flash",
+    "ALLOWED_ORIGINS": "https://zana.krd,https://gen-lang-client-0009572581.web.app,https://zana-api-worker.zana-platform.workers.dev"
+  },
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "LEARNING_RECORDS_KV",
+      "id": "982dd04c19dd4056b9679dcce9da0462"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "ZANA_CURRICULUM_BUCKET",
+      "bucket_name": "zana-curriculum"
+    }
+  ]
+}

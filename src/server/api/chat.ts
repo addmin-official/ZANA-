@@ -76,24 +76,28 @@ export async function handleChatRoute(request: Request, env: Record<string, unkn
   // 4. Construct grounded system prompt
   const systemInstruction = buildTutorSystemPrompt(context, payload.topicId);
 
-  // 5. Call Gemini Provider (Using standard Google AI Studio / Vertex format)
+// 5. Call Gemini Provider (Using standard Google AI Studio / Vertex format)
   try {
-    const apiKey = env.GEMINI_API_KEY || (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : '');
-    const model = env.GEMINI_PRIMARY_MODEL || (typeof process !== 'undefined' ? process.env.GEMINI_PRIMARY_MODEL : 'gemini-1.5-flash') || 'gemini-1.5-flash';
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const apiKey = (env.GEMINI_API_KEY || (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : '')) as string;
+    const model = env.GEMINI_PRIMARY_MODEL || (typeof process !== 'undefined' ? process.env.GEMINI_PRIMARY_MODEL : 'gemini-2.5-flash') || 'gemini-2.5-flash';
+    
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
     const geminiBody = {
       system_instruction: { parts: { text: systemInstruction } },
       contents: payload.messages,
       generationConfig: {
-        temperature: 0.4, // Lower temperature for factual educator grounding
+        temperature: 0.4, 
         maxOutputTokens: 1024,
       },
     };
 
     const geminiResponse = await fetch(geminiUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey 
+      },
       body: JSON.stringify(geminiBody),
     });
 
